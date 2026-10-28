@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>魔王ヤギュー討伐戦（仮）</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <section id="lobby" class="screen">
+    <h1>魔王ヤギュー討伐戦<small>（仮）</small></h1>
+    <p class="sub">王国と魔族の戦争。2〜4人で遊ぶ国取りゲーム。</p>
+    <div class="card">
+      <label>あなたの名前 <input id="playerName" maxlength="20" placeholder="なまえ"></label>
+    </div>
+    <div class="card">
+      <h2>新しいゲームを作る</h2>
+      <div class="row">
+        <input id="newGameName" maxlength="30" placeholder="ゲームの名前（なくてもOK）">
+        <button id="createGame">作る</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>ゲーム一覧</h2>
+      <div id="gameList">読み込み中…</div>
+      <button id="refreshList" class="ghost">一覧を更新</button>
+    </div>
+  </section>
+
+  <section id="game" class="screen hidden">
+    <header id="topbar"></header>
+    <div id="main">
+      <div id="mapWrap"><svg id="map" viewBox="0 0 1000 660"></svg></div>
+      <aside id="panel"></aside>
+    </div>
+    <div id="battleScreen" class="hidden">
+      <div id="battleWrap"><svg id="field"></svg></div>
+      <aside id="battlePanel"></aside>
+    </div>
+  </section>
+
+  <div id="modal" class="hidden"><div class="box" id="modalBox"></div></div>
+  <div id="toast" class="hidden"></div>
+</div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
