@@ -12,19 +12,22 @@ const AI_DELAY = 500;
 let db = null, me = null;
 const tab = Math.random().toString(36).slice(2);
 
+// 使えるかどうか（使えないときは、その理由も返す）
+export let reason = '';
 export const ready = (async () => {
-  if (!window.claude?.use) return false;
+  if (!window.claude?.use) { reason = 'not-claude'; return false; }
   try {
     const [d, u] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
-    if (!d || !u) return false;
+    if (!d) { reason = 'no-db'; return false; }
+    if (!u) { reason = 'no-user'; return false; }
     const uid = await u.id();
-    if (!uid) return false;
+    if (!uid) { reason = 'no-id'; return false; }
     // 書きこめない人（閲覧だけの人）は、みんなで遊ぶ機能を使えない
     const canWrite = u.can ? await u.can('data.write') : null;
-    if (canWrite === false) return false;
+    if (canWrite === false) { reason = 'view-only'; return false; }
     db = d; me = uid;
     return true;
-  } catch { return false; }
+  } catch (e) { reason = 'error:' + (e?.code || e?.message || e); return false; }
 })();
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));

@@ -1197,7 +1197,14 @@ if (LOCAL) {
       <div class="row"><input id="sharedName" maxlength="30" placeholder="ゲームの名前（なくてもOK）"><button id="sharedCreate" class="primary">作る</button></div>
       <label class="hint"><input type="checkbox" id="sharedTrial"> お試しモード（全員Lv30）</label>
       <p class="hint">作ったゲームは、このページを開ける人みんなの「ゲーム一覧」に出ます。それぞれ空いている役を押して参加し、だれかが「ゲームを始める」を押せば始まります。空いている役はAIが動かします。自分の役には、別の端末からでも「続きから」で戻れます。</p>`
-      : `<h2>みんなで遊ぶ</h2><p class="hint">みんなで遊ぶには、このページを友だちと共有して、ゲームのデータを書きこめるようにする必要があります（Claudeにログインしているときだけ使えます）。今はひとりで遊ぶことだけできます。</p>`;
+      : `<h2>みんなで遊ぶ</h2><p class="hint">今はひとりで遊ぶことだけできます。</p>
+        <p class="hint">理由：<b>${esc({
+          'not-claude': 'Claudeのページとして開かれていません',
+          'no-db': 'このページのデータを使う許可がありません（ログインしていない、または共有のされ方で使えない）',
+          'no-user': 'だれが見ているかがわかりません（ログインしていない可能性があります）',
+          'no-id': 'アカウントがわかりません（ログインしていない可能性があります）',
+          'view-only': '「見るだけ」で共有されています。共有した人に「編集者」にしてもらう必要があります',
+        }[SHARED.reason] || SHARED.reason)}</b>（コード：${esc(SHARED.reason)}）</p>`;
     if (!ok) return;
     $('#sharedCreate').onclick = async () => {
       try {
