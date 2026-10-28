@@ -1,6 +1,5 @@
 // 人間の操作もAIにまかせて、ゲームを最後まで流してみるテスト
 import * as G from '../server/game.js';
-import { aiStep } from '../server/battle.js';
 import { neighbors, TERRITORIES } from '../shared/data.js';
 
 const days = Number(process.argv[2] || 150);
@@ -35,16 +34,14 @@ while (game.phase !== 'ended' && game.day <= days && guard++ < 100000) {
     }
     for (const role of seedPlayers) G.setReady(game, role, true);
   } else if (game.phase === 'battle') {
-    const b = game.battle;
-    if (!b.result) aiStep(b);
-    else G.battleAction(game, 'yagyu', { type: 'conclude' });
+    G.autoBattleStep(game);
   }
 }
 
 const own = s => game.territories.filter(t => t.owner === s).length;
 console.log(`終了: ${game.day}日目 phase=${game.phase} winner=${game.winner}`);
 console.log(`陣地 王国${own('kingdom')} 魔族${own('demon')} 中立${own('neutral')}  合戦${game.stats.battles}回`);
-console.log('資源', JSON.stringify(game.resources));
+console.log('資源', JSON.stringify(game.resources), '追撃戦', game.stats.pursuits || 0, '討ち取り', game.stats.pursuitWins || 0);
 console.log('民の被害', JSON.stringify(game.stats.civLoss));
 console.log('イベント', game.eventLog.map(e => `${e.day}:${e.title}`).join(' / '));
 console.log('Lv', Object.entries(game.chars).map(([k, v]) => `${k}${v.level}`).join(' '));

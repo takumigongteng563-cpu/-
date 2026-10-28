@@ -481,7 +481,10 @@ function nextActive(b) {
   while (guard--) {
     b.idx++;
     if (b.idx >= b.order.length) {
-      if (b.round >= MAX_ROUNDS) { finish(b, b.defenderSide, '時間切れ。守りきった'); return; }
+      if (b.round >= (b.maxRounds || MAX_ROUNDS)) {
+        finish(b, b.defenderSide, b.kind === 'pursuit' ? '逃げ切った' : '時間切れ。守りきった');
+        return;
+      }
       roundStart(b);
       if (b.result) return;
     }
@@ -803,4 +806,59 @@ export function aiStep(battle) {
   }
   b.log.push(`${u.name} は${hold ? '構えている' : '前進'}`);
   nextActive(b);
+}
+
+// ---------- 大将を選ぶ ----------
+export function setCommander(b, role, genId) {
+  const mine = b.units.filter(u => u.role === role);
+  const pick = mine.find(u => u.genId === genId && u.isLeaderUnit) || mine.find(u => u.genId === genId);
+  if (!pick) throw new Error('その武将はこの合戦にいません');
+  for (const u of mine) u.isCommander = false;
+  pick.isCommander = true;
+  b[role + 'Commander'] = genId;
+  b.log.push(`${role === 'attacker' ? '攻め' : '守り'}の大将：${pick.name}`);
+}
+
+// ---------- 追撃戦 ----------
+// 合戦に勝った側が、退却する側を追いかける短い戦い。
+// 追う側は退却する大将を倒せば勝ち（その武将は倒れる）。退却する側は数ターン耐えれば逃げ切り。
+export const PURSUIT_ROUNDS = 3;
+
+export function createPursuit(game, main, { pursuerIds, rearIds, fleeIds, fleeCommanderId, pursuerCommanderId }) {
+  const terr = TERRITORIES[main.territoryId];
+  const grid = makeGrid(terr, { walls: false, seed: game.day * 977 + main.territoryId * 13 + game.battleCount });
+  const winner = main.result.winner;
+  const loser = winner === main.attackerSide ? main.defenderSide : main.attackerSide;
+  const b = {
+    id: main.id + 'p', kind: 'pursuit', territoryId: main.territoryId, attackerSide: winner, defenderSide: loser,
+    grid, wallHp: {}, units: [], order: [], idx: -1, round: 0, active: null, log: [], result: null, hits: [],
+    dark: [], rain: [], seeds: [], fallen: { kingdom: 0, demon: 0, neutral: 0 }, maxRounds: PURSUIT_ROUNDS,
+    generals: main.generals, reserve: main.reserve, stage: 'fight',
+  };
+  // 逃げ道の戦場：崖は高台にして、どちらの部隊も動けるようにする
+  for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) if (grid[y][x] === 'C') grid[y][x] = 'H';
+  const copy = (u, role) => ({
+    ...u, role, effects: [], onceRound: {}, charge: null, instantCharge: false, isCommander: false,
+    sleepUntil: null, poisonUntil: null, markUntil: null, stunFrom: null, stunUntil: null, visibleUntil: null, lastRound: null,
+  });
+  const rows = [5, 4, 6, 3, 7, 2, 8, 1, 9, 0, 10];
+  const place = (u, cols) => {
+    for (const x of cols) for (const y of rows) {
+      if (b.units.some(o => o.x === x && o.y === y)) continue;
+      if (moveCost(grid[y][x], u, b) === Infinity) continue;
+      u.x = x; u.y = y; b.units.push(u); return;
+    }
+  };
+  const byId = id => main.units.find(u => u.id === id);
+  for (const id of pursuerIds) place(copy(byId(id), 'attacker'), [2, 1, 0, 3]);
+  for (const id of rearIds) place(copy(byId(id), 'defender'), [6, 7, 5, 8]);
+  for (const id of fleeIds) place(copy(byId(id), 'defender'), [11, 12, 13, 10, 14, 15]);
+  const pc = b.units.find(u => u.id === pursuerCommanderId) || b.units.find(u => u.role === 'attacker');
+  const fc = b.units.find(u => u.id === fleeCommanderId) || b.units.find(u => u.role === 'defender');
+  if (pc) pc.isCommander = true;
+  if (fc) fc.isCommander = true;
+  b.log.push(`【${terr.name}の追撃戦】 ${sideName(winner)}が追いかける。${sideName(loser)}は${PURSUIT_ROUNDS}ターン耐えれば逃げ切り`);
+  if (rearIds.length) b.log.push(`しんがり：${rearIds.map(id => byId(id).name).join('・')}`);
+  b.log.push(`逃げる大将：${fc ? fc.name : '-'}（倒されると倒れる）`);
+  return b;
 }

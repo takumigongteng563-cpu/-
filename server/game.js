@@ -4,7 +4,8 @@ import {
   TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, REQUIRED_ROLES, UNIT_MAX, MAJORITY,
   neighbors, charStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
 } from '../shared/data.js';
-import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit } from './battle.js';
+import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit, setCommander, createPursuit } from './battle.js';
+import { getStat } from '../shared/battlecore.js';
 import { checkEvents, ENDINGS } from './events.js';
 
 export function actionCost(game, side, type, charId) {
@@ -423,41 +424,197 @@ function beginBattle(game, c) {
   if (c.garrison && defenders.length < 5 && game.territories[c.territoryId].garrison > 0) {
     defenders.push(garrisonGeneral(game, c.territoryId));
   }
-  const battle = createBattle(game, {
+  const b = createBattle(game, {
     territoryId: c.territoryId, attackerSide: c.attackerSide, defenderSide: c.defenderSide,
     attackers: c.attackers.map(g => g.id), defenders: defenders.map(g => g.id),
   });
-  game.battle = battle;
+  game.battle = b;
   game.phase = 'battle';
   game.stats.battles++;
-  startBattle(battle);
-  // 人が動かす部隊がいなければ、一気に決着させる
-  if (!battle.units.some(u => u.controller !== 'ai')) {
-    let guard = 5000;
-    while (!battle.result && guard--) aiStep(battle);
-    battle.auto = true;
+  b.auto = !b.units.some(u => u.controller !== 'ai');
+  // 大将は戦う前に決める：人が動かす武将が2人以上いる側は、その人が選ぶ
+  b.pending = {};
+  for (const role of ['attacker', 'defender']) {
+    const gens = b.generals[role].map(id => game.generals[id]);
+    const humans = [...new Set(gens.map(g => g.controller).filter(r => r !== 'ai'))];
+    if (humans.length && gens.length >= 2) b.pending[role] = humans;
   }
+  b.stage = Object.keys(b.pending).length ? 'commander' : 'fight';
+  if (b.stage === 'fight') startBattle(b);
+  progress(game);
+}
+
+const rolesOf = (b, side) => [...new Set(b.units.filter(u => u.side === side).map(u => u.controller).filter(r => r !== 'ai'))];
+const RANK = { yagyu: 100, nozomi: 90, sumire: 80, noguchi: 79, nanase: 78, horie: 70, kkb: 62, oh: 61, car: 60, yuki: 30 };
+
+// 合戦の段階を、人の決定が必要なところまで進める
+function progress(game) {
+  let guard = 20000;
+  while (guard--) {
+    const b = game.battle;
+    if (!b) return;
+    if (b.stage === 'fight' && !b.result) {
+      if (!b.auto) return; // 人がいる合戦は1手ずつ（AIの手はサーバーが少し待って進める）
+      aiStep(b);
+      continue;
+    }
+    if (b.stage === 'fight' && b.result) { enterAftermath(game); continue; }
+    if (b.stage === 'rearguard' && !b.pendingRoles.length) { enterPursueStage(game); continue; }
+    return;
+  }
+}
+
+// 決着のあと：退却（しんがり）→ 追撃するか → 速さ比べ → 追撃戦
+function enterAftermath(game) {
+  const b = game.battle;
+  if (b.kind === 'pursuit') { b.stage = 'done'; return; }
+  const winner = b.result.winner;
+  const loser = winner === b.attackerSide ? b.defenderSide : b.attackerSide;
+  const losers = b.units.filter(u => u.alive && u.side === loser);
+  const winners = b.units.filter(u => u.alive && u.side === winner);
+  // 守備隊だけの負けや、どちらかが全滅しているときは追撃なし
+  const fleeing = losers.filter(u => !game.generals[u.genId]?.temp);
+  if (!fleeing.length || !winners.length) { b.stage = 'done'; return; }
+  b.rear = {};
+  b.pendingRoles = rolesOf(b, loser).filter(r => fleeing.some(u => u.controller === r && u.kind === 'troop'));
+  b.stage = 'rearguard';
+  b.log.push(`${loser === 'kingdom' ? '王国' : loser === 'demon' ? '魔族' : '中立'}は退却する`);
+}
+
+function enterPursueStage(game) {
+  const b = game.battle;
+  const winner = b.result.winner;
+  b.stage = 'pursue';
+  b.pursueInfo = pursueInfo(game, b);
+  b.pendingRoles = rolesOf(b, winner);
+  if (!b.pendingRoles.length) {
+    // AI：勝った側の兵が、逃げる側と同じくらい以上残っていれば追う
+    const win = b.units.filter(u => u.alive && u.side === winner).reduce((a, u) => a + u.hp, 0);
+    const lose = b.units.filter(u => u.alive && u.side !== winner).reduce((a, u) => a + u.hp, 0);
+    decidePursuit(game, win >= lose * 0.8);
+  }
+}
+
+// 速さ比べの見込み
+function pursueInfo(game, b) {
+  const winner = b.result.winner;
+  const rearIds = Object.values(b.rear).flat();
+  const pursuers = b.units.filter(u => u.alive && u.side === winner);
+  const flee = b.units.filter(u => u.alive && u.side !== winner && !rearIds.includes(u.id) && !game.generals[u.genId]?.temp);
+  // 野口の「くちかわき」：負けて退却するときは、追撃されずに必ず逃げ切れる
+  const slipped = flee.filter(u => game.generals[u.genId]?.charId === 'noguchi');
+  const caught = flee.filter(u => !slipped.includes(u));
+  const kkb = pursuers.find(u => u.charId === 'kkb' && (u.level || 1) >= 20);
+  const pursueSpd = Math.max(0, ...pursuers.map(u => getStat(b, u, 'spd')));
+  // 逃げる側は、一番えらい武将の速さで逃げる
+  const leader = caught.slice().sort((a, c) => (RANK[c.charId] || 0) - (RANK[a.charId] || 0) || (c.isLeaderUnit ? 1 : 0) - (a.isLeaderUnit ? 1 : 0))[0];
+  const fleeSpd = leader ? getStat(b, leader, 'spd') : 0;
+  return {
+    pursueSpd: Math.round(pursueSpd), fleeSpd: Math.round(fleeSpd), kkb: !!kkb,
+    catchUp: !!leader && (kkb || pursueSpd > fleeSpd), rearIds, fleeIds: caught.map(u => u.id),
+    slipped: slipped.map(u => u.name), fleeCommanderId: leader?.id, leaderName: leader?.name,
+  };
+}
+
+function decidePursuit(game, yes) {
+  const b = game.battle;
+  const info = pursueInfo(game, b);
+  b.pursueInfo = info;
+  if (info.slipped.length) b.log.push(`野口の隊は気づかれずに逃げ切った（くちかわき）`);
+  if (!yes) { b.log.push('勝った側は追撃しなかった'); b.stage = 'done'; return; }
+  if (!info.fleeIds.length && !info.rearIds.length) { b.stage = 'done'; return; }
+  if (!info.catchUp) {
+    b.log.push(`追撃したが、速さ比べに負けて追いつけなかった（追う側${info.pursueSpd} ／ 逃げる側${info.fleeSpd}）`);
+    b.stage = 'done';
+    return;
+  }
+  b.log.push(info.kkb ? 'KKBの猛追！ 速さ比べに必ず勝つ' : `速さ比べに勝って追いついた（追う側${info.pursueSpd} ／ 逃げる側${info.fleeSpd}）`);
+  const winner = b.result.winner;
+  const pursuers = b.units.filter(u => u.alive && u.side === winner);
+  const pc = pursuers.find(u => u.isCommander) || pursuers.sort((a, c) => (RANK[c.charId] || 0) - (RANK[a.charId] || 0))[0];
+  const p = createPursuit(game, b, {
+    pursuerIds: pursuers.map(u => u.id), rearIds: info.rearIds, fleeIds: info.fleeIds,
+    fleeCommanderId: info.fleeCommanderId, pursuerCommanderId: pc?.id,
+  });
+  p.auto = b.auto || !p.units.some(u => u.controller !== 'ai');
+  game.stats.pursuits = (game.stats.pursuits || 0) + 1;
+  p.parent = b;
+  b.stage = 'pursuit';
+  game.battle = p;
+  startBattle(p);
+}
+
+// 追撃戦の結果を、元の合戦に戻す
+function mergePursuit(game) {
+  const p = game.battle;
+  const b = p.parent;
+  for (const pu of p.units) {
+    const u = b.units.find(x => x.id === pu.id);
+    if (!u) continue;
+    Object.assign(u, { hp: pu.hp, alive: pu.alive, dealt: pu.dealt, kills: pu.kills, mp: pu.mp, used: pu.used, revived: pu.revived });
+  }
+  b.log.push(...p.log.slice(-3));
+  b.pursuitResult = p.result;
+  if (p.result.winner === p.attackerSide) game.stats.pursuitWins = (game.stats.pursuitWins || 0) + 1;
+  b.stage = 'done';
+  game.battle = b;
 }
 
 export function aiTurn(game) {
   const b = game.battle;
-  const u = b && !b.result && activeUnit(b);
+  const u = b && b.stage === 'fight' && !b.result && activeUnit(b);
   return !!u && u.controller === 'ai';
 }
 
-// AIの番なら1手進める。進めたら true
-export function advance(game) {
+// AIの番なら1手進める。進めたら true（force：テスト用。人の番もAIが動かす）
+export function advance(game, force = false) {
   const b = game.battle;
-  if (!b || b.result) return false;
-  const u = activeUnit(b);
-  if (u && u.controller === 'ai') { aiStep(b); return true; }
-  return false;
+  if (force ? !(b && b.stage === 'fight' && !b.result) : !aiTurn(game)) return false;
+  aiStep(game.battle);
+  progress(game);
+  return true;
+}
+
+export function battleDone(game) {
+  return game.battle?.stage === 'done';
 }
 
 export function battleAction(game, role, action) {
   if (game.phase !== 'battle' || !game.battle) throw new Error('合戦中ではありません');
-  if (action.type === 'conclude') { concludeBattle(game); return; }
-  applyBattleAction(game.battle, role, action);
+  const b = game.battle;
+  switch (action.type) {
+    case 'conclude':
+      if (b.stage !== 'done') throw new Error('まだ終わっていません');
+      if (b.kind === 'pursuit') mergePursuit(game);
+      concludeBattle(game);
+      return;
+    case 'commander': {
+      if (b.stage !== 'commander') throw new Error('今は大将を選べません');
+      const side = Object.keys(b.pending).find(k => b.pending[k].includes(role));
+      if (!side) throw new Error('あなたが大将を選ぶ側ではありません');
+      if (action.genId) setCommander(b, side, action.genId);
+      delete b.pending[side];
+      if (!Object.keys(b.pending).length) { b.stage = 'fight'; startBattle(b); }
+      break;
+    }
+    case 'rearguard': {
+      if (b.stage !== 'rearguard' || !b.pendingRoles.includes(role)) throw new Error('今はしんがりを選べません');
+      const ids = (action.unitIds || []).filter(id => b.units.some(u => u.id === id && u.alive && u.controller === role && u.kind === 'troop'));
+      b.rear[role] = ids;
+      if (ids.length) b.log.push(`しんがりに残る：${ids.map(id => b.units.find(u => u.id === id).name).join('・')}`);
+      b.pendingRoles = b.pendingRoles.filter(r => r !== role);
+      break;
+    }
+    case 'pursue':
+      if (b.stage !== 'pursue' || !b.pendingRoles.includes(role)) throw new Error('今は追撃を決められません');
+      b.pendingRoles = [];
+      decidePursuit(game, !!action.yes);
+      break;
+    default:
+      if (b.stage !== 'fight') throw new Error('今は動かせません');
+      applyBattleAction(b, role, action);
+  }
+  progress(game);
 }
 
 function levelUp(game, charId) {
@@ -764,7 +921,18 @@ export function publicView(game, viewer) {
     players,
     orders,
     log: game.log.slice(-80),
-    battle: game.battle ? { ...game.battle, log: game.battle.log.slice(-60) } : null,
+    battle: game.battle ? { ...game.battle, log: game.battle.log.slice(-60), parent: game.battle.parent ? { id: game.battle.parent.id } : undefined } : null,
     meta: { demonActions: demonActionCount(game), queenActions: queenActionCount(game) },
   };
+}
+
+// テスト用：人の決定もAIのかわりに済ませて、合戦を1歩進める
+export function autoBattleStep(game) {
+  const b = game.battle;
+  if (!b) return;
+  if (b.stage === 'commander') for (const role of Object.values(b.pending).flat()) { if (b.stage === 'commander') battleAction(game, role, { type: 'commander' }); }
+  else if (b.stage === 'fight') advance(game, true);
+  else if (b.stage === 'rearguard') battleAction(game, b.pendingRoles[0], { type: 'rearguard', unitIds: [] });
+  else if (b.stage === 'pursue') battleAction(game, b.pendingRoles[0], { type: 'pursue', yes: true });
+  else if (b.stage === 'done') battleAction(game, null, { type: 'conclude' });
 }

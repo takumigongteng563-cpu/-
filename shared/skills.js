@@ -76,7 +76,7 @@ export const SKILLS = {
     { id: 'girori', name: 'ぎろり', kind: 'active', lv: 5, mp: 5, target: 'enemy', reach: 'adj8', desc: '隣の敵1つをすくませる。2ターン移動力-1・攻撃-15%' },
     { id: 'shogeki', name: '衝撃波', kind: 'charge', lv: 10, mp: 8, target: 'dir', desc: '溜め技。次の番に、上下左右どれか一直線3マスの敵全部に1.5倍のダメージ' },
     { id: 'kyoho', name: '虚報', kind: 'active', lv: 15, mp: 6, target: 'enemy', reach: 'sq:3', desc: '3マス以内の敵1つの行動順を一番最後にして、移動力を1ターン-1' },
-    { id: 'motsui', name: '猛追', kind: 'passive', lv: 20, desc: '合戦に勝ったあとの追撃で、速さ比べに必ず勝つ（追撃戦はまだ未実装）' },
+    { id: 'motsui', name: '猛追', kind: 'passive', lv: 20, desc: '合戦に勝ったあとの追撃で、速さ比べに必ず勝つ' },
     { id: 'totsugeki', name: '突撃', kind: 'charge', lv: 25, mp: 10, target: 'dir', desc: '溜め技。次の番に、まっすぐ最大4マス突進して2.2倍のダメージ。溜め中は防御+30%' },
     { id: 'kittanai', name: 'きったないんだけどーｗ', kind: 'active', lv: 30, mp: 12, once: true, target: 'self', area: 'sq:2', desc: '周り2マスの敵の防御を2ターン-30%。次の溜め技を溜めなしで撃てる' },
   ],

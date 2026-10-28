@@ -48,8 +48,8 @@ function schedule(game) {
   if (timers.has(game.id)) return;
   const b = game.battle;
   if (!b) return;
-  if (!b.result) {
-    if (!G.aiTurn(game)) return; // 人の番：操作を待つ
+  if (!G.battleDone(game)) {
+    if (!G.aiTurn(game)) return; // 人の番・人の決定を待つ
     timers.set(game.id, setTimeout(() => {
       timers.delete(game.id);
       G.advance(game);

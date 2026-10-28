@@ -612,10 +612,19 @@ function aimHint(aim) {
 
 function renderBattlePanel(g, b, active, mine, targets, aim) {
   const T = TERRITORIES[b.territoryId];
-  let h = `<div class="sec"><h3>${T.name}の合戦　${b.round}ターン目</h3>
-    <div class="hint">攻め：<span class="${b.attackerSide[0]}">${SIDE_NAME[b.attackerSide]}</span>　守り：<span class="${b.defenderSide[0]}">${SIDE_NAME[b.defenderSide]}</span>　★の大将を倒せば勝ち（${MAX_ROUNDS}ターンで守り側の勝ち）</div></div>`;
-  if (b.result) {
-    h += `<div class="result">${SIDE_NAME[b.result.winner]}の勝ち！（${esc(b.result.reason)}）</div><button class="primary big" id="btnConclude">地図に戻る</button>`;
+  let h = b.kind === 'pursuit'
+    ? `<div class="sec"><h3>${T.name}の追撃戦　${b.round}/${b.maxRounds}ターン</h3>
+      <div class="hint"><span class="${b.attackerSide[0]}">${SIDE_NAME[b.attackerSide]}</span>が追う。★の逃げる大将を倒せば討ち取り（その武将は倒れる）。<span class="${b.defenderSide[0]}">${SIDE_NAME[b.defenderSide]}</span>は${b.maxRounds}ターン耐えれば逃げ切り。</div></div>`
+    : `<div class="sec"><h3>${T.name}の合戦　${b.round}ターン目</h3>
+      <div class="hint">攻め：<span class="${b.attackerSide[0]}">${SIDE_NAME[b.attackerSide]}</span>　守り：<span class="${b.defenderSide[0]}">${SIDE_NAME[b.defenderSide]}</span>　★の大将を倒せば勝ち（${MAX_ROUNDS}ターンで守り側の勝ち）</div></div>`;
+  if (b.stage === 'commander') {
+    h += commanderPanel(g, b);
+  } else if (b.result) {
+    h += `<div class="result">${SIDE_NAME[b.result.winner]}の勝ち！（${esc(b.result.reason)}）</div>`;
+    if (b.pursuitResult) h += `<div class="hint">追撃戦：${b.pursuitResult.winner === b.result.winner ? '討ち取った' : '逃げ切られた'}（${esc(b.pursuitResult.reason)}）</div>`;
+    if (b.stage === 'rearguard') h += rearguardPanel(b);
+    else if (b.stage === 'pursue') h += pursuePanel(b);
+    else h += `<button class="primary big" id="btnConclude">地図に戻る</button>`;
   } else if (active) {
     h += `<div class="sec"><h3>${mine ? 'あなたの番' + (b.active.extra ? '（もう一度行動）' : '') : `${active.controller === 'ai' ? 'AI' : CHARACTERS[active.controller]?.name || ''}の番`}</h3>${unitCard(b, active)}`;
     if (mine) {
@@ -643,6 +652,42 @@ function renderBattlePanel(g, b, active, mine, targets, aim) {
   $('#battlePanel').innerHTML = h;
 }
 
+// 大将を選ぶ（戦う前）
+function commanderPanel(g, b) {
+  const mySide = Object.keys(b.pending).find(k => S.me && b.pending[k].includes(S.me.role));
+  const waiting = Object.values(b.pending).flat().map(r => CHARACTERS[r].name).join('、');
+  if (!mySide) return `<div class="sec"><h3>大将を選んでいます</h3><div class="hint">${esc(waiting)}が大将を選ぶのを待っています。</div></div>`;
+  const cur = b.units.find(u => u.role === mySide && u.isCommander);
+  const gens = b.generals[mySide].map(id => g.generals[id]).filter(Boolean);
+  return `<div class="sec"><h3>大将を選ぶ</h3>
+    <div class="hint">大将が倒されたら負け。今の大将：<b>${esc(cur?.name || '-')}</b>（金色の★）</div>
+    <div class="skills">${gens.map(gen => `<button class="small skill" data-cmd="${gen.id}">${esc(gen.name)}${gen.charId ? ` Lv${g.chars[gen.charId].level}` : ''}<span class="mp">${cur?.genId === gen.id ? '今の大将' : '大将にする'}</span></button>`).join('')}</div>
+    <div class="acts" style="margin-top:8px"><button class="primary" data-cmd="">このまま始める</button></div></div>`;
+}
+
+// 退却：しんがりを残す
+function rearguardPanel(b) {
+  if (!S.me || !b.pendingRoles.includes(S.me.role)) {
+    return `<div class="sec"><h3>退却中</h3><div class="hint">${b.pendingRoles.map(r => CHARACTERS[r].name).join('、')}が、しんがりを選んでいます。</div></div>`;
+  }
+  const mine = b.units.filter(u => u.alive && u.controller === S.me.role && u.kind === 'troop' && u.side !== b.result.winner);
+  return `<div class="sec"><h3>退却する：しんがりを残す？</h3>
+    <div class="hint">しんがりに残した部隊は、追撃してくる敵の前に立ちはだかります（追撃戦でやられると兵を失う）。残さなくてもかまいません。</div>
+    ${mine.map(u => `<label class="row"><input type="checkbox" data-rear="${u.id}" ${S.rearPicks?.has(u.id) ? 'checked' : ''}> ${esc(u.name)}（兵${u.hp}）</label>`).join('')}
+    <div class="acts" style="margin-top:8px"><button class="primary" id="btnRetreat">退却する</button></div></div>`;
+}
+
+// 勝った側：追撃するか
+function pursuePanel(b) {
+  const i = b.pursueInfo || {};
+  const info = `<div class="hint">速さ比べ：追う側 ${i.pursueSpd} ／ 逃げる側（${esc(i.leaderName || '-')}）${i.fleeSpd} → ${i.catchUp ? '<b style="color:#3c9a5f">追いつける</b>' : '<b style="color:#c43f3f">追いつけない</b>'}
+    ${i.kkb ? '<br>KKBの猛追：速さ比べに必ず勝つ' : ''}${i.slipped?.length ? `<br>野口の隊は気づかれずに逃げる（くちかわき）` : ''}${i.rearIds?.length ? `<br>しんがりが${i.rearIds.length}部隊残っている` : ''}</div>`;
+  if (!S.me || !b.pendingRoles.includes(S.me.role)) return `<div class="sec"><h3>追撃するか考えています</h3>${info}</div>`;
+  return `<div class="sec"><h3>追撃する？</h3>${info}
+    <div class="hint">追いつけたら追撃戦（${3}ターン）。逃げる大将を倒せば、その武将は倒れます。</div>
+    <div class="acts"><button class="primary" data-pursue="1">追撃する</button><button data-pursue="0">追撃しない</button></div></div>`;
+}
+
 // キャラの技の一覧（覚えているものと、まだのもの）
 function skillBook(charId, level) {
   const KIND = { personal: '個人', passive: 'パッシブ', active: '技', charge: '溜め技' };
@@ -658,10 +703,24 @@ function sendSkill(extra) {
   return act({ type: 'battle', action: { type: 'skill', skillId: id, ...extra } });
 }
 
+// 選んでいる途中のしんがりは、画面が更新されても消えないように覚えておく
+$('#battlePanel').addEventListener('change', (e) => {
+  if (!e.target.dataset.rear) return;
+  S.rearPicks ||= new Set();
+  if (e.target.checked) S.rearPicks.add(e.target.dataset.rear); else S.rearPicks.delete(e.target.dataset.rear);
+});
+
 $('#battlePanel').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.id === 'btnConclude') return act({ type: 'battle', action: { type: 'conclude' } });
+  if (b.dataset.cmd !== undefined) return act({ type: 'battle', action: { type: 'commander', genId: b.dataset.cmd || null } });
+  if (b.id === 'btnRetreat') {
+    const unitIds = [...document.querySelectorAll('[data-rear]:checked')].map(x => x.dataset.rear);
+    S.rearPicks = null;
+    return act({ type: 'battle', action: { type: 'rearguard', unitIds } });
+  }
+  if (b.dataset.pursue !== undefined) return act({ type: 'battle', action: { type: 'pursue', yes: b.dataset.pursue === '1' } });
   if (b.id === 'bWait') return act({ type: 'battle', action: { type: 'wait' } });
   if (b.id === 'bUndo') return act({ type: 'battle', action: { type: 'undo' } });
   if (b.id === 'aimCancel') { S.aim = null; return render(); }
