@@ -1,23 +1,25 @@
 :root {
-  --bg: #f4f1ea;
-  --panel: #ffffff;
-  --ink: #2b2a28;
-  --muted: #77736b;
-  --line: #ddd6c8;
+  --bg: #e9dcc0;
+  --panel: #fbf5e6;
+  --ink: #33281c;
+  --muted: #7d6a50;
+  --line: #d9c7a3;
   --kingdom: #3f6fc4;
   --kingdom-soft: #dbe6fa;
-  --demon: #8a3fa8;
-  --demon-soft: #efdcf5;
-  --neutral: #9a958b;
-  --neutral-soft: #ebe8e1;
-  --accent: #d99a1e;
-  --danger: #c43f3f;
-  --ok: #3c9a5f;
+  --demon: #7b3a96;
+  --demon-soft: #ecdcf1;
+  --neutral: #8f8574;
+  --neutral-soft: #ece4d2;
+  --accent: #c9861a;
+  --danger: #b23a2a;
+  --ok: #3c8a55;
+  --wood: #3b2a1b;
+  --serif: "Noto Serif JP", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", serif;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
-  background: var(--bg); color: var(--ink);
+  background: var(--bg) radial-gradient(circle at 50% 0%, #f3e9d2 0%, var(--bg) 70%) fixed; color: var(--ink);
   font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
   font-size: 14px;
 }
@@ -40,10 +42,14 @@ input, select { font: inherit; padding: 5px 8px; border: 1px solid #c9bfa9; bord
 
 /* ロビー */
 #lobby { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
-#lobby h1 { margin: 8px 0 0; font-size: 30px; }
+#lobby h1 { margin: 8px 0 0; font-size: 40px; font-family: var(--serif); letter-spacing: 6px; color: #3b2a1b; display: flex; align-items: center; gap: 12px; }
+#lobby h1 svg { width: 56px; height: 56px; }
+.serif, h2, h3 { font-family: var(--serif); }
+#map .serif { font-family: var(--serif); }
+#map .label { paint-order: stroke; stroke: #f6ecd2; stroke-width: 3px; stroke-linejoin: round; }
 #lobby h1 small { font-size: 16px; color: var(--muted); }
 .sub { color: var(--muted); margin-top: 4px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 14px 0; box-shadow: 0 2px 6px rgba(80, 55, 20, .08); }
 .card h2 { margin: 0 0 10px; font-size: 16px; }
 .online { border: 2px solid var(--ok); background: #f1faf3; }
 .code { background: #fff7e6; border-radius: 6px; padding: 4px 8px; }
@@ -61,9 +67,9 @@ button.demonBtn:hover:not(:disabled) { background: #9c52ba; }
 #game { display: flex; flex-direction: column; height: 100vh; }
 #topbar {
   display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
-  padding: 8px 14px; background: #2f2a24; color: #f6efe0;
+  padding: 8px 14px; background: linear-gradient(#4a3523, var(--wood)); color: #f6efe0; border-bottom: 2px solid #8a6a3e;
 }
-#topbar .day { font-size: 18px; font-weight: bold; }
+#topbar .day { font-size: 18px; font-weight: bold; font-family: var(--serif); }
 #topbar .res span { margin-right: 10px; }
 #topbar .chip { padding: 2px 8px; border-radius: 10px; background: #4a433a; font-size: 12px; }
 #topbar .chip.ready { background: var(--ok); }
@@ -71,8 +77,8 @@ button.demonBtn:hover:not(:disabled) { background: #9c52ba; }
 #topbar button { background: #4a433a; color: #f6efe0; border-color: #6b6255; }
 #main, #battleScreen { flex: 1; display: flex; min-height: 0; }
 #mapWrap, #battleWrap { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 8px; overflow: auto; }
-#map { width: 100%; height: 100%; max-height: calc(100vh - 60px); background: #e9e3d3; border-radius: 10px; }
-#field { width: 100%; max-height: calc(100vh - 70px); }
+#map { width: min(100%, calc((100vh - 72px) * 1000 / 660)); height: auto; aspect-ratio: 1000 / 660; border-radius: 6px; box-shadow: 0 4px 14px rgba(60, 40, 10, .25); }
+#field { width: min(100%, calc((100vh - 80px) * 736 / 506)); height: auto; aspect-ratio: 736 / 506; border-radius: 6px; box-shadow: 0 4px 14px rgba(60, 40, 10, .25); }
 #panel, #battlePanel {
   width: 360px; flex-shrink: 0; overflow-y: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 12px;
 }

@@ -13,6 +13,8 @@ const SIDE_NAME = { kingdom: '王国', demon: '魔族', neutral: '中立' };
 const SIDE_COLOR = { kingdom: '#3f6fc4', demon: '#8a3fa8', neutral: '#9a958b' };
 const SIDE_SOFT = { kingdom: '#dbe6fa', demon: '#efdcf5', neutral: '#ebe8e1' };
 const ROLE_SIDE = { yagyu: 'demon', sumire: 'kingdom', noguchi: 'kingdom', nanase: 'kingdom' };
+// キャラごとの色（地図のコマ）
+const CHAR_COLOR = { sumire: '#4a62c9', noguchi: '#2f8a8a', nanase: '#6a5acd', nozomi: '#c49a1a', horie: '#8a6a2a', yuki: '#5a9ad8', yagyu: '#5a1f6e', car: '#7a3f9a', oh: '#3f7a5a', kkb: '#9a3f5a' };
 const TILE_COLOR = { '.': '#d6e6b0', F: '#6fa35a', R: '#7fb5e0', C: '#8f7c69', H: '#d2bb7f', W: '#6e6a66', S: '#ece4cf' };
 
 const S = {
@@ -230,19 +232,83 @@ function genLabel(gen) {
 
 function activeGens(g) { return Object.values(g.generals).filter(x => x.status === 'active' && !x.temp); }
 
+// ---------- 地図の背景（古い地図ふう。一度だけ作る） ----------
+let MAP_BG = null;
+function mapBackground() {
+  if (MAP_BG) return MAP_BG;
+  const T = TERRITORIES;
+  let h = `<defs>
+    <radialGradient id="paper" cx="50%" cy="45%" r="75%"><stop offset="0%" stop-color="#f6ecd2"/><stop offset="70%" stop-color="#ead9b3"/><stop offset="100%" stop-color="#d2b98a"/></radialGradient>
+    <radialGradient id="landK" cx="20%" cy="50%" r="45%"><stop offset="0%" stop-color="#9dbf8f" stop-opacity=".45"/><stop offset="100%" stop-color="#9dbf8f" stop-opacity="0"/></radialGradient>
+    <radialGradient id="landD" cx="85%" cy="50%" r="35%"><stop offset="0%" stop-color="#5b4462" stop-opacity=".45"/><stop offset="100%" stop-color="#5b4462" stop-opacity="0"/></radialGradient>
+    <radialGradient id="landM" cx="54%" cy="50%" r="22%"><stop offset="0%" stop-color="#d9b46a" stop-opacity=".35"/><stop offset="100%" stop-color="#d9b46a" stop-opacity="0"/></radialGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c9861a"/></marker>
+    <filter id="rough"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" result="n"/><feColorMatrix type="saturate" values="0"/><feBlend in="SourceGraphic" in2="n" mode="multiply"/></filter>
+  </defs>`;
+  h += `<rect width="1000" height="660" fill="url(#paper)"/>`;
+  h += `<rect width="1000" height="660" fill="url(#landK)"/><rect width="1000" height="660" fill="url(#landD)"/><rect width="1000" height="660" fill="url(#landM)"/>`;
+  h += `<rect width="1000" height="660" fill="#7a5a30" opacity=".06" filter="url(#rough)"/>`;
+  h += `<rect x="6" y="6" width="988" height="648" fill="none" stroke="#8a6a3e" stroke-width="2"/><rect x="12" y="12" width="976" height="636" fill="none" stroke="#8a6a3e" stroke-width=".8"/>`;
+  // 大きな川（北の峠から南の港へ）
+  h += `<path d="M640,14 C620,120 700,170 650,250 S560,330 590,400 S520,500 470,520 S300,640 230,650" fill="none" stroke="#7fa8c9" stroke-width="7" opacity=".45" stroke-linecap="round"/>`;
+  // 地形の絵（陣地のまわりに少し）
+  const rand = (i) => { const x = Math.sin(i * 12.9898) * 43758.5453; return x - Math.floor(x); };
+  const mount = (x, y, s, c) => `<path d="M${x - 9 * s},${y + 6 * s} L${x},${y - 8 * s} L${x + 9 * s},${y + 6 * s} Z" fill="${c}" opacity=".55"/><path d="M${x - 3 * s},${y - 3 * s} L${x},${y - 8 * s} L${x + 3 * s},${y - 3 * s}" fill="#fff" opacity=".5"/>`;
+  const tree = (x, y, s) => `<circle cx="${x}" cy="${y - 4 * s}" r="${5 * s}" fill="#5f8a4a" opacity=".55"/><rect x="${x - 1}" y="${y}" width="2" height="${4 * s}" fill="#6b4f2a" opacity=".5"/>`;
+  const wave = (x, y) => `<path d="M${x - 8},${y} q4,-4 8,0 t8,0" fill="none" stroke="#5f8fb8" stroke-width="1.6" opacity=".6"/>`;
+  const hill = (x, y) => `<path d="M${x - 10},${y + 3} q10,-12 20,0" fill="none" stroke="#9a7a45" stroke-width="1.6" opacity=".6"/>`;
+  T.forEach((t, i) => {
+    for (let k = 0; k < 4; k++) {
+      const ang = rand(i * 7 + k) * Math.PI * 2, dist = 34 + rand(i * 13 + k) * 18;
+      const x = t.x + Math.cos(ang) * dist, y = t.y + Math.sin(ang) * dist * 0.8;
+      if (x < 24 || x > 976 || y < 24 || y > 636) continue;
+      if (t.terrain === 'mountain' || t.terrain === 'castle') h += mount(x, y, 1 + rand(i + k) * 0.5, t.x > 700 ? '#5d4a5f' : '#8a7356');
+      else if (t.terrain === 'forest') h += tree(x, y, 1 + rand(i + k) * 0.4);
+      else if (t.terrain === 'river') h += wave(x, y);
+      else if (t.terrain === 'hill') h += hill(x, y);
+      else if (k < 2) h += `<path d="M${x},${y} l2,-5 M${x + 4},${y} l1,-4" stroke="#8aa06a" stroke-width="1.2" opacity=".5"/>`;
+    }
+  });
+  // 方位と題字
+  h += `<g transform="translate(962,618)" opacity=".7"><circle r="15" fill="none" stroke="#8a6a3e"/><path d="M0,-19 L4,0 L0,19 L-4,0 Z" fill="#8a6a3e"/><path d="M-19,0 L0,3 L19,0 L0,-3 Z" fill="#b89b6a"/><text x="-26" y="4" text-anchor="middle" font-size="10" fill="#6b5030" class="serif">北↑</text></g>`;
+  h += `<text x="40" y="44" font-size="22" fill="#6b5030" class="serif" opacity=".75" letter-spacing="4">山羊の野望</text>`;
+  h += `<text x="60" y="636" font-size="12" fill="#4f6e8a" class="serif" opacity=".7">王国</text><text x="900" y="40" font-size="12" fill="#5d3f66" class="serif" opacity=".8">魔族の山々</text>`;
+  MAP_BG = h;
+  return h;
+}
+
+// 陣地の大きさごとの絵（村は家、町は家なみ、城塞・王都・魔王城は城）
+function nodeIcon(size, x, y, color) {
+  const c = color;
+  switch (size) {
+    case 'village': return `<path d="M${x - 6},${y + 5} V${y - 1} L${x},${y - 6} L${x + 6},${y - 1} V${y + 5} Z" fill="${c}"/>`;
+    case 'town': return `<path d="M${x - 10},${y + 6} V${y} L${x - 5},${y - 5} L${x},${y} V${y + 6} Z M${x},${y + 6} V${y - 3} L${x + 5},${y - 8} L${x + 10},${y - 3} V${y + 6} Z" fill="${c}"/>`;
+    case 'fortress': return `<path d="M${x - 11},${y + 8} V${y - 4} h3 v-4 h3 v4 h4 v-4 h2 v4 h4 v-4 h3 v4 h3 V${y + 8} Z" fill="${c}"/><rect x="${x - 2.5}" y="${y + 1}" width="5" height="7" fill="#fff" opacity=".6"/>`;
+    case 'metropolis': return `<path d="M${x - 13},${y + 9} V${y - 2} h4 V${y - 8} h4 V${y - 2} h2 a4,4 0 0 1 6,0 h2 V${y - 8} h4 V${y - 2} h4 V${y + 9} Z" fill="${c}"/><circle cx="${x}" cy="${y - 4}" r="4" fill="${c}"/>`;
+    case 'capital': return `<path d="M${x - 13},${y + 10} V${y - 2} h4 v-4 h3 v4 h3 V${y - 10} h6 V${y - 2} h3 v-4 h3 v4 h4 V${y + 10} Z" fill="${c}"/><path d="M${x - 5},${y - 13} l2,-5 l3,3 l3,-3 l2,5 Z" fill="#d9a520"/>`;
+    case 'castle': return `<path d="M${x - 12},${y + 10} L${x - 8},${y - 4} L${x - 4},${y + 2} L${x},${y - 12} L${x + 4},${y + 2} L${x + 8},${y - 4} L${x + 12},${y + 10} Z" fill="${c}"/><path d="M${x - 6},${y - 10} q-6,-6 -2,-10 M${x + 6},${y - 10} q6,-6 2,-10" stroke="${c}" stroke-width="2.5" fill="none"/>`;
+    default: return '';
+  }
+}
+
+// 武将のコマ（盾の形）
+const shield = (x, y) => `M${x - 9},${y - 9} h18 v8 q0,8 -9,11 q-9,-3 -9,-11 Z`;
+
 function renderMap(g) {
   const svg = $('#map');
   const T = TERRITORIES;
   const sel = S.selGen && g.generals[S.selGen];
   const moveTargets = sel && canOrder(sel) && sel.kind !== 'queen' ? neighbors(sel.location, sel.side, g.closed) : [];
-  let h = '';
-  h += `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d99a1e"/></marker></defs>`;
+  let h = mapBackground();
   for (const e of EDGES) {
     const a = T[e.a], b = T[e.b];
     if (e.cliff) {
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 + (a.y < 330 ? -45 : 40);
-      h += `<path d="M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}" fill="none" stroke="#8b5a2b" stroke-width="2.5" stroke-dasharray="6 5" opacity=".8"/>`;
-    } else h += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#b5aa93" stroke-width="3"/>`;
+      h += `<path d="M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}" fill="none" stroke="#6b4a2a" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round" opacity=".85"/>`;
+    } else {
+      h += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#f3e6c8" stroke-width="6" stroke-linecap="round"/>`;
+      h += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#a88a5c" stroke-width="2" stroke-dasharray="7 4" stroke-linecap="round"/>`;
+    }
     if (g.closed?.[edgeKey(e.a, e.b)]) {
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       h += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#c43f3f" stroke-width="3" stroke-dasharray="3 4"/>
@@ -259,7 +325,7 @@ function renderMap(g) {
       const a = T[gen.location], b = T[tid];
       const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy);
       const r1 = R_SIZE[a.size] + 4, r2 = R_SIZE[b.size] + 6;
-      h += `<line x1="${a.x + dx / L * r1}" y1="${a.y + dy / L * r1}" x2="${b.x - dx / L * r2}" y2="${b.y - dy / L * r2}" stroke="#d99a1e" stroke-width="4" marker-end="url(#arrow)" opacity=".9"/>`;
+      h += `<line x1="${a.x + dx / L * r1}" y1="${a.y + dy / L * r1}" x2="${b.x - dx / L * r2}" y2="${b.y - dy / L * r2}" stroke="#c9861a" stroke-width="4" marker-end="url(#arrow)" opacity=".9"/>`;
     }
   }
   for (const t of T) {
@@ -268,13 +334,14 @@ function renderMap(g) {
     const isSel = S.selTerr === t.id;
     const target = moveTargets.includes(t.id);
     h += `<g class="terr" data-terr="${t.id}">`;
-    if (target) h += `<circle cx="${t.x}" cy="${t.y}" r="${r + 7}" fill="none" stroke="#d99a1e" stroke-width="3" stroke-dasharray="4 3"/>`;
-    h += `<circle cx="${t.x}" cy="${t.y}" r="${r}" fill="${SIDE_SOFT[st.owner]}" stroke="${SIDE_COLOR[st.owner]}" stroke-width="${isSel ? 5 : 3}"/>`;
-    h += `<text x="${t.x}" y="${t.y + 5}" text-anchor="middle" font-size="${r > 20 ? 15 : 13}" font-weight="bold" fill="${SIDE_COLOR[st.owner]}">${SIZE_MARK[t.size]}</text>`;
-    h += `<text x="${t.x}" y="${t.y + r + 14}" text-anchor="middle" font-size="12" fill="#3a352d">${t.name}</text>`;
-    h += `<text x="${t.x}" y="${t.y + r + 27}" text-anchor="middle" font-size="10" fill="#7a725f">兵${st.garrison}${t.specialty ? '・' + SPECIALTIES[t.specialty].name : ''}</text>`;
-    if (st.facility) h += `<rect x="${t.x - r - 10}" y="${t.y + r - 14}" width="16" height="16" rx="3" fill="${st.owner === 'demon' ? '#5d2a70' : '#7a5a10'}"/><text x="${t.x - r - 2}" y="${t.y + r - 2}" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold">${FACILITIES[st.facility].label}</text>`;
-    if (st.damaged > 0) h += `<text x="${t.x - r - 2}" y="${t.y - r + 4}" font-size="12" fill="#c43f3f" font-weight="bold">荒${st.damaged}</text>`;
+    if (target) h += `<circle cx="${t.x}" cy="${t.y}" r="${r + 8}" fill="#f2c55c" opacity=".35"/><circle cx="${t.x}" cy="${t.y}" r="${r + 8}" fill="none" stroke="#c9861a" stroke-width="2.5" stroke-dasharray="4 3"/>`;
+    h += `<circle cx="${t.x + 1.5}" cy="${t.y + 2}" r="${r}" fill="#000" opacity=".15"/>`;
+    h += `<circle cx="${t.x}" cy="${t.y}" r="${r}" fill="${SIDE_SOFT[st.owner]}" stroke="${SIDE_COLOR[st.owner]}" stroke-width="${isSel ? 5 : 2.5}"/>`;
+    h += nodeIcon(t.size, t.x, t.y, SIDE_COLOR[st.owner]);
+    h += `<text x="${t.x}" y="${t.y + r + 14}" text-anchor="middle" font-size="12.5" fill="#3b2f22" class="serif label">${t.name}</text>`;
+    h += `<text x="${t.x}" y="${t.y + r + 27}" text-anchor="middle" font-size="10" fill="#7a6648" class="label">兵${st.garrison}${t.specialty ? '・' + SPECIALTIES[t.specialty].name : ''}</text>`;
+    if (st.facility) h += `<rect x="${t.x - r - 10}" y="${t.y + r - 14}" width="16" height="16" rx="3" fill="${st.owner === 'demon' ? '#5d2a70' : '#7a5a10'}" stroke="#fff" stroke-width="1"/><text x="${t.x - r - 2}" y="${t.y + r - 2}" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold">${FACILITIES[st.facility].label}</text>`;
+    if (st.damaged > 0) h += `<text x="${t.x - r - 4}" y="${t.y - r + 4}" font-size="11" fill="#b23a2a" font-weight="bold" class="label">🔥${st.damaged}</text>`;
     h += `</g>`;
   }
   // 武将のコマ
@@ -284,12 +351,14 @@ function renderMap(g) {
     const t = T[loc];
     const r = R_SIZE[t.size];
     gens.forEach((gen, i) => {
-      const x = t.x + r - 4 + (i % 4) * 19, y = t.y - r - 10 + Math.floor(i / 4) * 19;
+      const x = t.x + r - 2 + (i % 4) * 20, y = t.y - r - 10 + Math.floor(i / 4) * 22;
       const mine = canOrder(gen);
       const isSel = S.selGen === gen.id;
+      const color = gen.charId && CHAR_COLOR[gen.charId] ? CHAR_COLOR[gen.charId] : SIDE_COLOR[gen.side];
       h += `<g class="gen" data-gen="${gen.id}">
-        <rect x="${x - 9}" y="${y - 9}" width="18" height="18" rx="4" fill="${SIDE_COLOR[gen.side]}" stroke="${isSel ? '#ffcf4a' : mine ? '#f5d58a' : '#fff'}" stroke-width="${isSel ? 3 : mine ? 2 : 1}"/>
-        <text x="${x}" y="${y + 4.5}" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff" pointer-events="none">${genLabel(gen)}</text></g>`;
+        <path d="${shield(x + 1, y + 1.5)}" fill="#000" opacity=".2"/>
+        <path d="${shield(x, y)}" fill="${color}" stroke="${isSel ? '#ffcf4a' : mine ? '#f5d58a' : '#fff'}" stroke-width="${isSel ? 3 : mine ? 2 : 1}"/>
+        <text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff" pointer-events="none">${genLabel(gen)}</text></g>`;
     });
   }
   svg.innerHTML = h;
@@ -656,6 +725,18 @@ function statusList(b, u) {
   return out;
 }
 
+// 戦場の地形の模様
+const TILE_ID = { '.': 'plain', F: 'forest', R: 'river', C: 'cliff', H: 'hill', W: 'wall', S: 'stone' };
+const TILE_DEFS = `<defs>
+  <pattern id="tplain" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#cfe0a4"/><path d="M8,30 l2,-6 M11,30 l1,-5 M30,14 l2,-6 M33,14 l1,-5 M34,38 l2,-5" stroke="#9cb874" stroke-width="1.4"/></pattern>
+  <pattern id="tforest" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#8fb46e"/><circle cx="14" cy="16" r="9" fill="#4f7d3c"/><circle cx="32" cy="28" r="10" fill="#5a8a45"/><circle cx="16" cy="36" r="6" fill="#4f7d3c"/><rect x="31" y="36" width="2.5" height="6" fill="#6b4f2a"/></pattern>
+  <pattern id="triver" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#86b6dc"/><path d="M4,14 q6,-5 12,0 t12,0 t12,0 M-2,32 q6,-5 12,0 t12,0 t12,0 t12,0" fill="none" stroke="#e8f3fb" stroke-width="2" opacity=".8"/></pattern>
+  <pattern id="tcliff" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#8d7a68"/><path d="M4,40 L16,10 L28,40 Z" fill="#6f5e4f"/><path d="M22,42 L34,18 L46,42 Z" fill="#7a6857"/><path d="M12,20 L16,10 L20,20" fill="#c9bcae"/></pattern>
+  <pattern id="thill" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#d8c48a"/><path d="M4,34 q19,-26 38,0" fill="none" stroke="#a88a4a" stroke-width="2"/><path d="M12,34 q11,-14 22,0" fill="none" stroke="#a88a4a" stroke-width="1.5"/></pattern>
+  <pattern id="twall" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#7d776f"/><path d="M0,11.5 H46 M0,23 H46 M0,34.5 H46 M15,0 V11.5 M31,11.5 V23 M15,23 V34.5 M31,34.5 V46" stroke="#5a554e" stroke-width="2"/></pattern>
+  <pattern id="tstone" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#ece3cc"/><path d="M0,23 H46 M23,0 V23 M11,23 V46 M34,23 V46" stroke="#cdbf9c" stroke-width="1.5"/><circle cx="34" cy="10" r="2" fill="#e0c97a" opacity=".7"/></pattern>
+</defs>`;
+
 function renderBattle(g) {
   const b = g.battle;
   const svg = $('#field');
@@ -664,14 +745,11 @@ function renderBattle(g) {
   const mine = myActive(b);
   const aim = aimInfo(b, mine);
   const C = (x) => x * CELL + CELL / 2;
-  let h = '';
+  let h = TILE_DEFS;
   for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) {
     const tile = b.grid[y][x];
-    h += `<rect x="${x * CELL}" y="${y * CELL}" width="${CELL}" height="${CELL}" fill="${TILE_COLOR[tile]}" stroke="rgba(0,0,0,.08)" data-cell="${x},${y}"/>`;
-    if (tile === 'F') h += `<text x="${C(x)}" y="${C(y) + 6}" text-anchor="middle" font-size="18" fill="#3f6f33" pointer-events="none">♣</text>`;
-    if (tile === 'C') h += `<text x="${C(x)}" y="${C(y) + 6}" text-anchor="middle" font-size="16" fill="#5e4e3f" pointer-events="none">▲</text>`;
-    if (tile === 'H') h += `<text x="${C(x)}" y="${C(y) + 5}" text-anchor="middle" font-size="13" fill="#8c7543" pointer-events="none">⌒</text>`;
-    if (tile === 'W') h += `<text x="${C(x)}" y="${y * CELL + 14}" text-anchor="middle" font-size="10" fill="#ddd" pointer-events="none">${b.wallHp[x + ',' + y] ?? ''}</text>`;
+    h += `<rect x="${x * CELL}" y="${y * CELL}" width="${CELL}" height="${CELL}" fill="url(#t${TILE_ID[tile]})" stroke="rgba(60,40,10,.12)" data-cell="${x},${y}"/>`;
+    if (tile === 'W') h += `<text x="${C(x)}" y="${y * CELL + 14}" text-anchor="middle" font-size="10" fill="#fff" stroke="#333" stroke-width="2" paint-order="stroke" pointer-events="none">${b.wallHp[x + ',' + y] ?? ''}</text>`;
   }
   for (const d of b.dark || []) if (b.round <= d.until) h += `<rect x="${d.x * CELL}" y="${d.y * CELL}" width="${CELL}" height="${CELL}" fill="rgba(20,10,30,.45)" pointer-events="none"/>`;
   for (const sd of b.seeds || []) h += `<text x="${C(sd.x)}" y="${C(sd.y) + 6}" text-anchor="middle" font-size="18" pointer-events="none">🌱</text>`;
