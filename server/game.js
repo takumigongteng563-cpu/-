@@ -2,22 +2,28 @@
 import crypto from 'node:crypto';
 import {
   TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, REQUIRED_ROLES, UNIT_MAX, MAJORITY,
-  neighbors, charStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
+  neighbors, gameStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
+  MATERIALS, RECIPES, GEAR_MAX, SPECIALTIES, emptyMaterials, troopGearCost, recipeName,
 } from '../shared/data.js';
 import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit, setCommander, createPursuit } from './battle.js';
 import { getStat } from '../shared/battlecore.js';
 import { checkEvents, ENDINGS } from './events.js';
 
-export function actionCost(game, side, type, charId) {
+export function actionCost(game, side, type, extra) {
   if (side === 'kingdom') {
+    const K = game.resources.kingdom;
     const c = { ...KINGDOM_ACTIONS[type].cost };
-    const tr = game.resources.kingdom.training;
-    if (type === 'conscript') c.gold = Math.round(40 * (1 + 0.25 * tr));
+    const tr = K.training;
+    // 兵が強くなるほど（訓練・装備）、徴兵は高くなる
+    if (type === 'conscript') c.gold = Math.round(40 * (1 + 0.25 * tr + 0.15 * (K.gearWeapon + K.gearArmor)));
+    if (type === 'gearWeapon') return troopGearCost('weapon', K.gearWeapon);
+    if (type === 'gearArmor') return troopGearCost('armor', K.gearArmor);
+    if (type === 'craft') return { ...RECIPES[extra]?.cost };
     if (type === 'train') c.gold = Math.round(200 * (1 + 0.5 * tr));
     return c;
   }
   const c = { ...DEMON_ACTIONS[type].cost };
-  if (type === 'levelup') c.magic = levelUpCost(game.chars[charId]?.level || 1);
+  if (type === 'levelup') c.magic = levelUpCost(game.chars[extra]?.level || 1);
   return c;
 }
 
@@ -46,7 +52,11 @@ export function createGame(name, opts = {}) {
       };
     }),
     generals: {}, chars: {},
-    resources: { kingdom: { gold: 800, food: 1500, training: 0 }, demon: { food: 1200, magic: 60 } },
+    resources: {
+      kingdom: { gold: 800, food: 1500, training: 0, gearWeapon: 0, gearArmor: 0, materials: emptyMaterials() },
+      demon: { food: 1200, magic: 60 },
+    },
+    gear: { sumire: {}, noguchi: {}, nanase: {} },
     orders: {}, ready: {},
     pending: [], battle: null, battleCount: 0, troopCount: 0, genCount: 0,
     flags: { nanaseMotivation: 1, metroStreak: { side: null, days: 0 } },
@@ -58,6 +68,11 @@ export function createGame(name, opts = {}) {
   // お試しモード：全員Lv30から（技をすぐ試せる）
   const startLv = opts.trial ? 30 : 1;
   for (const c of Object.keys(CHARACTERS)) game.chars[c] = { level: startLv, exp: 0 };
+  if (opts.trial) {
+    // お試しモード：装備づくりもすぐ試せるように、素材とお金を多めに
+    for (const k of Object.keys(game.resources.kingdom.materials)) game.resources.kingdom.materials[k] = 20;
+    game.resources.kingdom.gold = 3000;
+  }
   return game;
 }
 
@@ -70,7 +85,7 @@ function addGeneral(game, g) {
   const gen = { id, status: 'active', controller: 'ai', troops: [], ...g };
   if (gen.charId) {
     gen.name = CHARACTERS[gen.charId].name;
-    gen.hp = charStats(gen.charId, game.chars[gen.charId].level).hp;
+    gen.hp = gameStats(game, gen.charId).hp;
   }
   game.generals[id] = gen;
   return gen;
@@ -171,7 +186,8 @@ export function setOrders(game, role, orders) {
       if (!g || g.kind !== 'soldier' || g.controller !== role || g.status !== 'active') continue;
       if (!KINGDOM_ACTIONS[a.type] || KINGDOM_ACTIONS[a.type].queenOnly) continue;
       if (clean.moves[gid] !== undefined) continue;
-      clean.acts[gid] = { type: a.type, tid: g.location };
+      if (a.type === 'craft' && !RECIPES[a.recipe]) continue;
+      clean.acts[gid] = { type: a.type, tid: g.location, ...(a.type === 'craft' ? { recipe: a.recipe } : {}) };
     }
   }
   game.orders[role] = clean;
@@ -188,7 +204,7 @@ export function setReady(game, role, ready) {
 function genStrength(game, g) {
   let s = 0;
   if (g.charId) {
-    const st = charStats(g.charId, game.chars[g.charId].level);
+    const st = gameStats(game, g.charId);
     s += g.hp * Math.max(st.atk, st.mag) / 18;
   }
   for (const t of g.troops) s += t.hp;
@@ -202,20 +218,37 @@ function territoryStrength(game, tid, side) {
   return s;
 }
 
+// お金・食料・魔力は res に、素材は res.materials にある
 function payCost(res, cost) {
-  for (const [k, v] of Object.entries(cost)) if ((res[k] || 0) < v) return false;
-  for (const [k, v] of Object.entries(cost)) res[k] -= v;
+  const pool = (k) => (k in MATERIALS ? res.materials : res);
+  for (const [k, v] of Object.entries(cost)) if ((pool(k)[k] || 0) < v) return false;
+  for (const [k, v] of Object.entries(cost)) pool(k)[k] -= v;
   return true;
 }
+export const canPay = (res, cost) => Object.entries(cost).every(([k, v]) => ((k in MATERIALS ? res.materials : res)[k] || 0) >= v);
 
-function doInternal(game, side, type, tid, by) {
+function doInternal(game, side, type, tid, by, extra) {
   const res = game.resources[side];
   const t = game.territories[tid];
   const T = TERRITORIES[tid];
   const S = SIZES[T.size];
-  const cost = actionCost(game, side, type);
-  if (!payCost(res, cost)) { game.log.push(`${by}：${T.name}で${(side === 'kingdom' ? KINGDOM_ACTIONS : DEMON_ACTIONS)[type].name}…お金や食料が足りない`); return false; }
+  const A = (side === 'kingdom' ? KINGDOM_ACTIONS : DEMON_ACTIONS)[type];
+  const cost = actionCost(game, side, type, extra?.recipe);
+  if ((type === 'gearWeapon' && res.gearWeapon >= GEAR_MAX) || (type === 'gearArmor' && res.gearArmor >= GEAR_MAX)) return false;
+  if (!payCost(res, cost)) { game.log.push(`${by}：${A.workshop ? '' : T.name + 'で'}${A.name}…お金や素材が足りない`); return false; }
   switch (type) {
+    case 'gearWeapon': res.gearWeapon++; game.log.push(`${by}：兵の武器が良くなった（Lv${res.gearWeapon}）`); break;
+    case 'gearArmor': res.gearArmor++; game.log.push(`${by}：兵の防具が良くなった（Lv${res.gearArmor}）`); break;
+    case 'craft': {
+      const r = RECIPES[extra.recipe];
+      game.gear[extra.hero] ||= {};
+      const before = gameStats(game, extra.hero).hp;
+      game.gear[extra.hero][r.slot] = extra.recipe;
+      const g = game.generals[extra.hero];
+      if (g && g.status === 'active') g.hp += Math.max(0, gameStats(game, extra.hero).hp - before);
+      game.log.push(`${by}：${CHARACTERS[extra.hero].name}の「${recipeName(extra.recipe, extra.hero)}」ができた`);
+      break;
+    }
     case 'farm': t.farm = Math.min(S.farm * 2, t.farm + 4); break;
     case 'commerce': t.commerce = Math.min(Math.max(S.commerce, 20) * 2, t.commerce + 4); break;
     case 'people': t.pop = Math.min(Math.round(S.pop * 1.5), t.pop + 200); break;
@@ -249,7 +282,7 @@ function aiOrders(game) {
       continue;
     }
     const full = g.troops.reduce((a, t) => a + t.hp, 0) / (g.troops.length * UNIT_MAX || 1);
-    const st = charStats(g.charId, game.chars[g.charId].level);
+    const st = gameStats(game, g.charId);
     if (full < 0.6 || g.hp < st.hp * 0.6) {
       // 兵が減ったら、兵の多い自分の陣地へ戻って補充する
       const step = stepToward(game, g, n => game.territories[n].garrison >= 300);
@@ -292,7 +325,26 @@ function stepToward(game, g, ok) {
   return null;
 }
 
+// のぞちちの工房：お金に余裕があれば、兵の装備と、AIが動かす勇者の装備を作る
+function queenWorkshop(game) {
+  const res = game.resources.kingdom;
+  if (res.gold < 200) return;
+  for (const hero of HERO_ROLES) {
+    if (game.generals[hero]?.controller !== 'ai') continue;
+    const gear = game.gear[hero] || {};
+    for (const slot of ['weapon', 'armor']) {
+      const cur = gear[slot] ? RECIPES[gear[slot]].tier : 0;
+      const next = Object.entries(RECIPES).filter(([, r]) => r.slot === slot && r.tier > cur && canPay(res, r.cost)).sort((a, c) => c[1].tier - a[1].tier)[0];
+      if (next && res.gold - next[1].cost.gold >= 100) { doInternal(game, 'kingdom', 'craft', 0, 'のぞちち', { recipe: next[0], hero }); return; }
+    }
+  }
+  const kind = res.gearWeapon <= res.gearArmor ? 'gearWeapon' : 'gearArmor';
+  const cost = actionCost(game, 'kingdom', kind);
+  if (res[kind] < GEAR_MAX && canPay(res, cost) && res.gold - cost.gold >= 100) doInternal(game, 'kingdom', kind, 0, 'のぞちち');
+}
+
 function queenInternal(game) {
+  queenWorkshop(game);
   const n = queenActionCount(game);
   const res = game.resources.kingdom;
   const mine = game.territories.filter(t => t.owner === 'kingdom');
@@ -336,7 +388,7 @@ function resolveDay(game) {
   }
   for (const a of kActs) {
     const g = game.generals[a.gid];
-    if (g && g.status === 'active' && game.territories[g.location].owner === 'kingdom') doInternal(game, 'kingdom', a.type, g.location, g.name);
+    if (g && g.status === 'active' && game.territories[g.location].owner === 'kingdom') doInternal(game, 'kingdom', a.type, g.location, g.name, { recipe: a.recipe, hero: g.owner });
   }
   queenInternal(game);
 
@@ -346,8 +398,8 @@ function resolveDay(game) {
     for (const [gb, tb] of entries) {
       const A = game.generals[ga], B = game.generals[gb];
       if (A.side !== B.side && ta === B.location && tb === A.location && moves[ga] !== undefined && moves[gb] !== undefined) {
-        const sa = A.charId ? charStats(A.charId, game.chars[A.charId].level).spd : 6;
-        const sb = B.charId ? charStats(B.charId, game.chars[B.charId].level).spd : 6;
+        const sa = A.charId ? gameStats(game, A.charId).spd : 6;
+        const sb = B.charId ? gameStats(game, B.charId).spd : 6;
         delete moves[sa >= sb ? gb : ga];
       }
     }
@@ -456,7 +508,7 @@ function queenSupportFor(game, b) {
     b.log.push('補給線が届かず、のぞちちの援護は来ない');
     return null;
   }
-  const st = charStats('nozomi', game.chars.nozomi.level);
+  const st = gameStats(game, 'nozomi');
   b.log.push('のぞちちの援護が届く（1ターン目から2ターンごと・最大3回）');
   return {
     left: 3, next: 1, budget: Math.min(game.resources.kingdom.gold, 300), spent: 0, history: [],
@@ -639,9 +691,9 @@ export function battleAction(game, role, action) {
 
 function levelUp(game, charId) {
   const c = game.chars[charId];
-  const before = charStats(charId, c.level);
+  const before = gameStats(game, charId);
   c.level++;
-  const after = charStats(charId, c.level);
+  const after = gameStats(game, charId);
   const g = game.generals[charId];
   if (g && g.status === 'active') g.hp = Math.min(after.hp, g.hp + (after.hp - before.hp));
   game.log.push(`${CHARACTERS[charId].name} が Lv${c.level} になった`);
@@ -691,6 +743,19 @@ function concludeBattle(game) {
     }
   }
   b.participants = [...participants];
+  // 魔族を倒すと素材が手に入る（王国が戦った合戦だけ）
+  if (b.attackerSide === 'kingdom' || b.defenderSide === 'kingdom') {
+    const M = game.resources.kingdom.materials;
+    const got = { monster: 0, officer: 0 };
+    for (const u of b.units) {
+      if (u.side !== 'demon') continue;
+      if (!u.alive && u.kind === 'troop') got.monster++;
+      if (!u.alive && ['car', 'oh', 'kkb'].includes(u.charId)) got.officer++;
+      if (u.charId === 'yagyu' && (u.revived || !u.alive)) got.officer += 2;
+    }
+    M.monster += got.monster; M.officer += got.officer;
+    if (got.monster || got.officer) game.log.push(`素材を手に入れた：魔物の素材${got.monster}${got.officer ? `・幹部の素材${got.officer}` : ''}`);
+  }
   // のぞちちの援護にかかったお金と、王都の兵
   if (b.support) {
     game.resources.kingdom.gold = Math.max(0, game.resources.kingdom.gold - b.support.spent);
@@ -825,6 +890,17 @@ function endOfDay(game) {
     }
   }
   R.kingdom.gold += Math.round(income.kingdom.gold);
+  // 特産地から素材が取れる（王国の陣地だけ。戦で荒れていると半分）
+  for (const t of game.territories) {
+    const sp = TERRITORIES[t.id].specialty;
+    if (!sp || t.owner !== 'kingdom') continue;
+    const mat = SPECIALTIES[sp].material;
+    const n = (MATERIALS[mat].rare ? 1 : 2) * (t.damaged ? 0.5 : 1);
+    t.matPart = (t.matPart || 0) + n;
+    const whole = Math.floor(t.matPart);
+    t.matPart -= whole;
+    R.kingdom.materials[mat] += whole;
+  }
   R.kingdom.food += Math.round(income.kingdom.food);
   R.demon.food += Math.round(income.demon.food);
   R.demon.magic += Math.round(income.demon.magic);
@@ -855,7 +931,7 @@ function endOfDay(game) {
       continue;
     }
     if (g.charId) {
-      const st = charStats(g.charId, game.chars[g.charId].level);
+      const st = gameStats(game, g.charId);
       g.hp = Math.min(st.hp, g.hp + Math.round(st.hp * (g.charId === 'yagyu' ? 0.3 : 0.25)));
     }
     for (const x of g.troops) {
@@ -876,7 +952,7 @@ function endOfDay(game) {
       continue;
     }
     g.status = 'active'; g.location = home; g.blockedMsg = false;
-    g.hp = charStats(g.charId, game.chars[g.charId].level).hp;
+    g.hp = gameStats(game, g.charId).hp;
     for (const x of g.troops) x.hp = Math.max(x.hp, 100);
     game.log.push(`${g.name} が${TERRITORIES[home].name}で復活した`);
   }
@@ -965,4 +1041,14 @@ export function autoBattleStep(game) {
   else if (b.stage === 'rearguard') battleAction(game, b.pendingRoles[0], { type: 'rearguard', unitIds: [] });
   else if (b.stage === 'pursue') battleAction(game, b.pendingRoles[0], { type: 'pursue', yes: true });
   else if (b.stage === 'done') battleAction(game, null, { type: 'conclude' });
+}
+
+// 古いセーブデータに、あとから増えた項目を足す
+export function migrate(game) {
+  const K = game.resources.kingdom;
+  K.materials ||= emptyMaterials();
+  K.gearWeapon ??= 0;
+  K.gearArmor ??= 0;
+  game.gear ||= { sumire: {}, noguchi: {}, nanase: {} };
+  return game;
 }

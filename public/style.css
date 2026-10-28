@@ -98,6 +98,11 @@ input, select { font: inherit; padding: 5px 8px; border: 1px solid #c9bfa9; bord
 .order li { font-size: 12px; }
 .turnList { display: flex; flex-wrap: wrap; gap: 3px; }
 .turnList span { padding: 1px 6px; border-radius: 4px; color: #fff; font-size: 12px; }
+.mats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; margin: 6px 0; }
+.mats .rare { color: #8a3fa8; font-weight: bold; }
+.craft { font-size: 12px; justify-content: space-between; padding: 3px 0; border-top: 1px dotted #e6dfcf; }
+.craft .muted { font-size: 11px; }
+h4 { margin: 10px 0 4px; font-size: 13px; }
 .queen { font-size: 13px; color: #7a5a10; }
 .result { padding: 10px; border-radius: 8px; background: #fff1d3; font-weight: bold; margin-bottom: 8px; }
 

@@ -1,6 +1,6 @@
 // 合戦（戦場画面のターン制バトル）
 import {
-  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, charStats,
+  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, gameStats,
 } from '../shared/data.js';
 import {
   reachable, targetsFrom, damage, getStat, getRange, reachTiles, isTargetable, unitAt, cheb, inBounds, moveCost, WALL_HP,
@@ -88,10 +88,16 @@ function commanderRank(gen) {
 function troopUnit(game, gen, troop, side) {
   const t = UNIT_TYPES[troop.type];
   let q = QUALITY[troop.q] || 1;
-  if (side === 'kingdom') q *= 1 + 0.04 * game.resources.kingdom.training;
+  let wq = 1, aq = 1;
+  if (side === 'kingdom') {
+    const K = game.resources.kingdom;
+    q *= 1 + 0.04 * K.training;
+    wq = 1 + 0.05 * (K.gearWeapon || 0); // 兵の武器
+    aq = 1 + 0.05 * (K.gearArmor || 0);  // 兵の防具
+  }
   return {
     kind: 'troop', type: troop.type, name: `${gen.name}隊・${t.name}`, label: t.label,
-    atk: Math.round(t.atk * q), def: Math.round(t.def * q * (1 + (troop.defBonus || 0))), mag: Math.round(t.mag * q), mdef: Math.round(t.mdef * q),
+    atk: Math.round(t.atk * q * wq), def: Math.round(t.def * q * aq * (1 + (troop.defBonus || 0))), mag: Math.round(t.mag * q), mdef: Math.round(t.mdef * q),
     spd: t.spd, move: t.move, range: t.range, dmg: t.dmg, tri: t.tri, flyer: !!t.flyer, climber: !!t.climber,
     hp: troop.hp, max: troop.max, troopRef: troop.uid,
   };
@@ -100,7 +106,7 @@ function troopUnit(game, gen, troop, side) {
 export function leaderUnit(game, gen) {
   const c = CHARACTERS[gen.charId];
   const level = game.chars[gen.charId]?.level || 1;
-  const st = charStats(gen.charId, level);
+  const st = gameStats(game, gen.charId);
   let mot = 1;
   if (gen.charId === 'nanase') mot = game.flags.nanaseMotivation || 1;
   return {

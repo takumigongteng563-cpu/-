@@ -1,7 +1,8 @@
 // ブラウザ側：ロビー・地図・合戦・イベントの画面
 import {
   TERRITORIES, EDGES, SIZES, SPECIALTIES, CHARACTERS, UNIT_TYPES, ROLES, HERO_ROLES, REQUIRED_ROLES,
-  BATTLE_W, BATTLE_H, TERRAIN, MAJORITY, MAX_ROUNDS, KINGDOM_ACTIONS, DEMON_ACTIONS, neighbors, charStats, levelUpCost, expToNext,
+  BATTLE_W, BATTLE_H, TERRAIN, MAJORITY, MAX_ROUNDS, KINGDOM_ACTIONS, DEMON_ACTIONS, neighbors, gameStats, levelUpCost, expToNext,
+  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName,
 } from '/shared/data.js';
 import { reachable, targetsFrom, damage, getStat, getMove, isTargetable, inDarkness } from '/shared/battlecore.js';
 import { SKILLS, skillOf, skillList, skillTargets, areaTiles } from '/shared/skills.js';
@@ -292,7 +293,7 @@ function terrInfo(g, tid) {
 }
 
 function genHp(g, gen) {
-  const lead = gen.charId ? `${gen.hp}/${charStats(gen.charId, g.chars[gen.charId].level).hp}` : '';
+  const lead = gen.charId ? `${gen.hp}/${gameStats(g, gen.charId).hp}` : '';
   const troops = gen.troops.map(t => `${UNIT_TYPES[t.type].label}${t.hp}`).join(' ');
   return [lead && (gen.charId === 'yagyu' ? 'HP' : '本隊') + lead, troops].filter(Boolean).join('　');
 }
@@ -302,7 +303,7 @@ function orderText(g, gen) {
   const m = S.draft.moves[gen.id];
   if (m !== undefined) return '→' + TERRITORIES[m].name;
   const a = S.draft.acts[gen.id];
-  if (a) return KINGDOM_ACTIONS[a.type].name;
+  if (a) return a.type === 'craft' ? `${recipeName(a.recipe, gen.owner)}づくり` : KINGDOM_ACTIONS[a.type].name;
   return '';
 }
 
@@ -319,7 +320,7 @@ function selGenSection(g) {
   if (!gen || gen.status !== 'active') return '';
   let h = `<div class="sec"><h3>${esc(gen.name)}${gen.charId ? ` <span class="muted">${CHARACTERS[gen.charId].title}</span>` : ''}</h3>`;
   if (gen.charId) {
-    const st = charStats(gen.charId, g.chars[gen.charId].level);
+    const st = gameStats(g, gen.charId);
     h += `<div class="stats">
       <span class="l">Lv</span><span>${g.chars[gen.charId].level}</span><span class="l">${gen.charId === 'yagyu' ? 'HP' : '本隊'}</span><span>${gen.hp}/${st.hp}</span>
       <span class="l">攻撃</span><span>${st.atk}</span><span class="l">防御</span><span>${st.def}</span>
@@ -327,6 +328,7 @@ function selGenSection(g) {
       <span class="l">速さ</span><span>${st.spd}</span><span class="l">移動</span><span>${st.move}</span>
       <span class="l">統率</span><span>${st.lead}</span><span class="l">政治</span><span>${st.pol}</span></div>`;
   }
+  if (gen.charId && g.gear?.[gen.charId]) h += gearLine(g, gen.charId);
   if (gen.charId) {
     const c = g.chars[gen.charId];
     if (HERO_ROLES.includes(gen.charId) || gen.charId === 'horie') h += `<div class="hint">経験 ${c.exp}/${expToNext(c.level)}</div>`;
@@ -342,7 +344,7 @@ function selGenSection(g) {
     if (gen.kind === 'soldier' && g.territories[gen.location].owner === 'kingdom') {
       const cur = S.draft.acts[gen.id]?.type;
       h += `<div class="hint">この兵に、いる陣地で内政をさせる（その日は動かない）：</div><div class="acts">` +
-        Object.entries(KINGDOM_ACTIONS).filter(([, a]) => !a.queenOnly).map(([k, a]) =>
+        Object.entries(KINGDOM_ACTIONS).filter(([, a]) => !a.queenOnly && !a.workshop).map(([k, a]) =>
           `<button class="small ${cur === k ? 'primary' : ''}" data-kact="${k}" title="${esc(a.desc)}">${a.name}</button>`).join('') + `</div>`;
     }
   } else if (!canOrder(gen) && gen.side !== mySide()) {
@@ -392,6 +394,52 @@ function fillDemonTarget(g) {
   };
 }
 
+// ---------- 工房（王国：素材と装備づくり） ----------
+const COST_NAME = { gold: 'お金', food: '食料', ...Object.fromEntries(Object.entries(MATERIALS).map(([k, v]) => [k, v.name])) };
+const costText = (c) => Object.entries(c).map(([k, v]) => `${COST_NAME[k]}${v}`).join('・');
+const canPayClient = (K, c) => Object.entries(c).every(([k, v]) => ((k in MATERIALS ? K.materials : K)[k] || 0) >= v);
+
+// 手のあいている自分の兵の武将（その日の命令がまだないもの）
+function freeSoldier(g) {
+  return activeGens(g).find(x => canOrder(x) && x.kind === 'soldier' && S.draft.moves[x.id] === undefined && !S.draft.acts[x.id]);
+}
+
+function gearLine(g, hero) {
+  const gear = g.gear?.[hero] || {};
+  const w = gear.weapon ? `${recipeName(gear.weapon, hero)}（${CHARACTERS[hero].dmg === 'mag' ? '魔力' : '攻撃'}+${RECIPES[gear.weapon].power}）` : 'なし';
+  const a = gear.armor ? `${RECIPES[gear.armor].name}（防御+${RECIPES[gear.armor].bonus.def}・魔防+${RECIPES[gear.armor].bonus.mdef}・HP+${RECIPES[gear.armor].bonus.hp}）` : 'なし';
+  return `<div class="hint">武器：${esc(w)}<br>防具：${esc(a)}</div>`;
+}
+
+function workshopSection(g) {
+  if (!S.me || mySide() !== 'kingdom' || g.phase !== 'day' || !S.draft) return '';
+  const K = g.resources.kingdom;
+  const hero = S.me.role;
+  const free = freeSoldier(g);
+  const btn = (type, extra, cost, disabled) => `<button class="small" data-craft="${type}" ${extra ? `data-recipe="${extra}"` : ''} ${!free || disabled || !canPayClient(K, cost) ? 'disabled' : ''}>作る</button>`;
+  let h = `<div class="sec"><details ${S.openWorkshop ? 'open' : ''} id="workshopBox"><summary><b>工房（素材と装備）</b></summary>`;
+  h += `<div class="mats">${Object.entries(MATERIALS).map(([k, m]) => `<span class="${m.rare ? 'rare' : ''}">${m.name} ${K.materials[k]}</span>`).join('')}</div>`;
+  h += `<div class="hint">素材は特産のある陣地（鉱山・森・牧場・遺跡など）から毎日取れます。魔物の素材・幹部の素材は、合戦で魔族を倒すと手に入ります。</div>`;
+  const orders = Object.entries(S.draft.acts).filter(([, a]) => KINGDOM_ACTIONS[a.type]?.workshop);
+  if (orders.length) h += `<div class="aim">今日の注文：${orders.map(([gid, a]) => `<div class="row"><span>${a.type === 'craft' ? esc(recipeName(a.recipe, hero)) : KINGDOM_ACTIONS[a.type].name}（${esc(g.generals[gid]?.name || '')}）</span><span style="flex:1"></span><button class="small" data-rmact="${gid}">やめる</button></div>`).join('')}</div>`;
+  h += free ? `<div class="hint">作るのは「${esc(free.name)}」に頼みます（その日は動きません）。</div>` : `<div class="hint" style="color:#c43f3f">手のあいている兵の武将がいません（兵の武将に、移動も内政もさせていないときに頼めます）。</div>`;
+  h += `<h4>兵の装備（王国の兵全体）</h4>`;
+  for (const [kind, label, cur] of [['gearWeapon', '武器', K.gearWeapon], ['gearArmor', '防具', K.gearArmor]]) {
+    const cost = troopGearCost(kind === 'gearWeapon' ? 'weapon' : 'armor', cur);
+    h += `<div class="row craft"><span>${label} Lv${cur}${cur < GEAR_MAX ? `→${cur + 1}` : '（最大）'}</span><span class="muted">${cur < GEAR_MAX ? costText(cost) : ''}</span>${btn(kind, null, cost, cur >= GEAR_MAX)}</div>`;
+  }
+  h += `<div class="hint">兵が強くなるほど、徴兵のお金も高くなります。</div>`;
+  h += `<h4>${CHARACTERS[hero].name}の装備</h4>${gearLine(g, hero)}`;
+  const gear = g.gear?.[hero] || {};
+  for (const [id, r] of Object.entries(RECIPES)) {
+    const cur = gear[r.slot] ? RECIPES[gear[r.slot]].tier : 0;
+    if (r.tier <= cur) continue;
+    const eff = r.slot === 'weapon' ? `${CHARACTERS[hero].dmg === 'mag' ? '魔力' : '攻撃'}+${r.power}` : `防御+${r.bonus.def}・魔防+${r.bonus.mdef}・HP+${r.bonus.hp}`;
+    h += `<div class="row craft"><span>${esc(recipeName(id, hero))}<span class="muted">（${eff}）</span></span><span class="muted">${costText(r.cost)}</span>${btn('craft', id, r.cost)}</div>`;
+  }
+  return h + `</details></div>`;
+}
+
 function renderPanel(g) {
   let h = '';
   if (g.phase === 'lobby') {
@@ -413,6 +461,7 @@ function renderPanel(g) {
     h += selGenSection(g);
     if (S.selTerr != null) h += terrInfo(g, S.selTerr);
     h += demonSection(g);
+    h += workshopSection(g);
     const mineGens = activeGens(g).filter(canOrder);
     if (mineGens.length) h += `<div class="sec"><h3>自分の武将</h3>${mineGens.map(x => genRow(g, x)).join('')}</div>`;
     const down = Object.values(g.generals).filter(x => x.status === 'down');
@@ -426,6 +475,10 @@ function renderPanel(g) {
   panel.scrollTop = scroll;
   if (S.me?.role === 'yagyu' && g.phase === 'day') fillDemonTarget(g);
 }
+
+$('#panel').addEventListener('toggle', (e) => {
+  if (e.target.id === 'workshopBox') S.openWorkshop = e.target.open;
+}, true);
 
 $('#panel').addEventListener('click', async (e) => {
   const g = S.game;
@@ -442,6 +495,12 @@ $('#panel').addEventListener('click', async (e) => {
     const gid = S.selGen;
     if (S.draft.acts[gid]?.type === b.dataset.kact) delete S.draft.acts[gid];
     else { S.draft.acts[gid] = { type: b.dataset.kact }; delete S.draft.moves[gid]; }
+    sendDraft(); render(); return;
+  }
+  if (b.dataset.craft) {
+    const free = freeSoldier(g);
+    if (!free) return;
+    S.draft.acts[free.id] = b.dataset.craft === 'craft' ? { type: 'craft', recipe: b.dataset.recipe } : { type: b.dataset.craft };
     sendDraft(); render(); return;
   }
   if (b.dataset.rmact) { delete S.draft.acts[b.dataset.rmact]; sendDraft(); render(); return; }

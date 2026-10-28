@@ -18,7 +18,7 @@ const streams = new Map(); // gameId -> Set(res)
 for (const f of fs.readdirSync(DATA)) {
   if (!f.endsWith('.json')) continue;
   try {
-    const g = JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
+    const g = G.migrate(JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8')));
     games.set(g.id, g);
   } catch (e) { console.error('読み込み失敗', f, e.message); }
 }

@@ -148,6 +148,43 @@ export const REQUIRED_ROLES = ['yagyu', 'sumire'];
 export const levelUpCost = (lv) => 15 + 5 * lv;
 export const expToNext = (lv) => 40 + lv * 20;
 
+// ---- 素材と装備（王国だけ。魔族は装備を作らない） ----
+export const MATERIALS = {
+  iron:          { name: '鉄',         rare: false },
+  mithril:       { name: 'ミスリル',   rare: true },
+  wood:          { name: '木材',       rare: false },
+  ancientBranch: { name: '古代樹の枝', rare: true },
+  leather:       { name: '革',         rare: false },
+  dragonLeather: { name: '竜の革',     rare: true },
+  magicStone:    { name: '魔石',       rare: false },
+  starStone:     { name: '星の魔石',   rare: true },
+  monster:       { name: '魔物の素材', rare: false },
+  officer:       { name: '幹部の素材', rare: true },
+};
+export const emptyMaterials = () => Object.fromEntries(Object.keys(MATERIALS).map(k => [k, 0]));
+
+// 勇者の装備。武器はスミレなら攻撃、野口・七星なら魔力が上がる
+export const RECIPES = {
+  w1: { slot: 'weapon', tier: 1, names: { sumire: '鉄の剣', noguchi: '樫の杖', nanase: '星見の杖' },       power: 4,  cost: { gold: 60, iron: 4, wood: 2 } },
+  w2: { slot: 'weapon', tier: 2, names: { sumire: '魔狩りの剣', noguchi: '魔石の杖', nanase: '流星の杖' },  power: 8,  cost: { gold: 120, iron: 6, wood: 3, monster: 4, magicStone: 2 } },
+  w3: { slot: 'weapon', tier: 3, names: { sumire: 'ミスリルの剣', noguchi: '賢者の杖', nanase: '銀河の杖' }, power: 14, cost: { gold: 200, mithril: 4, magicStone: 3, monster: 6 } },
+  w4: { slot: 'weapon', tier: 4, names: { sumire: '勇者の大剣', noguchi: '古代樹の大杖', nanase: '七つ星の杖' }, power: 22, cost: { gold: 320, mithril: 6, ancientBranch: 3, starStone: 3, officer: 2 } },
+  a1: { slot: 'armor', tier: 1, name: '革の鎧',   bonus: { def: 3, mdef: 2, hp: 20 },    cost: { gold: 50, leather: 4 } },
+  a2: { slot: 'armor', tier: 2, name: '鉄の鎧',   bonus: { def: 6, mdef: 3, hp: 40 },    cost: { gold: 100, iron: 5, leather: 3 } },
+  a3: { slot: 'armor', tier: 3, name: '魔石の衣', bonus: { def: 6, mdef: 9, hp: 60 },    cost: { gold: 180, magicStone: 4, leather: 4, monster: 3 } },
+  a4: { slot: 'armor', tier: 4, name: '竜の鎧',   bonus: { def: 12, mdef: 10, hp: 110 }, cost: { gold: 300, dragonLeather: 4, mithril: 3, officer: 2 } },
+};
+export const recipeName = (id, charId) => RECIPES[id].name || RECIPES[id].names[charId];
+
+// 兵の装備（王国の兵全体）。レベルが上がるほど高くなる
+export const GEAR_MAX = 10;
+export function troopGearCost(kind, n) {
+  const c = { gold: 100 + 30 * n };
+  if (kind === 'weapon') { c.iron = 3 + n; c.wood = 2 + Math.floor(n / 2); if (n >= 5) c.mithril = n - 4; }
+  else { c.leather = 3 + n; c.iron = 2 + Math.floor(n / 2); if (n >= 5) c.dragonLeather = n - 4; }
+  return c;
+}
+
 export function charStats(charId, level) {
   const c = CHARACTERS[charId];
   const s = {};
@@ -181,6 +218,9 @@ export const KINGDOM_ACTIONS = {
   fortify:   { name: '築城',       cost: { gold: 120 },            desc: '守り+10' },
   alms:      { name: '施し',       cost: { food: 60 },             desc: '民の忠誠+12' },
   train:     { name: '訓練',       cost: { gold: 200 },            desc: '王国の兵全体が強くなる（女王のみ）', queenOnly: true },
+  gearWeapon: { name: '兵の武器づくり', cost: {}, desc: '王国の兵全体の攻撃+5%', workshop: true },
+  gearArmor:  { name: '兵の防具づくり', cost: {}, desc: '王国の兵全体の防御+5%', workshop: true },
+  craft:      { name: '勇者の装備づくり', cost: {}, desc: '勇者の武器・防具を作る', workshop: true },
 };
 export const DEMON_ACTIONS = {
   farm:    { name: '開墾',         cost: { magic: 10 },  desc: '畑+4' },
@@ -190,3 +230,15 @@ export const DEMON_ACTIONS = {
   levelup: { name: 'レベル上げ',   cost: { magic: 0 },   desc: '魔力でキャラのレベルを上げる', global: true },
 };
 
+
+// レベルと装備を合わせた、今のステータス
+export function gameStats(game, charId) {
+  const st = charStats(charId, game.chars[charId]?.level || 1);
+  const gear = game.gear?.[charId];
+  if (gear?.weapon) {
+    const r = RECIPES[gear.weapon];
+    if (CHARACTERS[charId].dmg === 'mag') st.mag += r.power; else st.atk += r.power;
+  }
+  if (gear?.armor) for (const [k, v] of Object.entries(RECIPES[gear.armor].bonus)) st[k] += v;
+  return st;
+}
