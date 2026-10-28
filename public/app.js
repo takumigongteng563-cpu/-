@@ -60,7 +60,27 @@ async function showLobby() {
   await refreshList();
 }
 
+// インターネットで遊んでいるとき：友だちに送るURLを出す
+async function refreshOnline() {
+  const box = $('#onlineBox');
+  try {
+    const info = await api('/api/info');
+    if (!info.online) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    if (info.url) {
+      box.innerHTML = `<h2>インターネットで遊べます</h2><div class="hint">このURLを友だちに送ってください（このパソコンでゲームを動かしているあいだだけ使えます）</div>
+        <div class="row" style="margin-top:6px"><input id="onlineUrl" value="${esc(info.url)}" readonly style="flex:1;min-width:0"><button id="copyUrl" class="primary">コピー</button></div>
+        <div class="hint">URLは起動するたびに変わります。友だちが自分の役に戻るときは、役のボタン（🔑）を押して「あいことば」を入れます。</div>`;
+      $('#copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(info.url); toast('コピーしました'); } catch { $('#onlineUrl').select(); } };
+    } else {
+      box.innerHTML = `<h2>インターネットにつないでいます…</h2><div class="hint">${esc(info.message || '少し待ってください')}</div>`;
+      setTimeout(refreshOnline, 2000);
+    }
+  } catch { box.classList.add('hidden'); }
+}
+
 async function refreshList() {
+  refreshOnline();
   const list = await api('/api/games');
   const box = $('#gameList');
   if (!list.length) { box.innerHTML = '<p class="muted">まだゲームがありません。</p>'; return; }
@@ -69,9 +89,9 @@ async function refreshList() {
     const phase = (g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : `${g.day}日目`) + (g.trial ? '・お試し（Lv30）' : '') + (g.solo ? '・ひとり用' : '');
     const roles = ROLES.map(r => {
       const taken = g.players[r];
-      const canJoin = !taken && g.phase !== 'ended';
-      return `<button class="roleBtn ${taken ? 'taken' : ''}" data-join="${g.id}" data-role="${r}" ${canJoin ? '' : 'disabled'}>
-        ${CHARACTERS[r].title}${CHARACTERS[r].name}：${taken ? esc(taken) : g.phase === 'lobby' ? '空き' : '空き（今はAI）'}</button>`;
+      if (taken) return `<button class="roleBtn taken" data-rejoin="${g.id}" data-role="${r}" title="あいことばで、この役に戻る">${CHARACTERS[r].title}${CHARACTERS[r].name}：${esc(taken)} 🔑</button>`;
+      return `<button class="roleBtn" data-join="${g.id}" data-role="${r}" ${g.phase !== 'ended' ? '' : 'disabled'}>
+        ${CHARACTERS[r].title}${CHARACTERS[r].name}：${g.phase === 'lobby' ? '空き' : '空き（今はAI）'}</button>`;
     }).join('');
     return `<div class="gameItem">
       <div class="row"><span class="title">${esc(g.name)}</span><span class="muted">${phase}</span>
@@ -118,6 +138,14 @@ $('#gameList').onclick = async (e) => {
       store.set('yagyu:seat:' + b.dataset.join, { role: r.role, token: r.token });
       openGame(b.dataset.join);
     } catch (err) { toast(err.message); refreshList(); }
+  } else if (b.dataset.rejoin) {
+    const code = prompt(`${CHARACTERS[b.dataset.role].name}のあいことば（4けたの数字）を入れてください`);
+    if (!code) return;
+    try {
+      const r = await api(`/api/games/${b.dataset.rejoin}/rejoin`, { role: b.dataset.role, code });
+      store.set('yagyu:seat:' + b.dataset.rejoin, { role: r.role, token: r.token });
+      openGame(b.dataset.rejoin);
+    } catch (err) { toast(err.message); }
   } else if (b.dataset.open) openGame(b.dataset.open);
   else if (b.dataset.watch) openGame(b.dataset.watch, true);
 };
@@ -518,6 +546,9 @@ function renderPanel(g) {
       <button class="primary big" id="btnStart" ${ok && S.me ? '' : 'disabled'}>ゲームを始める</button></div>`;
   } else if (g.phase === 'ended') {
     h += `<div class="sec"><h3>決着！ ${SIDE_NAME[g.winner]}の勝利</h3><button id="btnEnding" class="primary">エンディングを見る</button></div>`;
+  }
+  if (S.me && g.players[S.me.role]?.code && g.phase !== 'ended') {
+    h += `<div class="hint code">あなたのあいことば：<b>${esc(g.players[S.me.role].code)}</b>（ほかのパソコンやURLが変わったときに、自分の役へ戻るのに使います）</div>`;
   }
   if (g.phase === 'day' && S.me) {
     const readyNow = g.ready[S.me.role];

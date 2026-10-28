@@ -12,7 +12,7 @@ if errorlevel 1 (
   exit /b
 )
 echo.
-echo 魔王ヤギュー討伐戦 を起動しています...
+echo 山羊の野望 を起動しています...
 echo ブラウザが開かなかったら http://localhost:3000 を開いてください。
 echo やめるときは、この黒い画面を閉じてください。
 echo.

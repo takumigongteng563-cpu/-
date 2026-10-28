@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as G from './server/game.js';
+import { startTunnel, status as online } from './server/online.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(ROOT, 'data');
@@ -84,6 +85,10 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
   try {
+    if (p === '/api/info') {
+      // インターネットで遊んでいるときは、友だちに送るURLを返す
+      return sendJson(res, 200, { online: online.state !== 'off', url: online.url, state: online.state, message: online.message });
+    }
     if (p === '/api/games' && req.method === 'GET') {
       return sendJson(res, 200, [...games.values()].sort((a, b) => b.createdAt - a.createdAt).map(g => ({
         id: g.id, name: g.name, phase: g.phase, day: g.day, trial: !!g.trial, solo: !!g.solo,
@@ -97,7 +102,7 @@ const server = http.createServer(async (req, res) => {
       save(g);
       return sendJson(res, 200, { id: g.id });
     }
-    const m = p.match(/^\/api\/games\/([0-9a-f]+)\/(stream|join|action)$/);
+    const m = p.match(/^\/api\/games\/([0-9a-f]+)\/(stream|join|rejoin|action)$/);
     if (m) {
       const game = games.get(m[1]);
       if (!game) return sendJson(res, 404, { error: 'ゲームが見つかりません' });
@@ -112,6 +117,9 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const b = await body(req);
+      if (m[2] === 'rejoin') {
+        return sendJson(res, 200, { token: G.rejoin(game, b.role, b.code), role: b.role });
+      }
       if (m[2] === 'join') {
         const token = G.join(game, b.role, b.name);
         changed(game);
@@ -143,4 +151,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`魔王ヤギュー討伐戦: http://localhost:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`山羊の野望: http://localhost:${PORT}`);
+  if (process.env.ONLINE === '1') startTunnel(ROOT, PORT);
+});

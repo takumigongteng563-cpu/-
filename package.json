@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "魔王ヤギュー討伐戦（仮）— ブラウザで遊ぶオンライン国取りゲーム",
+  "description": "山羊の野望 — ブラウザで遊ぶ国取りゲーム",
   "scripts": {
     "start": "node server.js",
+    "online": "ONLINE=1 node server.js",
     "test": "node test/sim.js"
   }
 }

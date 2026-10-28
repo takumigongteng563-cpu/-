@@ -135,12 +135,31 @@ export function join(game, role, name) {
   if (game.players[role]) throw new Error('その役はもう選ばれています');
   if (game.phase === 'ended') throw new Error('もう決着しています');
   const token = crypto.randomBytes(12).toString('hex');
-  game.players[role] = { name: (name || '').slice(0, 20) || CHARACTERS[role].name, token };
+  // あいことば：別のパソコンや、URLが変わったあとでも、自分の役に戻るための4けたの数字
+  const code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+  game.players[role] = { name: (name || '').slice(0, 20) || CHARACTERS[role].name, token, code };
   if (game.phase !== 'lobby') {
     refreshControllers(game);
     game.log.push(`${game.players[role].name} が ${CHARACTERS[role].name} として参加`);
   }
   return token;
+}
+
+// あいことばで自分の役に戻る（まちがいが続いたら少し待たせる）
+const wrong = new Map();
+export function rejoin(game, role, code) {
+  const key = game.id + ':' + role;
+  const w = wrong.get(key) || { n: 0, until: 0 };
+  if (Date.now() < w.until) throw new Error('まちがいが多いので、1分ほど待ってからもう一度ためしてください');
+  const p = game.players[role];
+  if (!p || String(code).trim() !== p.code) {
+    w.n++;
+    if (w.n >= 5) { w.n = 0; w.until = Date.now() + 60000; }
+    wrong.set(key, w);
+    throw new Error('あいことばがちがいます');
+  }
+  wrong.delete(key);
+  return p.token;
 }
 
 export function roleOf(game, token) {
@@ -1089,7 +1108,7 @@ function checkWin(game) {
 // 命令は同じ陣営の人にだけ見せる（王国の三人はおたがいの命令が見える）
 export function publicView(game, viewer) {
   const players = {};
-  for (const r of ROLES) players[r] = game.players[r] ? { name: game.players[r].name } : null;
+  for (const r of ROLES) players[r] = game.players[r] ? { name: game.players[r].name, ...(r === viewer ? { code: game.players[r].code } : {}) } : null;
   const sideOf = r => (r === 'yagyu' ? 'demon' : 'kingdom');
   const orders = {};
   if (viewer) for (const [r, o] of Object.entries(game.orders)) if (sideOf(r) === sideOf(viewer)) orders[r] = o;
@@ -1124,6 +1143,7 @@ export function migrate(game) {
   K.gearWeapon ??= 0;
   K.gearArmor ??= 0;
   game.gear ||= { sumire: {}, noguchi: {}, nanase: {} };
+  for (const r of ROLES) if (game.players[r] && !game.players[r].code) game.players[r].code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
   game.incidents ||= [];
   game.closed ||= {};
   game.injuries ||= {};
