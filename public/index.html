@@ -36,6 +36,16 @@
       <p class="hint">王国：ヤギューを倒して、陣地の大半（18）を取れば勝ち。野口・七星・のぞちちはAIが手伝ってくれる。<br>
       魔族：勇者3人を倒して陣地の大半を取るか、王都の女王のぞちちを倒せば勝ち。</p>
       <button class="ghost" id="btnHowto">遊び方を見る</button>
+      <div class="royaleSolo">
+        <h3>AIとバトルロワイヤル</h3>
+        <div class="row">
+          <label>キャラ <select id="soloRoyaleChar"></select></label>
+          <label>AIの人数 <select id="soloRoyaleBots"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
+          <label>レベル <select id="soloRoyaleLevel"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option></select></label>
+          <button class="primary" id="soloRoyaleGo">はじめる</button>
+        </div>
+        <p class="hint">全員が敵どうし。自分のキャラが倒れたら負け。最後まで残れば勝ち。だんだん嵐がせまってくる。</p>
+      </div>
     </div>
     <div class="card hidden sharedBox" id="sharedBox"></div>
     <div class="card serverOnly">
@@ -44,6 +54,12 @@
         <input id="newGameName" maxlength="30" placeholder="ゲームの名前（なくてもOK）">
         <button id="createGame">作る</button>
       </div>
+      <div class="row modeRow">
+        <label>あそびかた <select id="newGameMode"><option value="war">王国と魔族の戦争</option><option value="royale">バトルロワイヤル</option></select></label>
+        <label>レベル <select id="newGameLevel"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option></select></label>
+        <label>AIの人数 <select id="newGameBots"><option>0</option><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+      </div>
+      <p class="hint">レベルとAIの人数は、バトルロワイヤルのときだけ使います。</p>
       <label class="hint"><input type="checkbox" id="trialMode"> お試しモード（全員Lv30・素材とお金も多め。技や装備をすぐ試したいとき用）</label>
     </div>
     <div class="card">

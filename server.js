@@ -91,13 +91,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/games' && req.method === 'GET') {
       return sendJson(res, 200, [...games.values()].sort((a, b) => b.createdAt - a.createdAt).map(g => ({
-        id: g.id, name: g.name, phase: g.phase, day: g.day, trial: !!g.trial, solo: !!g.solo,
+        id: g.id, name: g.name, phase: g.phase, day: g.day, trial: !!g.trial, solo: !!g.solo, mode: g.mode || 'war', royale: g.royale ? { level: g.royale.level, bots: g.royale.bots } : null,
         players: Object.fromEntries(Object.entries(g.players).map(([r, v]) => [r, v ? v.name : null])),
       })));
     }
     if (p === '/api/games' && req.method === 'POST') {
       const b = await body(req);
-      const g = G.createGame(b.name, { trial: !!b.trial, difficulty: b.difficulty, solo: !!b.solo });
+      const g = G.createGame(b.name, { trial: !!b.trial, difficulty: b.difficulty, solo: !!b.solo, mode: b.mode, level: b.level, bots: b.bots });
       games.set(g.id, g);
       save(g);
       return sendJson(res, 200, { id: g.id });

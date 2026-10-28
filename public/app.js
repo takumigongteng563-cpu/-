@@ -2,7 +2,7 @@
 import {
   TERRITORIES, EDGES, SIZES, SPECIALTIES, CHARACTERS, UNIT_TYPES, ROLES, HERO_ROLES,
   BATTLE_W, BATTLE_H, TERRAIN, MAJORITY, MAX_ROUNDS, KINGDOM_ACTIONS, DEMON_ACTIONS, neighbors, gameStats, levelUpCost, expToNext,
-  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured, FACILITIES, canRemodel,
+  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured, FACILITIES, canRemodel, ROYALE_CHARS,
 } from './shared/data.js';
 import { reachable, targetsFrom, damage, getStat, getMove, isTargetable, inDarkness } from './shared/battlecore.js';
 import { SKILLS, skillOf, skillList, skillTargets, areaTiles } from './shared/skills.js';
@@ -20,6 +20,8 @@ const SIDE_NAME = { kingdom: '王国', demon: '魔族', neutral: '中立' };
 const SIDE_COLOR = { kingdom: '#3f6fc4', demon: '#8a3fa8', neutral: '#9a958b' };
 const SIDE_SOFT = { kingdom: '#dbe6fa', demon: '#efdcf5', neutral: '#ebe8e1' };
 const ROLE_SIDE = { yagyu: 'demon', sumire: 'kingdom', noguchi: 'kingdom', nanase: 'kingdom' };
+// 陣営の色（バトルロワイヤルでは「p:キャラ」ごとにキャラの色）
+const sideColor = (side) => SIDE_COLOR[side] || CHAR_COLOR[String(side).slice(2)] || '#777';
 // キャラごとの色（地図のコマ）
 const CHAR_COLOR = { sumire: '#4a62c9', noguchi: '#2f8a8a', nanase: '#6a5acd', nozomi: '#c49a1a', horie: '#8a6a2a', yuki: '#5a9ad8', yagyu: '#5a1f6e', car: '#7a3f9a', oh: '#3f7a5a', kkb: '#9a3f5a' };
 const TILE_COLOR = { '.': '#d6e6b0', F: '#6fa35a', R: '#7fb5e0', C: '#8f7c69', H: '#d2bb7f', W: '#6e6a66', S: '#ece4cf' };
@@ -96,7 +98,32 @@ async function refreshOnline() {
 }
 
 // みんなで遊ぶゲームの一行：空いている役に参加、自分の役なら続きから
+// バトルロワイヤルの一行：キャラを選んで参加
+function royaleItem(g, mine, shared, raw) {
+  const uid = shared ? SHARED.myUid() : null;
+  const myChar = shared ? raw && Object.keys(raw.players).find(c => raw.players[c]?.uid === uid) : mine?.role;
+  const phase = g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : '戦闘中';
+  const names = shared ? raw?.players || {} : g.players;
+  const chars = ROYALE_CHARS.map(c => {
+    const p = names[c];
+    const pname = p ? (typeof p === 'string' ? p : p.name) : null;
+    if (pname) {
+      if (!shared && !mine && g.phase !== 'ended') return `<button class="roleBtn taken" data-rejoin="${g.id}" data-role="${c}" title="あいことばで戻る">${CHARACTERS[c].name}：${esc(pname)} 🔑</button>`;
+      return `<span class="roleBtn taken">${CHARACTERS[c].name}：${esc(pname)}${c === myChar ? '（あなた）' : ''}</span>`;
+    }
+    if (g.phase !== 'lobby' || myChar) return '';
+    return `<button class="roleBtn" ${shared ? 'data-sjoin' : 'data-join'}="${g.id}" data-role="${c}" style="border-color:${CHAR_COLOR[c]}">${CHARACTERS[c].name}</button>`;
+  }).join('');
+  const open = myChar
+    ? `<button class="primary" ${shared ? `data-sopen="${g.id}" data-role="${myChar}"` : `data-open="${g.id}"`}>続きから（${CHARACTERS[myChar].name}）</button>`
+    : `<button class="ghost" ${shared ? `data-sopen="${g.id}"` : `data-watch="${g.id}"`}>見る</button>`;
+  return `<div class="gameItem ${shared ? 'shared' : ''}"><div class="row"><span class="title">⚔ ${esc(g.name)}</span>
+      <span class="muted">バトルロワイヤル・Lv${g.royale?.level ?? ''}・AI${g.royale?.bots ?? 0}人・${phase}</span><span style="flex:1"></span>${open}</div>
+    ${g.phase === 'lobby' && !myChar ? '<div class="hint">キャラを押して参加</div>' : ''}<div class="roles">${chars}</div></div>`;
+}
+
 function sharedItem(g) {
+  if (g.mode === 'royale') return royaleItem(g, null, true, sharedRaw.get(g.id));
   const uid = SHARED.myUid();
   const raw = sharedRaw.get(g.id);
   const myRole = raw && ROLES.find(r => raw.players[r]?.uid === uid);
@@ -128,6 +155,7 @@ async function refreshList() {
         ${mine ? `<button class="primary" data-open="${g.id}">続きから</button>` : ''}
         <button class="ghost" data-del="${g.id}">消す</button></div></div>`;
     }
+    if (g.mode === 'royale') return royaleItem(g, mine, false);
     const phase = (g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : `${g.day}日目`) + (g.trial ? '・お試し（Lv30）' : '') + (g.solo ? '・ひとり用' : '');
     const roles = ROLES.map(r => {
       const taken = g.players[r];
@@ -162,8 +190,21 @@ document.querySelector('.solo').addEventListener('click', async (e) => {
   } catch (err) { toast(err.message); }
 });
 $('#btnHowto').onclick = () => showHowto();
+$('#soloRoyaleChar').innerHTML = ROYALE_CHARS.map(c => `<option value="${c}">${CHARACTERS[c].title}${CHARACTERS[c].name}</option>`).join('');
+$('#soloRoyaleGo').onclick = async () => {
+  const name = $('#playerName').value.trim();
+  store.set('yagyu:name', name);
+  const role = $('#soloRoyaleChar').value;
+  try {
+    const { id } = await api('/api/games', { name: `${name || 'ひとり'}のバトルロワイヤル`, solo: true, mode: 'royale', level: Number($('#soloRoyaleLevel').value), bots: Number($('#soloRoyaleBots').value) });
+    const r = await api(`/api/games/${id}/join`, { role, name });
+    store.set('yagyu:seat:' + id, { role: r.role, token: r.token });
+    await api(`/api/games/${id}/action`, { token: r.token, action: { type: 'start' } });
+    openGame(id);
+  } catch (err) { toast(err.message); }
+};
 $('#createGame').onclick = async () => {
-  const { id } = await api('/api/games', { name: $('#newGameName').value, trial: $('#trialMode').checked });
+  const { id } = await api('/api/games', { name: $('#newGameName').value, trial: $('#trialMode').checked, mode: $('#newGameMode').value, level: Number($('#newGameLevel').value), bots: Number($('#newGameBots').value) });
   $('#newGameName').value = '';
   await refreshList();
   toast('ゲームを作りました。役を選んで参加してください');
@@ -243,7 +284,7 @@ function render() {
   const g = S.game;
   if (!g) return;
   renderTopbar(g);
-  const inBattle = g.phase === 'battle' && g.battle;
+  const inBattle = (g.phase === 'battle' || g.mode === 'royale') && g.battle;
   $('#main').classList.toggle('hidden', !!inBattle);
   $('#battleScreen').classList.toggle('hidden', !inBattle);
   if (inBattle) renderBattle(g);
@@ -254,6 +295,19 @@ const mySide = () => (S.me ? ROLE_SIDE[S.me.role] : null);
 const owned = (g, s) => g.territories.filter(t => t.owner === s).length;
 
 function renderTopbar(g) {
+  if (g.mode === 'royale') {
+    const b = g.battle;
+    const left = b ? b.sides.filter(sd => !b.out.some(o => o.side === sd)).length : Object.keys(g.players).length;
+    $('#topbar').innerHTML = `<span class="day">バトルロワイヤル</span>
+      <span>${g.phase === 'lobby' ? '参加者を待っています' : g.phase === 'ended' ? '決着' : `${b.round}ターン目・残り${left}人`}　Lv${g.royale.level}</span>
+      <span class="spacer"></span>
+      ${Object.entries(g.players).filter(([, p]) => p).map(([c, p]) => `<span class="chip" style="background:${CHAR_COLOR[c]}">${CHARACTERS[c].name}：${esc(p.name)}${S.me?.role === c ? '（あなた）' : ''}</span>`).join('')}
+      <button id="btnHowto2" class="small">遊び方</button>
+      <button id="btnLobby" class="small">ロビーへ</button>`;
+    $('#btnLobby').onclick = () => { if (!LOCAL) location.hash = ''; showLobby(); };
+    $('#btnHowto2').onclick = () => showHowto();
+    return;
+  }
   const side = mySide();
   let res = '';
   if (g.phase !== 'lobby') {
@@ -667,6 +721,15 @@ function workshopSection(g) {
 
 function renderPanel(g) {
   let h = '';
+  if (g.phase === 'lobby' && g.mode === 'royale') {
+    const joined = Object.entries(g.players).filter(([, p]) => p);
+    h += `<div class="sec"><h3>バトルロワイヤル：参加者を待っています</h3>
+      ${joined.map(([c, p]) => `<div class="row"><span class="badge" style="background:${CHAR_COLOR[c]};color:#fff;border-radius:4px;padding:0 6px">${CHARACTERS[c].label}</span> ${CHARACTERS[c].name}：${esc(p.name)}</div>`).join('')}
+      <p class="hint">ほかの人は、ロビーの一覧でキャラを押すと参加できます。始めると、AIが${g.royale.bots}人（合わせて8人まで）入ります。レベルは全員${g.royale.level}で、基本の強さは同じ。ちがいは技です。</p>
+      <button class="primary big" id="btnStart" ${joined.length && S.me ? '' : 'disabled'}>バトルロワイヤルを始める</button></div>`;
+    $('#panel').innerHTML = h;
+    return;
+  }
   if (g.phase === 'lobby') {
     const ok = ROLES.some(r => g.players[r]);
     h += `<div class="sec"><h3>参加者を待っています</h3>
@@ -811,6 +874,14 @@ function renderBattle(g) {
     h += `<rect x="${x * CELL}" y="${y * CELL}" width="${CELL}" height="${CELL}" fill="url(#t${TILE_ID[tile]})" stroke="rgba(60,40,10,.12)" data-cell="${x},${y}"/>`;
     if (tile === 'W') h += `<text x="${C(x)}" y="${y * CELL + 14}" text-anchor="middle" font-size="10" fill="#fff" stroke="#333" stroke-width="2" paint-order="stroke" pointer-events="none">${b.wallHp[x + ',' + y] ?? ''}</text>`;
   }
+  if (b.kind === 'royale' && b.zone) {
+    const z = b.zone;
+    for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) {
+      if (x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1) continue;
+      h += `<rect x="${x * CELL}" y="${y * CELL}" width="${CELL}" height="${CELL}" fill="rgba(70,40,110,.42)" pointer-events="none"/>`;
+    }
+    h += `<rect x="${z.x0 * CELL}" y="${z.y0 * CELL}" width="${(z.x1 - z.x0 + 1) * CELL}" height="${(z.y1 - z.y0 + 1) * CELL}" fill="none" stroke="#7a4fc4" stroke-width="3" stroke-dasharray="8 5" pointer-events="none"/>`;
+  }
   for (const d of b.dark || []) if (b.round <= d.until) h += `<rect x="${d.x * CELL}" y="${d.y * CELL}" width="${CELL}" height="${CELL}" fill="rgba(20,10,30,.45)" pointer-events="none"/>`;
   for (const sd of b.seeds || []) h += `<text x="${C(sd.x)}" y="${C(sd.y) + 6}" text-anchor="middle" font-size="18" pointer-events="none">🌱</text>`;
   if ((b.rain || []).some(r => b.round <= r.until)) h += `<rect x="0" y="0" width="${BATTLE_W * CELL}" height="${BATTLE_H * CELL}" fill="rgba(80,130,220,.12)" pointer-events="none"/>`;
@@ -844,8 +915,8 @@ function renderBattle(g) {
     if (isTarget) h += `<circle cx="${cx}" cy="${cy}" r="21" fill="rgba(224,64,64,.25)" stroke="#e04040" stroke-width="3"/>`;
     if (aimIds.has(u.id)) h += `<circle cx="${cx}" cy="${cy}" r="21" fill="rgba(217,154,30,.3)" stroke="#d99a1e" stroke-width="3" ${S.aim.picks.includes(u.id) ? 'stroke-dasharray="0"' : 'stroke-dasharray="4 3"'}/>`;
     h += big
-      ? `<rect x="${cx - 16}" y="${cy - 16}" width="32" height="32" rx="7" fill="${SIDE_COLOR[u.side]}" stroke="${u.isCommander ? '#ffcf4a' : '#fff'}" stroke-width="${u.isCommander ? 3 : 1.5}" opacity="${u.charId === 'noguchi' && !isTargetable(b, { side: 'x' }, u) ? 0.55 : 1}"/>`
-      : `<circle cx="${cx}" cy="${cy}" r="15" fill="${SIDE_COLOR[u.side]}" stroke="${u.isCommander ? '#ffcf4a' : '#fff'}" stroke-width="${u.isCommander ? 3 : 1.5}" opacity=".92"/>`;
+      ? `<rect x="${cx - 16}" y="${cy - 16}" width="32" height="32" rx="7" fill="${sideColor(u.side)}" stroke="${u.isCommander ? '#ffcf4a' : '#fff'}" stroke-width="${u.isCommander ? 3 : 1.5}" opacity="${u.charId === 'noguchi' && !isTargetable(b, { side: 'x' }, u) ? 0.55 : 1}"/>`
+      : `<circle cx="${cx}" cy="${cy}" r="15" fill="${sideColor(u.side)}" stroke="${u.isCommander ? '#ffcf4a' : '#fff'}" stroke-width="${u.isCommander ? 3 : 1.5}" opacity=".92"/>`;
     h += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff" pointer-events="none">${u.label}</text>`;
     if (u.isCommander) h += `<text x="${cx - 17}" y="${cy - 10}" font-size="12" fill="#e3a500" pointer-events="none">★</text>`;
     const marks = [];
@@ -881,7 +952,7 @@ function unitCard(b, u, attacker) {
     return v === u[k] ? `${v}` : `<b style="color:${v > u[k] ? '#3c9a5f' : '#c43f3f'}">${v}</b>`;
   };
   const sl = statusList(b, u);
-  return `<div class="unitInfo"><b style="color:${SIDE_COLOR[u.side]}">${esc(u.name)}</b>${u.level ? ` Lv${u.level}` : ''}${u.isCommander ? ' ★大将' : ''}
+  return `<div class="unitInfo"><b style="color:${sideColor(u.side)}">${esc(u.name)}</b>${u.level ? ` Lv${u.level}` : ''}${u.isCommander ? ' ★大将' : ''}
     <div class="bar" style="margin:4px 0"><i style="width:${Math.max(0, u.hp) / u.max * 100}%"></i></div>
     <div class="stats"><span class="l">${u.solo || u.isLeaderUnit ? 'HP' : '兵'}</span><span>${u.hp}/${u.max}</span>
     ${u.maxMp ? `<span class="l">MP</span><span>${u.mp}/${u.maxMp}</span>` : `<span class="l">地形</span><span>${terr}</span>`}
@@ -914,8 +985,46 @@ function aimHint(aim) {
     <button id="aimCancel">やめる</button></div></div>`;
 }
 
+// バトルロワイヤルの右側：残っている人・嵐・自分の番の操作・結果
+function renderRoyalePanel(g, b, active, mine, targets, aim) {
+  const left = b.sides.filter(sd => !b.out.some(o => o.side === sd));
+  const nextStorm = b.round < 4 ? 4 : b.round + (3 - ((b.round - 4) % 3));
+  let h = `<div class="sec"><h3>バトルロワイヤル　${b.round}ターン目</h3>
+    <div class="hint">自分のキャラ（★）が倒れたら脱落。最後まで残った人の勝ち。紫のところは嵐で、ターンのはじめにHPが減る。次に嵐がせまるのは${nextStorm}ターン目。</div>
+    <div class="royaleList">${b.sides.map(sd => {
+      const out = b.out.some(o => o.side === sd);
+      const leader = b.units.find(u => u.side === sd && u.isLeaderUnit);
+      return `<div class="row ${out ? 'muted' : ''}"><span class="badge" style="background:${sideColor(sd)}">${leader?.label || ''}</span>
+        <span style="flex:1">${esc(b.sideNames[sd])}${S.me && sd === 'p:' + S.me.role ? '（あなた）' : ''}</span>
+        <span>${out ? '脱落' : `HP ${leader.hp}/${leader.max}`}</span></div>`;
+    }).join('')}</div></div>`;
+  if (b.result) {
+    const rk = g.royale?.ranking;
+    h += `<div class="result">${b.result.winner ? `${esc(b.sideNames[b.result.winner])} の勝ち！` : '勝者なし'}（${esc(b.result.reason)}）</div>`;
+    if (rk) h += `<div class="sec">${rk.map(r => `<div>${r.place}位　${esc(r.name)}（倒した部隊 ${r.kills}）</div>`).join('')}</div>`;
+    h += g.phase === 'ended' ? `<button class="primary big" id="btnToLobby">ロビーへ</button>` : `<div class="hint">結果をまとめています…</div>`;
+  } else if (active) {
+    h += `<div class="sec"><h3>${mine ? 'あなたの番' + (b.active.extra ? '（もう一度行動）' : '') : `${esc(b.sideNames[active.side] || '')}の番`}</h3>${unitCard(b, active)}`;
+    if (mine) {
+      if (aim) h += aimHint(aim);
+      else {
+        h += `<div class="hint">${b.active.moved ? '攻撃・技を選ぶか、待機。' : '青いマスで移動。赤い相手をクリックで攻撃。技はボタンから。'}</div>`;
+        if (targets.units.length) h += `<div class="acts">${targets.units.map(t => `<button class="small" data-atk="${t.id}">${esc(t.name)}に攻撃（${damage(b, mine, t)}）</button>`).join('')}</div>`;
+        h += skillButtons(b, mine);
+        h += `<div class="acts" style="margin-top:8px">${b.active.moved ? '<button id="bUndo">移動を戻す</button>' : ''}<button id="bWait">待機</button></div>`;
+      }
+    }
+    h += '</div>';
+  }
+  const sel = S.selUnit && b.units.find(u => u.id === S.selUnit && u.alive);
+  if (sel && sel !== active) h += `<div class="sec"><h3>えらんだ部隊</h3>${unitCard(b, sel, mine)}${sel.charId ? skillBook(sel.charId, sel.level) : ''}</div>`;
+  h += `<div class="sec"><h3>戦いの記録</h3><div class="log">${b.log.slice().reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div></div>`;
+  $('#battlePanel').innerHTML = h;
+}
+
 function renderBattlePanel(g, b, active, mine, targets, aim) {
   const T = TERRITORIES[b.territoryId];
+  if (b.kind === 'royale') return renderRoyalePanel(g, b, active, mine, targets, aim);
   let h = b.kind === 'pursuit'
     ? `<div class="sec"><h3>${T.name}の追撃戦　${b.round}/${b.maxRounds}ターン</h3>
       <div class="hint"><span class="${b.attackerSide[0]}">${SIDE_NAME[b.attackerSide]}</span>が追う。★の逃げる大将を倒せば討ち取り（その武将は倒れる）。<span class="${b.defenderSide[0]}">${SIDE_NAME[b.defenderSide]}</span>は${b.maxRounds}ターン耐えれば逃げ切り。</div></div>`
@@ -956,7 +1065,7 @@ function renderBattlePanel(g, b, active, mine, targets, aim) {
   }
   if (b.order.length) {
     const upcoming = b.order.slice(b.idx).map(id => b.units.find(u => u.id === id)).filter(u => u && u.alive).slice(0, 16);
-    h += `<div class="sec"><h3>行動の順番（速い順）</h3><div class="turnList">${upcoming.map(u => `<span style="background:${SIDE_COLOR[u.side]}">${u.label}${Math.round(getStat(b, u, 'spd'))}</span>`).join('')}</div></div>`;
+    h += `<div class="sec"><h3>行動の順番（速い順）</h3><div class="turnList">${upcoming.map(u => `<span style="background:${sideColor(u.side)}">${u.label}${Math.round(getStat(b, u, 'spd'))}</span>`).join('')}</div></div>`;
   }
   h += `<div class="sec"><h3>戦いの記録</h3><div class="log">${b.log.slice().reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div></div>`;
   $('#battlePanel').innerHTML = h;
@@ -1024,6 +1133,7 @@ $('#battlePanel').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.id === 'btnConclude') return act({ type: 'battle', action: { type: 'conclude' } });
+  if (b.id === 'btnToLobby') { if (!LOCAL) location.hash = ''; return showLobby(); }
   if (b.dataset.cmd !== undefined) return act({ type: 'battle', action: { type: 'commander', genId: b.dataset.cmd || null } });
   if (b.id === 'btnRetreat') {
     const unitIds = [...document.querySelectorAll('[data-rear]:checked')].map(x => x.dataset.rear);
@@ -1125,7 +1235,7 @@ function showEnding(force) {
   const g = S.game;
   const key = 'yagyu:ending:' + S.gameId;
   if (!force && store.get(key)) return;
-  showStory(g.ending.title, `${g.day}日目`, g.ending.lines, () => store.set(key, true));
+  showStory(g.ending.title, g.mode === 'royale' ? `${g.battle?.round ?? ''}ターン` : `${g.day}日目`, g.ending.lines, () => store.set(key, true));
 }
 
 function showStory(title, when, lines, onClose) {
@@ -1195,6 +1305,11 @@ if (LOCAL) {
     sharedOn = ok;
     $('#sharedBox').innerHTML = ok ? `<h2>みんなで遊ぶ（このページを開ける人どうし）</h2>
       <div class="row"><input id="sharedName" maxlength="30" placeholder="ゲームの名前（なくてもOK）"><button id="sharedCreate" class="primary">作る</button></div>
+      <div class="row modeRow">
+        <label>あそびかた <select id="sharedMode"><option value="war">王国と魔族の戦争</option><option value="royale">バトルロワイヤル</option></select></label>
+        <label>レベル <select id="sharedLevel"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option></select></label>
+        <label>AIの人数 <select id="sharedBots"><option>0</option><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+      </div>
       <label class="hint"><input type="checkbox" id="sharedTrial"> お試しモード（全員Lv30）</label>
       <p class="hint">作ったゲームは、このページを開ける人みんなの「ゲーム一覧」に出ます。それぞれ空いている役を押して参加し、だれかが「ゲームを始める」を押せば始まります。空いている役はAIが動かします。自分の役には、別の端末からでも「続きから」で戻れます。</p>`
       : `<h2>みんなで遊ぶ</h2><p class="hint">今はひとりで遊ぶことだけできます。</p>
@@ -1208,7 +1323,8 @@ if (LOCAL) {
     if (!ok) return;
     $('#sharedCreate').onclick = async () => {
       try {
-        const { id } = await api('/api/games', { name: $('#sharedName').value || 'みんなの戦争', trial: $('#sharedTrial').checked });
+        const royale = $('#sharedMode').value === 'royale';
+        const { id } = await api('/api/games', { name: $('#sharedName').value || (royale ? 'みんなのバトルロワイヤル' : 'みんなの戦争'), trial: $('#sharedTrial').checked, mode: $('#sharedMode').value, level: Number($('#sharedLevel').value), bots: Number($('#sharedBots').value) });
         $('#sharedName').value = '';
         toast('ゲームを作りました。下の一覧で役を選んで参加してください');
         void id;

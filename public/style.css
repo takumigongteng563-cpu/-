@@ -123,6 +123,11 @@ h4 { margin: 10px 0 4px; font-size: 13px; }
 .choice { text-align: left; display: block; width: 100%; }
 .choice span { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .choice.primary span { color: #fff; }
+.royaleList { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 13px; }
+.royaleList .badge { width: 22px; height: 22px; border-radius: 4px; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+.royaleSolo { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 8px; }
+.royaleSolo h3 { margin: 0 0 6px; font-size: 15px; }
+.modeRow { margin-top: 8px; font-size: 13px; }
 .queen { font-size: 13px; color: #7a5a10; }
 .result { padding: 10px; border-radius: 8px; background: #fff1d3; font-weight: bold; margin-bottom: 8px; }
 

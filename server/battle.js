@@ -1,6 +1,6 @@
 // 合戦（戦場画面のターン制バトル）
 import {
-  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, gameStats,
+  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, gameStats, charStats,
 } from '../shared/data.js';
 import {
   reachable, targetsFrom, damage, getStat, getRange, reachTiles, isTargetable, unitAt, cheb, inBounds, moveCost, WALL_HP,
@@ -225,7 +225,7 @@ function applyDamage(b, src, t, dmg, label) {
       t.alive = false;
       if (src) src.kills++;
       b.actionKills = (b.actionKills || 0) + 1;
-      b.fallen[t.side]++;
+      b.fallen[t.side] = (b.fallen[t.side] || 0) + 1;
       if (t.charge) t.charge = null;
       b.log.push(`${t.name} が倒れた`);
     }
@@ -399,7 +399,7 @@ function useSkill(b, u, s, tgt) {
     case 'kuroi': strike(b, u, t, { mult: 0.8, label: '黒いですカー？' }); if (t.alive) t.markUntil = r + 1; break;
     case 'kurayami': for (const [x, y] of areaTiles('cross', tgt.x, tgt.y)) b.dark.push({ x, y, until: r + 2, side: u.side }); break;
     case 'bighorn': for (const x of near(3, 'ally')) addEffect(x, { stat: 'atk', mult: 1.2, until: r + 2 }); break;
-    case 'trashbox': areaDamage(b, u, areaTiles('sq:3', u.x, u.y), { mult: 0.6 + 0.15 * b.fallen[u.side], label: 'Trash Box Car' }); break;
+    case 'trashbox': areaDamage(b, u, areaTiles('sq:3', u.x, u.y), { mult: 0.6 + 0.15 * (b.fallen[u.side] || 0), label: 'Trash Box Car' }); break;
     // OH
     case 'suitoru': { const res = strike(b, u, t, { label: '吸い取る' }); heal(b, u, res.dmg / 2, '吸い取る'); break; }
     case 'oen': addEffect(t, { stat: 'atk', mult: 1.2, until: r + 2 }); addEffect(t, { stat: 'def', mult: 1.2, until: r + 2 }); break;
@@ -481,6 +481,7 @@ function roundStart(b) {
     }
   }
   if (b.support && b.support.left > 0 && r >= b.support.next) queenSupport(b);
+  if (b.kind === 'royale') royaleStorm(b);
   if (checkEnd(b)) return;
   const last = b.units.filter(u => u.lastRound === r).map(u => u.id);
   b.order = b.units.filter(u => u.alive)
@@ -496,7 +497,8 @@ function nextActive(b) {
     b.idx++;
     if (b.idx >= b.order.length) {
       if (b.round >= (b.maxRounds || MAX_ROUNDS)) {
-        finish(b, b.defenderSide, b.kind === 'pursuit' ? '逃げ切った' : '時間切れ。守りきった');
+        if (b.kind === 'royale') royaleTimeout(b);
+        else finish(b, b.defenderSide, b.kind === 'pursuit' ? '逃げ切った' : '時間切れ。守りきった');
         return;
       }
       roundStart(b);
@@ -526,11 +528,13 @@ export function startBattle(battle) {
 function finish(battle, winnerSide, reason) {
   battle.result = { winner: winnerSide, reason };
   battle.active = null;
-  battle.log.push(`★ ${sideName(winnerSide)}の勝ち（${reason}）`);
+  const name = battle.sideNames?.[winnerSide] ?? sideName(winnerSide);
+  battle.log.push(winnerSide ? `★ ${name}の勝ち（${reason}）` : `★ 勝者なし（${reason}）`);
 }
 
 function checkEnd(battle) {
   if (battle.result) return true;
+  if (battle.kind === 'royale') return royaleCheck(battle);
   for (const role of ['attacker', 'defender']) {
     const side = role === 'attacker' ? battle.attackerSide : battle.defenderSide;
     const other = role === 'attacker' ? battle.defenderSide : battle.attackerSide;
@@ -702,7 +706,7 @@ function bestSkillUse(b, u, s) {
       break;
     }
     case 'mayagi': consider(areaScore(areaTiles('sq:1', u.x, u.y), {}) - cost, {}); break;
-    case 'trashbox': consider(areaScore(areaTiles('sq:3', u.x, u.y), { mult: 0.6 + 0.15 * b.fallen[u.side] }) - cost, {}); break;
+    case 'trashbox': consider(areaScore(areaTiles('sq:3', u.x, u.y), { mult: 0.6 + 0.15 * (b.fallen[u.side] || 0) }) - cost, {}); break;
     case 'star7': consider(enemies.sort((a, c) => a.hp / a.max - c.hp / c.max).slice(0, 7).reduce((a, t) => a + dmgScore(t, { mult: 1.2 }), 0) - cost, {}); break;
     case 'tosshin': case 'totsugeki': case 'suigyu': case 'shogeki': {
       for (const [x, y] of cells) {
@@ -775,7 +779,8 @@ export function aiStep(battle) {
   let best = null;
   for (const [x, y] of tiles) {
     u.x = x; u.y = y;
-    const danger = u.isCommander ? enemies.filter(e => cheb(e, { x, y }) <= 2).length * 40 : 0;
+    let danger = u.isCommander ? enemies.filter(e => cheb(e, { x, y }) <= 2).length * (b.kind === 'royale' ? 15 : 40) : 0;
+    if (b.kind === 'royale' && !inZone(b, x, y, 1)) danger += 80; // 嵐の中や、次に嵐になる所は避ける
     const { units, walls } = targetsFrom(b, u, x, y);
     if (!pacified) for (const t of units) {
       const d = damage(b, u, t);
@@ -809,7 +814,17 @@ export function aiStep(battle) {
   }
   // 届く敵がいない：近づく（大将と、城壁の内側の守り手は持ち場を守る）
   const nearest = enemies.slice().sort((a, c) => cheb(a, u) - cheb(c, u))[0];
-  const hold = u.isCommander || (u.role === 'defender' && nearest && cheb(nearest, u) > 6);
+  const hold = b.kind !== 'royale' && (u.isCommander || (u.role === 'defender' && nearest && cheb(nearest, u) > 6));
+  if (b.kind === 'royale' && !inZone(b, u.x, u.y, 1)) {
+    // 嵐から逃げる：安全な場所の真ん中へ
+    const cx = (b.zone.x0 + b.zone.x1) / 2, cy = (b.zone.y0 + b.zone.y1) / 2;
+    let pick = null;
+    for (const [x, y] of tiles) { const d = Math.abs(cx - x) + Math.abs(cy - y); if (!pick || d < pick.d) pick = { d, x, y }; }
+    if (pick) { u.x = pick.x; u.y = pick.y; }
+    b.log.push(`${u.name} は嵐から逃げた`);
+    nextActive(b);
+    return;
+  }
   if (nearest && !hold) {
     let pick = null;
     for (const [x, y] of tiles) {
@@ -956,4 +971,139 @@ function queenSupport(b) {
       break;
     }
   }
+}
+
+// ---------- バトルロワイヤル ----------
+// 全員が敵どうし。自分のキャラが倒れたら脱落、最後まで残った1人の勝ち。
+// 3ターン目のあとから、戦場のはしから「嵐」がせまってきて、嵐の中にいるとターンのはじめにHPが減る。
+export const ROYALE_ROUNDS = 40;
+const SPAWNS = [[1, 1], [14, 9], [14, 1], [1, 9], [7, 0], [8, 10], [0, 5], [15, 5]];
+const TROOPS = { kingdom: ['spear', 'archer'], demon: ['orc', 'harpy'], neutral: ['cavalry', 'archer'] };
+
+export function inZone(b, x, y, margin = 0) {
+  const z = b.zone;
+  // margin=1 のときは「次にせばまったあと」も考える
+  const nz = margin && b.round >= 3 ? nextZone(b) : z;
+  return x >= nz.x0 && x <= nz.x1 && y >= nz.y0 && y <= nz.y1;
+}
+function nextZone(b) {
+  const z = { ...b.zone };
+  if (z.x1 - z.x0 > 3) { z.x0++; z.x1--; }
+  if (z.y1 - z.y0 > 2) { z.y0++; z.y1--; }
+  return z;
+}
+
+// 同じレベルなら、だれでも基本の強さは同じ（ちがいは技）
+function royaleStats(charId, level) {
+  const st = charStats(charId, level);
+  const main = Math.max(st.atk, st.mag);
+  const f = (28 + 1.4 * (level - 1)) / main;
+  const g = (18 + 0.9 * (level - 1)) / ((st.def + st.mdef) / 2);
+  return {
+    hp: Math.round(520 + 16 * (level - 1)), mp: st.mp,
+    atk: Math.round(st.atk * f), mag: Math.round(st.mag * f), def: Math.round(st.def * g), mdef: Math.round(st.mdef * g),
+    spd: Math.min(14 + Math.floor(level / 6), st.spd), move: Math.max(4, st.move),
+  };
+}
+
+export function createRoyale(game) {
+  const R = game.royale;
+  const L = R.level;
+  const terr = { terrain: 'plain' };
+  const grid = makeGrid(terr, { walls: false, seed: Date.now() % 100000 });
+  // 森と高台を少し足して、崖はなくす
+  const rand = (i) => { const v = Math.sin(i * 91.7 + game.battleCount) * 10000; return v - Math.floor(v); };
+  for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) {
+    const r = rand(x * 31 + y * 7);
+    grid[y][x] = r < 0.14 ? 'F' : r < 0.2 ? 'H' : '.';
+  }
+  const b = {
+    id: 'r' + (++game.battleCount), kind: 'royale', territoryId: 16, attackerSide: null, defenderSide: null,
+    grid, wallHp: {}, units: [], order: [], idx: -1, round: 0, active: null, log: [], result: null, hits: [],
+    dark: [], rain: [], seeds: [], fallen: {}, maxRounds: ROYALE_ROUNDS, stage: 'fight',
+    zone: { x0: 0, y0: 0, x1: BATTLE_W - 1, y1: BATTLE_H - 1 }, sides: [], sideNames: {}, out: [],
+    generals: { attacker: [], defender: [] }, reserve: { attacker: [], defender: [] },
+  };
+  let uid = 0;
+  R.entrants.forEach((e, i) => {
+    const side = 'p:' + e.charId;
+    const c = CHARACTERS[e.charId];
+    const st = royaleStats(e.charId, L);
+    const [sx, sy] = SPAWNS[i % SPAWNS.length];
+    b.sides.push(side);
+    b.sideNames[side] = `${c.name}（${e.name}）`;
+    grid[sy][sx] = '.';
+    const base = { side, role: side, controller: e.controller, alive: true, dealt: 0, kills: 0, effects: [], used: {}, onceRound: {} };
+    b.units.push({
+      ...base, id: 'u' + (++uid), kind: e.charId === 'yagyu' ? 'yagyu' : 'char', charId: e.charId, name: c.name, label: c.label, level: L,
+      ...st, max: st.hp, maxMp: st.mp, range: c.range, dmg: c.dmg, tri: null, solo: false, isLeaderUnit: true, isCommander: true, x: sx, y: sy,
+    });
+    // 部隊を2つ、となりに置く
+    const types = TROOPS[c.side] || TROOPS.neutral;
+    const spots = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]
+      .map(([dx, dy]) => [sx + dx, sy + dy]).filter(([x, y]) => inBounds(x, y) && !b.units.some(u => u.x === x && u.y === y));
+    types.forEach((type, k) => {
+      const t = UNIT_TYPES[type];
+      const [x, y] = spots[k] || [sx, sy];
+      grid[y][x] = '.';
+      b.units.push({
+        ...base, id: 'u' + (++uid), kind: 'troop', type, name: `${c.name}隊・${t.name}`, label: t.label,
+        atk: t.atk, def: t.def, mag: t.mag, mdef: t.mdef, spd: t.spd, move: t.move, range: t.range, dmg: t.dmg, tri: t.tri,
+        flyer: !!t.flyer, climber: !!t.climber, hp: 220, max: 220, x, y,
+      });
+    });
+  });
+  b.log.push(`【バトルロワイヤル】 ${R.entrants.length}人の戦い。自分のキャラが倒れたら脱落。最後まで残った人の勝ち`);
+  b.log.push('4ターン目から、はしから嵐がせまってくる（嵐の中にいるとHPが減る）');
+  return b;
+}
+
+function royaleStorm(b) {
+  if (b.round >= 4 && (b.round - 4) % 3 === 0) {
+    const before = JSON.stringify(b.zone);
+    b.zone = nextZone(b);
+    if (JSON.stringify(b.zone) !== before) b.log.push('嵐がせまってきた！');
+  }
+  for (const u of b.units) {
+    if (!u.alive || inZone(b, u.x, u.y)) continue;
+    applyDamage(b, null, u, Math.max(1, Math.round(u.max * 0.12)), '嵐');
+  }
+}
+
+function eliminate(b, side, reason) {
+  for (const u of b.units) if (u.side === side && u.alive) { u.alive = false; u.hp = 0; }
+  b.out.push({ side, round: b.round });
+  b.log.push(`✖ ${b.sideNames[side]} が脱落（${reason}）`);
+}
+
+function royaleCheck(b) {
+  for (const side of b.sides) {
+    if (b.out.some(o => o.side === side)) continue;
+    const leader = b.units.find(u => u.side === side && u.isLeaderUnit);
+    if (!leader || !leader.alive) eliminate(b, side, `${leader ? leader.name : 'キャラ'}が倒れた`);
+  }
+  const left = b.sides.filter(s => !b.out.some(o => o.side === s));
+  if (left.length === 1) { finish(b, left[0], '最後まで生き残った'); return true; }
+  if (left.length === 0) { finish(b, null, 'みんな同時に倒れた'); return true; }
+  return false;
+}
+
+function royaleTimeout(b) {
+  // 時間切れ：自分のキャラのHPがいちばん多く残っている人の勝ち
+  const left = b.sides.filter(s => !b.out.some(o => o.side === s))
+    .map(s => ({ s, r: b.units.find(u => u.side === s && u.isLeaderUnit).hp / b.units.find(u => u.side === s && u.isLeaderUnit).max }))
+    .sort((a, c) => c.r - a.r);
+  for (const x of left.slice(1).reverse()) eliminate(b, x.s, '時間切れ・HPが少なかった');
+  finish(b, left[0]?.s ?? null, '時間切れ・HPがいちばん多く残った');
+}
+
+// 順位（1位から）
+export function royaleRanking(b) {
+  const winner = b.result?.winner;
+  const order = [...(winner ? [winner] : []), ...b.out.slice().reverse().map(o => o.side)];
+  return order.map((side, i) => {
+    const leader = b.units.find(u => u.side === side && u.isLeaderUnit);
+    const kills = b.units.filter(u => u.side === side).reduce((a, u) => a + u.kills, 0);
+    return { place: i + 1, side, name: b.sideNames[side], charId: leader?.charId, kills };
+  });
 }

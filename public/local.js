@@ -66,12 +66,12 @@ export async function api(path, data) {
   if (path === '/api/info') return { online: false };
   if (path === '/api/games' && !data) {
     return [...games.values()].sort((a, b) => b.createdAt - a.createdAt).map(g => ({
-      id: g.id, name: g.name, phase: g.phase, day: g.day, trial: !!g.trial, solo: !!g.solo,
+      id: g.id, name: g.name, phase: g.phase, day: g.day, trial: !!g.trial, solo: !!g.solo, mode: g.mode || 'war', royale: g.royale ? { level: g.royale.level, bots: g.royale.bots } : null,
       players: Object.fromEntries(Object.entries(g.players).map(([r, v]) => [r, v ? v.name : null])),
     }));
   }
   if (path === '/api/games') {
-    const g = G.createGame(data.name, { trial: !!data.trial, difficulty: data.difficulty, solo: !!data.solo });
+    const g = G.createGame(data.name, { trial: !!data.trial, difficulty: data.difficulty, solo: !!data.solo, mode: data.mode, level: data.level, bots: data.bots });
     games.set(g.id, g);
     save(g);
     return { id: g.id };

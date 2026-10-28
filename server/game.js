@@ -5,9 +5,9 @@ const randomCode = () => String(globalThis.crypto.getRandomValues(new Uint32Arra
 import {
   TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, UNIT_MAX, MAJORITY,
   neighbors, gameStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
-  MATERIALS, RECIPES, GEAR_MAX, SPECIALTIES, emptyMaterials, troopGearCost, recipeName, FACILITIES, canRemodel, garrisonCap,
+  MATERIALS, RECIPES, GEAR_MAX, SPECIALTIES, emptyMaterials, troopGearCost, recipeName, FACILITIES, canRemodel, garrisonCap, ROYALE_CHARS,
 } from '../shared/data.js';
-import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit, setCommander, createPursuit } from './battle.js';
+import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit, setCommander, createPursuit, createRoyale, royaleRanking } from './battle.js';
 import { getStat } from '../shared/battlecore.js';
 import { checkEvents, ENDINGS } from './events.js';
 import { rollIncidents, resolveIncidents, chooseIncident, dailyRecovery, sendMonsters } from './incidents.js';
@@ -78,6 +78,13 @@ export function createGame(name, opts = {}) {
   };
   // お試しモード：全員Lv30から（技をすぐ試せる）
   const startLv = opts.trial ? 30 : 1;
+  if (opts.mode === 'royale') {
+    // バトルロワイヤル：役は「キャラ」。だれがどのキャラかは players[キャラ] に入る
+    game.mode = 'royale';
+    game.players = {};
+    game.royale = { level: [10, 20, 30].includes(Number(opts.level)) ? Number(opts.level) : 20, bots: Math.max(0, Math.min(7, Number(opts.bots ?? 3))), entrants: [] };
+    if (!name) game.name = 'バトルロワイヤル';
+  }
   for (const c of Object.keys(CHARACTERS)) game.chars[c] = { level: startLv, exp: 0 };
   if (opts.trial) {
     // お試しモード：装備づくりもすぐ試せるように、素材とお金を多めに
@@ -133,6 +140,7 @@ function refreshControllers(game) {
 }
 
 export function join(game, role, name) {
+  if (game.mode === 'royale') return joinRoyale(game, role, name);
   if (!ROLES.includes(role)) throw new Error('その役はありません');
   if (game.players[role]) throw new Error('その役はもう選ばれています');
   if (game.phase === 'ended') throw new Error('もう決着しています');
@@ -165,12 +173,14 @@ export function rejoin(game, role, code) {
 }
 
 export function roleOf(game, token) {
-  for (const r of ROLES) if (game.players[r]?.token === token) return r;
+  if (!token) return null;
+  for (const r of Object.keys(game.players)) if (game.players[r]?.token === token) return r;
   return null;
 }
 
 export function start(game) {
   if (game.phase !== 'lobby') throw new Error('もう始まっています');
+  if (game.mode === 'royale') return startRoyale(game);
   // 人が1人でもいれば始められる。いない役はAIが動かす
   if (!ROLES.some(r => game.players[r]) && !game.allowNoHumans) throw new Error('だれも参加していません');
   setupGenerals(game);
@@ -602,7 +612,7 @@ function progress(game) {
 // 決着のあと：退却（しんがり）→ 追撃するか → 速さ比べ → 追撃戦
 function enterAftermath(game) {
   const b = game.battle;
-  if (b.kind === 'pursuit') { b.stage = 'done'; return; }
+  if (b.kind === 'pursuit' || b.kind === 'royale') { b.stage = 'done'; return; }
   const winner = b.result.winner;
   const loser = winner === b.attackerSide ? b.defenderSide : b.attackerSide;
   const losers = b.units.filter(u => u.alive && u.side === loser);
@@ -720,6 +730,7 @@ export function battleAction(game, role, action) {
   switch (action.type) {
     case 'conclude':
       if (b.stage !== 'done') throw new Error('まだ終わっていません');
+      if (b.kind === 'royale') { finishRoyale(game); return; }
       if (b.kind === 'pursuit') mergePursuit(game);
       concludeBattle(game);
       return;
@@ -1110,7 +1121,7 @@ function checkWin(game) {
 // 命令は同じ陣営の人にだけ見せる（王国の三人はおたがいの命令が見える）
 export function publicView(game, viewer) {
   const players = {};
-  for (const r of ROLES) players[r] = game.players[r] ? { name: game.players[r].name, ...(r === viewer ? { code: game.players[r].code } : {}) } : null;
+  for (const r of game.mode === 'royale' ? Object.keys(game.players) : ROLES) players[r] = game.players[r] ? { name: game.players[r].name, ...(r === viewer ? { code: game.players[r].code } : {}) } : null;
   const sideOf = r => (r === 'yagyu' ? 'demon' : 'kingdom');
   const orders = {};
   if (viewer) for (const [r, o] of Object.entries(game.orders)) if (sideOf(r) === sideOf(viewer)) orders[r] = o;
@@ -1155,4 +1166,52 @@ export function migrate(game) {
 // テスト用：人がいないゲームで、1日を進める
 export function resolveDayForTest(game) {
   if (game.phase === 'day') resolveDay(game);
+}
+
+// ---------- バトルロワイヤル ----------
+
+function joinRoyale(game, charId, name) {
+  if (!ROYALE_CHARS.includes(charId)) throw new Error('そのキャラは選べません');
+  if (game.phase !== 'lobby') throw new Error('もう始まっています');
+  if (game.players[charId]) throw new Error('そのキャラはもう選ばれています');
+  if (Object.keys(game.players).length >= 8) throw new Error('8人までです');
+  const token = randomHex(12);
+  game.players[charId] = { name: (name || '').slice(0, 20) || CHARACTERS[charId].name, token, code: randomCode() };
+  return token;
+}
+
+function startRoyale(game) {
+  const humans = Object.keys(game.players);
+  if (!humans.length && !game.allowNoHumans) throw new Error('だれも参加していません');
+  const R = game.royale;
+  R.entrants = humans.map(c => ({ charId: c, name: game.players[c].name, controller: c }));
+  // あいている数だけAIを入れる（合わせて2人以上・8人まで）
+  const free = ROYALE_CHARS.filter(c => !game.players[c]).sort(() => Math.random() - 0.5);
+  const want = Math.min(8, Math.max(2, humans.length + R.bots)) - humans.length;
+  for (const c of free.slice(0, want)) R.entrants.push({ charId: c, name: 'AI', controller: 'ai' });
+  R.entrants.sort(() => Math.random() - 0.5); // 出てくる場所はばらばら
+  const b = createRoyale(game);
+  b.auto = !R.entrants.some(e => e.controller !== 'ai');
+  game.battle = b;
+  game.phase = 'battle';
+  game.day = 1;
+  startBattle(b);
+  progress(game);
+}
+
+function finishRoyale(game) {
+  const b = game.battle;
+  const ranking = royaleRanking(b);
+  game.royale.ranking = ranking;
+  game.winner = b.result.winner;
+  game.phase = 'ended';
+  const medal = ['🥇', '🥈', '🥉'];
+  game.ending = {
+    title: 'バトルロワイヤル 結果',
+    lines: [
+      { who: null, text: b.result.winner ? `${b.sideNames[b.result.winner]} が最後まで生き残った！` : 'だれも生き残らなかった…' },
+      ...ranking.map(r => ({ who: null, text: `${medal[r.place - 1] || '　'} ${r.place}位　${r.name}　（倒した部隊 ${r.kills}）` })),
+    ],
+  };
+  b.stage = 'over';
 }

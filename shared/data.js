@@ -273,3 +273,6 @@ export const canRemodel = (tid) => tid !== 0 && tid !== 28; // 王都と魔王�
 
 // 置ける兵の上限（兵舎で増える）
 export const garrisonCap = (t) => SIZES[TERRITORIES[t.id].size].cap + (t.facility === 'barracks' ? 1000 : 0);
+
+// バトルロワイヤルで選べるキャラ
+export const ROYALE_CHARS = ['sumire', 'noguchi', 'nanase', 'nozomi', 'yagyu', 'car', 'oh', 'kkb', 'horie', 'yuki'];

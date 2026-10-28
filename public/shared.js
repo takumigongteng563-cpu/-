@@ -36,6 +36,7 @@ const decode = (snap) => (snap.exists ? G.migrate(JSON.parse(snap.data().state))
 function meta(game) {
   return {
     id: game.id, name: game.name, phase: game.phase, day: game.day, trial: !!game.trial, createdAt: game.createdAt,
+    mode: game.mode || 'war', royale: game.royale ? { level: game.royale.level, bots: game.royale.bots } : null,
     players: Object.fromEntries(Object.entries(game.players).map(([r, v]) => [r, v ? { name: v.name, uid: v.token } : null])),
   };
 }
@@ -85,7 +86,7 @@ export async function api(path, data) {
     return list.map(g => ({ ...g, players: Object.fromEntries(Object.entries(g.players).map(([r, v]) => [r, v ? v.name : null])), shared: true }));
   }
   if (path === '/api/games') {
-    const g = G.createGame(data.name, { trial: !!data.trial, difficulty: data.difficulty });
+    const g = G.createGame(data.name, { trial: !!data.trial, difficulty: data.difficulty, mode: data.mode, level: data.level, bots: data.bots });
     await write(g);
     return { id: g.id };
   }
