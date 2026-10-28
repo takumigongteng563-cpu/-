@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import {
   TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, REQUIRED_ROLES, UNIT_MAX, MAJORITY,
-  neighbors, charStats, KINGDOM_ACTIONS, DEMON_ACTIONS,
+  neighbors, charStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
 } from '../shared/data.js';
 import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit } from './battle.js';
 import { checkEvents, ENDINGS } from './events.js';
@@ -16,7 +16,7 @@ export function actionCost(game, side, type, charId) {
     return c;
   }
   const c = { ...DEMON_ACTIONS[type].cost };
-  if (type === 'levelup') c.magic = 20 + 10 * (game.chars[charId]?.level || 1);
+  if (type === 'levelup') c.magic = levelUpCost(game.chars[charId]?.level || 1);
   return c;
 }
 
@@ -30,7 +30,7 @@ export function queenActionCount(game) {
 const ownedCount = (game, side) => game.territories.filter(t => t.owner === side).length;
 
 // ---- ゲームを作る ----
-export function createGame(name) {
+export function createGame(name, opts = {}) {
   const id = crypto.randomBytes(4).toString('hex');
   const game = {
     id, name: name || '魔王ヤギュー討伐戦', createdAt: Date.now(), version: 1,
@@ -52,8 +52,11 @@ export function createGame(name) {
     reinforcements: [],
     stats: { civLoss: { kingdom: 0, demon: 0, neutral: 0 }, battles: 0 },
     eventLog: [], firedEvents: [], log: [], winner: null, ending: null,
+    trial: !!opts.trial,
   };
-  for (const c of Object.keys(CHARACTERS)) game.chars[c] = { level: 1, exp: 0 };
+  // お試しモード：全員Lv30から（技をすぐ試せる）
+  const startLv = opts.trial ? 30 : 1;
+  for (const c of Object.keys(CHARACTERS)) game.chars[c] = { level: startLv, exp: 0 };
   return game;
 }
 
@@ -471,7 +474,7 @@ function gainExp(game, charId, exp) {
   if (!HERO_ROLES.includes(charId) && charId !== 'horie') return;
   const c = game.chars[charId];
   c.exp += Math.round(exp);
-  while (c.level < 30 && c.exp >= c.level * 60) { c.exp -= c.level * 60; levelUp(game, charId); }
+  while (c.level < 30 && c.exp >= expToNext(c.level)) { c.exp -= expToNext(c.level); levelUp(game, charId); }
 }
 
 function knockDown(game, g) {

@@ -23,13 +23,19 @@ npm start
 ## テスト
 
 ```
-npm test            # ヤギューとスミレだけ（150日ぶん自動で進める）
-node test/sim.js 150 all   # 4人ぶんを自動で進める
+npm test                          # ヤギューとスミレだけ（150日ぶん自動で進める）
+node test/sim.js 150 all          # 4人ぶんを自動で進める
+node test/sim.js 80 all trial     # お試しモード（全員Lv30）で進める
+node test/each-skill.js           # すべての技を1回ずつ使ってみる
+node test/skills.js 20            # Lv30どうしの大合戦で、AIが技を使うか見る
+node test/balance.js 15 0         # 合戦の組み合わせごとの王国の勝率（Lv15・訓練0）
 ```
+
+ロビーで「お試しモード」にチェックを入れてゲームを作ると、全員Lv30から始まるので技をすぐ試せます。
 
 ## フォルダ
 
-- `shared/` 地図・キャラ・兵種のデータと、合戦の計算（サーバーとブラウザで共通）
+- `shared/` 地図・キャラ・兵種のデータ、合戦の計算、技の一覧（サーバーとブラウザで共通）
 - `server/` ゲームの進行（`game.js`）、合戦（`battle.js`）、歴史イベントとエンディング（`events.js`）
 - `public/` 画面
 - `server.js` サーバー本体

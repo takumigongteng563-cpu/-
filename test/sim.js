@@ -6,7 +6,7 @@ import { neighbors, TERRITORIES } from '../shared/data.js';
 const days = Number(process.argv[2] || 150);
 const seedPlayers = process.argv[3] === 'all' ? ['yagyu', 'sumire', 'noguchi', 'nanase'] : ['yagyu', 'sumire'];
 
-const game = G.createGame('テスト');
+const game = G.createGame('テスト', { trial: process.argv[4] === 'trial' });
 for (const r of seedPlayers) G.join(game, r, r);
 G.start(game);
 

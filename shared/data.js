@@ -101,7 +101,7 @@ export const UNIT_TYPES = {
 export const TRI_ADV = { heavy: 'fast', fast: 'ranged', ranged: 'heavy' };
 
 // 部隊の質（数の王国、質の魔族）
-export const QUALITY = { kingdom: 1.0, zako: 0.92, officer: 1.2, guard: 1.35 };
+export const QUALITY = { kingdom: 1.0, zako: 0.9, officer: 1.25, guard: 1.25 };
 
 export const UNIT_MAX = 300; // 1部隊の最大兵数
 
@@ -110,19 +110,19 @@ export const UNIT_MAX = 300; // 1部隊の最大兵数
 export const CHARACTERS = {
   sumire:  { name: 'スミレ', title: '勇者',       side: 'kingdom', label: '菫', units: 5, range: 'adj8',      dmg: 'phys',
              base: { hp: 320, mp: 30, atk: 28, def: 20, mag: 8,  mdef: 14, spd: 11, move: 5, lead: 70, pol: 40 },
-             grow: { hp: 8,   mp: 2,  atk: 1.5, def: 1, mag: 0.3, mdef: 0.6, spd: 0.4 } },
+             grow: { hp: 12,  mp: 2,  atk: 1.5, def: 1, mag: 0.3, mdef: 0.6, spd: 0.4 } },
   noguchi: { name: '野口',   title: '賢者',       side: 'kingdom', label: '野', units: 5, range: 'line8:2-2', dmg: 'mag',
              base: { hp: 280, mp: 50, atk: 10, def: 14, mag: 28, mdef: 22, spd: 8,  move: 4, lead: 60, pol: 75 },
-             grow: { hp: 6,   mp: 3,  atk: 0.3, def: 0.7, mag: 1.5, mdef: 1, spd: 0.3 } },
+             grow: { hp: 10,  mp: 3,  atk: 0.3, def: 0.7, mag: 1.5, mdef: 1, spd: 0.3 } },
   nanase:  { name: '七星',   title: '魔法使い',   side: 'kingdom', label: '七', units: 5, range: 'line8:1-3', dmg: 'mag',
              base: { hp: 270, mp: 45, atk: 8,  def: 12, mag: 30, mdef: 20, spd: 9,  move: 4, lead: 55, pol: 50 },
-             grow: { hp: 6,   mp: 3,  atk: 0.3, def: 0.6, mag: 1.6, mdef: 0.9, spd: 0.35 } },
+             grow: { hp: 10,  mp: 3,  atk: 0.3, def: 0.6, mag: 1.6, mdef: 0.9, spd: 0.35 } },
   nozomi:  { name: 'のぞちち', title: '絶対女王', side: 'kingdom', label: '女', units: 1, range: 'line8:1-3', dmg: 'mag',
              base: { hp: 400, mp: 60, atk: 18, def: 22, mag: 30, mdef: 28, spd: 9,  move: 3, lead: 80, pol: 90 },
              grow: { hp: 0, mp: 0, atk: 0, def: 0, mag: 0, mdef: 0, spd: 0 } },
   yagyu:   { name: 'ヤギュー', title: '魔王',     side: 'demon',   label: '魔', units: 5, range: 'line8:1-2', dmg: 'phys', solo: true,
              base: { hp: 700, mp: 60, atk: 52, def: 38, mag: 20, mdef: 30, spd: 12, move: 5, lead: 90, pol: 30 },
-             grow: { hp: 24,  mp: 4,  atk: 4.5, def: 3, mag: 1, mdef: 2.4, spd: 1 } },
+             grow: { hp: 40,  mp: 4,  atk: 2.4, def: 2.2, mag: 0.6, mdef: 1.8, spd: 0.5 } },
   car:     { name: 'CAR', title: '幹部',          side: 'demon',   label: 'C', units: 3, range: 'line8:1-3', dmg: 'mag',
              base: { hp: 300, mp: 35, atk: 14, def: 16, mag: 26, mdef: 18, spd: 10, move: 4, lead: 55, pol: 30 },
              grow: { hp: 7, mp: 2, atk: 0.4, def: 0.8, mag: 1.4, mdef: 0.9, spd: 0.4 } },
@@ -143,6 +143,10 @@ export const CHARACTERS = {
 export const HERO_ROLES = ['sumire', 'noguchi', 'nanase'];
 export const ROLES = ['yagyu', 'sumire', 'noguchi', 'nanase'];
 export const REQUIRED_ROLES = ['yagyu', 'sumire'];
+
+// レベル上げ：魔族は魔力で、勇者たちは合戦の経験で
+export const levelUpCost = (lv) => 15 + 5 * lv;
+export const expToNext = (lv) => 40 + lv * 20;
 
 export function charStats(charId, level) {
   const c = CHARACTERS[charId];

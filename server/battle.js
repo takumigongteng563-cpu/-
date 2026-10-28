@@ -1,8 +1,11 @@
 // 合戦（戦場画面のターン制バトル）
 import {
-  TERRITORIES, SIZES, UNIT_TYPES, QUALITY, CHARACTERS, BATTLE_W, BATTLE_H, MAX_ROUNDS, charStats,
+  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, charStats,
 } from '../shared/data.js';
-import { reachable, targetsFrom, damage, inRange, WALL_HP } from '../shared/battlecore.js';
+import {
+  reachable, targetsFrom, damage, getStat, getRange, reachTiles, isTargetable, unitAt, cheb, inBounds, moveCost, WALL_HP,
+} from '../shared/battlecore.js';
+import { skillList, skillTargets, areaTiles } from '../shared/skills.js';
 
 function rng(seed) {
   let a = seed >>> 0;
@@ -96,13 +99,15 @@ function troopUnit(game, gen, troop, side) {
 
 export function leaderUnit(game, gen) {
   const c = CHARACTERS[gen.charId];
-  const st = charStats(gen.charId, game.chars[gen.charId]?.level || 1);
+  const level = game.chars[gen.charId]?.level || 1;
+  const st = charStats(gen.charId, level);
   let mot = 1;
   if (gen.charId === 'nanase') mot = game.flags.nanaseMotivation || 1;
   return {
-    kind: gen.charId === 'yagyu' ? 'yagyu' : 'char', charId: gen.charId, name: c.name, label: c.label,
+    kind: gen.charId === 'yagyu' ? 'yagyu' : 'char', charId: gen.charId, name: c.name, label: c.label, level,
     atk: Math.round(st.atk * mot), def: st.def, mag: Math.round(st.mag * mot), mdef: st.mdef, spd: st.spd, move: st.move,
     range: c.range, dmg: c.dmg, tri: null, solo: !!c.solo, hp: gen.hp, max: st.hp, isLeaderUnit: true,
+    mp: st.mp, maxMp: st.mp,
   };
 }
 
@@ -113,7 +118,8 @@ export function createBattle(game, { territoryId, attackerSide, defenderSide, at
   const grid = makeGrid(terr, { walls, seed: game.day * 131 + territoryId * 7 + game.battleCount });
   const battle = {
     id: 'b' + (++game.battleCount), territoryId, attackerSide, defenderSide,
-    grid, wallHp: {}, units: [], order: [], idx: -1, round: 0, active: null, log: [], result: null,
+    grid, wallHp: {}, units: [], order: [], idx: -1, round: 0, active: null, log: [], result: null, hits: [],
+    dark: [], rain: [], seeds: [], fallen: { kingdom: 0, demon: 0, neutral: 0 },
     generals: { attacker: attackers.slice(0, 5), defender: defenders.slice(0, 5) },
     reserve: { attacker: attackers.slice(5), defender: defenders.slice(5) },
   };
@@ -154,7 +160,7 @@ export function createBattle(game, { territoryId, attackerSide, defenderSide, at
       return false;
     };
     for (const u of [...front, ...back]) {
-      Object.assign(u, { id: 'u' + (++uid), side, role, alive: true, dealt: 0, kills: 0 });
+      Object.assign(u, { id: 'u' + (++uid), side, role, alive: true, dealt: 0, kills: 0, effects: [], used: {}, onceRound: {} });
       if (place(u, back.includes(u) ? backOrder : placeOrder)) battle.units.push(u);
     }
   }
@@ -163,28 +169,336 @@ export function createBattle(game, { territoryId, attackerSide, defenderSide, at
   return battle;
 }
 
-function aliveUnits(battle, side) { return battle.units.filter(u => u.alive && u.side === side); }
+// ---------- 小さな道具 ----------
+const aliveUnits = (b, side) => b.units.filter(u => u.alive && u.side === side);
+const findChar = (b, charId) => b.units.find(u => u.alive && u.charId === charId);
+const enemiesOf = (b, u) => b.units.filter(x => x.alive && x.side !== u.side);
+const alliesOf = (b, u) => b.units.filter(x => x.alive && x.side === u.side);
+const lvOK = (u, lv) => (u.level || 1) >= lv;
+const asleep = (b, u) => u.sleepUntil != null && b.round <= u.sleepUntil;
+const stunned = (b, u) => u.stunFrom != null && b.round >= u.stunFrom && b.round <= u.stunUntil;
+const hasTag = (b, u, tag) => u.effects.some(e => e.tag === tag && b.round <= e.until);
+const sideName = s => (s === 'kingdom' ? '王国' : s === 'demon' ? '魔族' : '中立');
 
-function nextActive(battle) {
-  while (true) {
-    battle.idx++;
-    if (battle.idx >= battle.order.length) {
-      battle.round++;
-      if (battle.round > MAX_ROUNDS) {
-        finish(battle, battle.defenderSide, '時間切れ。守りきった');
-        return;
-      }
-      battle.order = battle.units.filter(u => u.alive)
-        .sort((a, b) => b.spd - a.spd || a.role.localeCompare(b.role) || a.id.localeCompare(b.id))
-        .map(u => u.id);
-      battle.idx = 0;
-      battle.log.push(`― ${battle.round}ターン目 ―`);
+function addEffect(u, e) { u.effects.push(e); }
+
+// 毒・眠り・呪いは「無感情」の野口には効かない
+function ailmentImmune(u) { return u.charId === 'noguchi' && lvOK(u, 10); }
+
+function heal(b, t, amount, label) {
+  if (!t.alive || amount <= 0) return 0;
+  const before = t.hp;
+  t.hp = Math.min(t.max, t.hp + Math.round(amount));
+  const got = t.hp - before;
+  if (got > 0) b.log.push(`${t.name} が${got}回復${label ? `（${label}）` : ''}`);
+  return got;
+}
+
+function applyDamage(b, src, t, dmg, label) {
+  if (!t.alive) return 0;
+  const dealt = Math.min(dmg, t.hp);
+  t.hp -= dmg;
+  if (src) src.dealt += dealt;
+  b.hits.push({ to: t.id, dmg });
+  b.log.push(src ? `${src.name}${label ? `の${label}` : ''} → ${t.name}：${dmg}` : `${t.name} は${label}で${dmg}減った`);
+  if (t.hp <= 0) {
+    if (t.charId === 'yagyu' && !t.revived) {
+      // 始祖の力：1合戦に1回、HP半分で立ち上がる
+      t.revived = true;
+      t.hp = Math.round(t.max / 2);
+      b.log.push('ヤギューが立ち上がった！（始祖の力）');
+    } else {
+      t.hp = 0;
+      t.alive = false;
+      if (src) src.kills++;
+      b.actionKills = (b.actionKills || 0) + 1;
+      b.fallen[t.side]++;
+      if (t.charge) t.charge = null;
+      b.log.push(`${t.name} が倒れた`);
     }
-    const u = battle.units.find(x => x.id === battle.order[battle.idx]);
-    if (u && u.alive) {
-      battle.active = { unitId: u.id, moved: false, ox: u.x, oy: u.y };
+  }
+  return dealt;
+}
+
+function pushBack(b, t, dx, dy) {
+  if (!t.alive) return;
+  const nx = t.x + dx, ny = t.y + dy;
+  if (!inBounds(nx, ny) || unitAt(b, nx, ny) || moveCost(b.grid[ny][nx], t, b) === Infinity) return;
+  t.x = nx; t.y = ny;
+  b.log.push(`${t.name} は押し戻された`);
+}
+
+// 1つの相手をねらう攻撃（通常攻撃・単体の技）。かばう・居合い切り・追撃もここで起きる
+function strike(b, att, def, opts = {}) {
+  if (!opts.noCover) {
+    const s = findChar(b, 'sumire');
+    if (s && s !== def && s.side === def.side && cheb(s, def) <= 1 && !asleep(b, s) && !stunned(b, s) && s.onceRound.cover !== b.round) {
+      s.onceRound.cover = b.round;
+      s.cover = Math.min(6, (s.cover || 0) + 1);
+      b.log.push(`スミレが${def.name}をかばった！（愛情魂）`);
+      def = s;
+    }
+  }
+  if (def.charId === 'sumire' && lvOK(def, 10) && cheb(att, def) <= 1 && def.onceRound.iai !== b.round && !asleep(b, def) && !stunned(b, def)) {
+    def.onceRound.iai = b.round;
+    applyDamage(b, def, att, damage(b, def, att, { mult: 0.5 }), '居合い切り');
+    if (!att.alive) return { target: def, dmg: 0 };
+  }
+  let dmg = damage(b, att, def, opts);
+  if (opts.execute && !def.solo && def.hp <= def.max * 0.3) { dmg = def.hp; b.log.push('一刀両断！'); }
+  applyDamage(b, att, def, dmg, opts.label);
+  if (def.charge && HERO_ROLES.includes(att.charId)) {
+    def.charge = null;
+    def.effects = def.effects.filter(e => e.tag !== 'chargeGuard');
+    b.log.push(`${def.name}の溜めが消えた`);
+  }
+  if (att.charId === 'noguchi') att.visibleUntil = b.round + 1;
+  if (!opts.noFollow) {
+    const car = findChar(b, 'car');
+    if (car && car !== att && car.side === att.side && lvOK(car, 10) && car.onceRound.tsui !== b.round && def.alive
+      && reachTiles(b, car, getRange(b, car)).some(([x, y]) => x === def.x && y === def.y) && isTargetable(b, car, def)) {
+      car.onceRound.tsui = b.round;
+      strike(b, car, def, { mult: 0.5, noFollow: true, label: '追撃' });
+    }
+  }
+  return { target: def, dmg };
+}
+
+// 範囲攻撃（かばう・追撃は起きない）
+function areaDamage(b, u, tiles, opts = {}) {
+  let total = 0;
+  for (const [x, y] of tiles) {
+    const t = unitAt(b, x, y);
+    if (t && t.side !== u.side) total += applyDamage(b, u, t, damage(b, u, t, opts), opts.label);
+  }
+  if (u.charId === 'noguchi') u.visibleUntil = b.round + 1;
+  return total;
+}
+
+// まっすぐ突進して、最初にぶつかった敵を攻撃する
+function dash(b, u, [dx, dy], maxSteps, opts) {
+  for (let i = 0; i < maxSteps; i++) {
+    const nx = u.x + dx, ny = u.y + dy;
+    if (!inBounds(nx, ny)) break;
+    const occ = unitAt(b, nx, ny);
+    if (occ && occ.side !== u.side) {
+      const r = strike(b, u, occ, opts);
+      if (opts.push && r.target === occ) pushBack(b, occ, dx, dy);
       return;
     }
+    if (occ || moveCost(b.grid[ny][nx], u, b) === Infinity) break;
+    u.x = nx; u.y = ny;
+  }
+  b.log.push(`${u.name} の突進はだれにも当たらなかった`);
+}
+
+const lineTiles = (u, [dx, dy], n) => Array.from({ length: n }, (_, i) => [u.x + dx * (i + 1), u.y + dy * (i + 1)]).filter(([x, y]) => inBounds(x, y));
+
+function fireCharge(b, u) {
+  const { id, dir } = u.charge;
+  u.charge = null;
+  u.effects = u.effects.filter(e => e.tag !== 'chargeGuard');
+  if (id === 'shogeki') {
+    b.log.push(`${u.name} の衝撃波！`);
+    areaDamage(b, u, lineTiles(u, dir, 3), { mult: 1.5, label: '衝撃波' });
+  } else if (id === 'totsugeki') {
+    b.log.push(`${u.name} の突撃！`);
+    dash(b, u, dir, 4, { mult: 2.2, label: '突撃' });
+  }
+}
+
+// ---------- 技を使う ----------
+function useSkill(b, u, s, tgt) {
+  const r = b.round;
+  u.mp -= s.mp;
+  if (s.once) u.used[s.id] = true;
+  b.log.push(`${u.name} の「${s.name}」`);
+  const t = tgt.units?.[0];
+  const near = (n, side) => b.units.filter(x => x.alive && (side === 'ally' ? x.side === u.side : x.side !== u.side) && cheb(x, u) <= n);
+  switch (s.id) {
+    // スミレ
+    case 'kirisute': strike(b, u, t, { mult: 1.3, execute: true, label: '切り捨て' }); break;
+    case 'tehodoki': addEffect(t, { stat: 'atk', mult: 1.2, until: r + 3, tag: 'tehodoki' }); break;
+    case 'tokon':
+      u.hp = Math.max(1, u.hp - Math.round(u.max * 0.1));
+      strike(b, u, t, { mult: 2, label: '闘魂切り' });
+      break;
+    case 'yaguri': strike(b, u, t, { mult: t.charId === 'yagyu' ? 3.5 : t.side === 'demon' ? 2.5 : 1, label: '屠羊ノ太刀' }); break;
+    // 野口
+    case 'iyashi': heal(b, t, getStat(b, u, 'mag') * 4, 'いやしの魔法'); break;
+    case 'gunyu':
+      for (const x of near(2, 'ally')) { addEffect(x, { stat: 'atk', mult: 1.15, until: r + 2 }); addEffect(x, { stat: 'def', mult: 1.15, until: r + 2 }); }
+      break;
+    case 'ame': areaDamage(b, u, areaTiles('cross', tgt.x, tgt.y), { mult: 0.9, type: 'mag', label: 'ノ具血之雨' }); break;
+    case 'heel':
+      for (const x of near(2, 'ally')) {
+        heal(b, x, getStat(b, u, 'mag') * 6, 'ハイヒール');
+        x.poisonUntil = null; x.sleepUntil = null;
+      }
+      break;
+    case 'saiseiki':
+      addEffect(u, { stat: 'mag', mult: 1.5, until: r + 3, tag: 'peak' });
+      u.stunFrom = r + 4; u.stunUntil = r + 4;
+      break;
+    // 七星
+    case 'star1': strike(b, u, t, { mult: 0.8, label: 'Ⅰ星' }); break;
+    case 'star2': for (const x of tgt.units.slice(0, 2)) if (x.alive) strike(b, u, x, { mult: 0.8, label: 'Ⅱ星' }); break;
+    case 'star4': areaDamage(b, u, areaTiles('2x2', tgt.x, tgt.y), { mult: 0.9, label: 'Ⅳ星' }); break;
+    case 'star5': areaDamage(b, u, areaTiles('cross', tgt.x, tgt.y), { mult: 1.0, label: 'Ⅴ星' }); break;
+    case 'star7': {
+      const list = enemiesOf(b, u).sort((a, c) => a.hp / a.max - c.hp / c.max).slice(0, 7);
+      for (const x of list) applyDamage(b, u, x, damage(b, u, x, { mult: 1.2 }), 'Ⅶ星');
+      break;
+    }
+    // ヤギュー
+    case 'tosshin': dash(b, u, tgt.dir, 4, { mult: 1.6, push: true, label: '突進' }); break;
+    case 'hoko':
+      for (const x of near(3, 'enemy')) { addEffect(x, { stat: 'atk', mult: 0.85, until: r + 2 }); addEffect(x, { stat: 'def', mult: 0.85, until: r + 2 }); }
+      for (const x of near(3, 'ally')) addEffect(x, { stat: 'atk', mult: 1.15, until: r + 2 });
+      break;
+    case 'mayagi': areaDamage(b, u, areaTiles('sq:1', u.x, u.y), { label: '魔山羊斬' }); break;
+    case 'majin':
+      addEffect(u, { stat: 'atk', mult: 1.4, until: r + 3, tag: 'majin' });
+      addEffect(u, { stat: 'spd', mult: 1.4, until: r + 3 });
+      break;
+    case 'shinka':
+      addEffect(u, { stat: 'all', mult: 1.4, until: r + 3, tag: 'shinka' });
+      u.stunFrom = r + 4; u.stunUntil = r + 5;
+      break;
+    // 堀江
+    case 'ryoto': strike(b, u, t, { type: 'both', label: '両刀斬り' }); break;
+    case 'hashiwatashi': {
+      const [a, c] = tgt.units;
+      if (!a || !c || a === c) throw new Error('入れ替える味方を2つ選んでください');
+      if (moveCost(b.grid[c.y][c.x], a, b) === Infinity || moveCost(b.grid[a.y][a.x], c, b) === Infinity) throw new Error('その場所には行けない部隊がいます');
+      [a.x, c.x] = [c.x, a.x]; [a.y, c.y] = [c.y, a.y];
+      b.log.push(`${a.name}と${c.name}の位置が入れ替わった`);
+      break;
+    }
+    case 'torinashi': addEffect(t, { tag: 'pacified', until: r + 1 }); b.log.push(`${t.name} は話し合いに応じた（攻撃できない）`); break;
+    case 'tenbin': {
+      const own = alliesOf(b, u).reduce((a, x) => a + x.hp, 0);
+      const opp = enemiesOf(b, u).reduce((a, x) => a + x.hp, 0);
+      strike(b, u, t, { mult: 1.5 * Math.min(2, Math.max(1, opp / Math.max(1, own))), label: '天秤の一閃' });
+      break;
+    }
+    // CAR
+    case 'kuroi': strike(b, u, t, { mult: 0.8, label: '黒いですカー？' }); if (t.alive) t.markUntil = r + 1; break;
+    case 'kurayami': for (const [x, y] of areaTiles('cross', tgt.x, tgt.y)) b.dark.push({ x, y, until: r + 2, side: u.side }); break;
+    case 'bighorn': for (const x of near(3, 'ally')) addEffect(x, { stat: 'atk', mult: 1.2, until: r + 2 }); break;
+    case 'trashbox': areaDamage(b, u, areaTiles('sq:3', u.x, u.y), { mult: 0.6 + 0.15 * b.fallen[u.side], label: 'Trash Box Car' }); break;
+    // OH
+    case 'suitoru': { const res = strike(b, u, t, { label: '吸い取る' }); heal(b, u, res.dmg / 2, '吸い取る'); break; }
+    case 'oen': addEffect(t, { stat: 'atk', mult: 1.2, until: r + 2 }); addEffect(t, { stat: 'def', mult: 1.2, until: r + 2 }); break;
+    case 'tane': b.seeds.push({ x: tgt.x, y: tgt.y, round: r, casterId: u.id, side: u.side }); break;
+    case 'suigyu': {
+      const tiles = lineTiles(u, tgt.dir, 4).reverse(); // 奥から順に押し戻す
+      for (const [x, y] of tiles) {
+        const e = unitAt(b, x, y);
+        if (e && e.side !== u.side) { applyDamage(b, u, e, damage(b, u, e), '水牛'); pushBack(b, e, ...tgt.dir); }
+      }
+      break;
+    }
+    case 'suijin': b.rain.push({ side: u.side, until: r + 3 }); b.log.push('雨が降りはじめた'); break;
+    // KKB
+    case 'girori': addEffect(t, { stat: 'move', add: -1, until: r + 2 }); addEffect(t, { stat: 'atk', mult: 0.85, until: r + 2 }); break;
+    case 'shogeki':
+    case 'totsugeki':
+      u.charge = { id: s.id, dir: tgt.dir };
+      if (s.id === 'totsugeki') addEffect(u, { stat: 'def', mult: 1.3, until: r + 5, tag: 'chargeGuard' });
+      if (u.instantCharge) { u.instantCharge = false; fireCharge(b, u); }
+      else b.log.push(`${u.name} は力を溜めている…`);
+      break;
+    case 'kyoho': {
+      addEffect(t, { stat: 'move', add: -1, until: r + 1 });
+      const i = b.order.indexOf(t.id);
+      if (i > b.idx) { b.order.splice(i, 1); b.order.push(t.id); } else t.lastRound = r + 1;
+      b.log.push(`${t.name} はウソの知らせに惑わされた`);
+      break;
+    }
+    case 'kittanai':
+      for (const x of near(2, 'enemy')) addEffect(x, { stat: 'def', mult: 0.7, until: r + 2 });
+      u.instantCharge = true;
+      break;
+    // のぞちち
+    case 'doku': if (ailmentImmune(t)) b.log.push(`${t.name} には効かない`); else t.poisonUntil = r + 3; break;
+    case 'bakuhatsu': areaDamage(b, u, areaTiles('3x3', tgt.x, tgt.y), { mult: 0.8, type: 'mag', label: '爆発の薬' }); break;
+    case 'nemuri': if (ailmentImmune(t)) b.log.push(`${t.name} には効かない`); else { t.sleepUntil = r + 1; b.log.push(`${t.name} は眠ってしまった`); } break;
+    default: throw new Error('この技はまだ使えません');
+  }
+}
+
+// ---------- ターンのはじめ ----------
+function roundStart(b) {
+  b.round++;
+  const r = b.round;
+  b.log.push(`― ${r}ターン目 ―`);
+  for (const u of b.units) u.effects = u.effects.filter(e => e.until >= r);
+  b.dark = b.dark.filter(d => d.until >= r);
+  b.rain = b.rain.filter(d => d.until >= r);
+  for (const u of b.units) if (u.alive && u.maxMp) u.mp = Math.min(u.maxMp, u.mp + 2);
+
+  // 種爆弾
+  for (const seed of b.seeds.filter(x => x.round < r)) {
+    const caster = b.units.find(x => x.id === seed.casterId);
+    if (caster && caster.alive) { b.log.push('種爆弾が爆発した！'); areaDamage(b, caster, areaTiles('3x3', seed.x, seed.y), { label: '種爆弾' }); }
+  }
+  b.seeds = b.seeds.filter(x => x.round >= r);
+
+  for (const u of b.units.filter(x => x.alive)) {
+    if (u.charId === 'yagyu') heal(b, u, u.max * 0.05, '始祖の力');
+    if (u.poisonUntil != null && r <= u.poisonUntil) applyDamage(b, null, u, Math.max(1, Math.round(u.max * 0.06)), '毒');
+    if (u.charId === 'oh' && lvOK(u, 20)) {
+      for (const x of b.units) if (x.alive && x.side === u.side && cheb(x, u) <= 1) heal(b, x, x.max * 0.05, '自然の恵み');
+    }
+    if (b.rain.some(w => w.side === u.side)) heal(b, u, u.max * 0.08, '水神');
+    if (u.charId === 'horie' && lvOK(u, 25) && u.effects.filter(e => e.tag === 'nandemo').length < 5) {
+      const pick = ['atk', 'def', 'mag'].sort((a, c) => getStat(b, u, a) - getStat(b, u, c))[0];
+      addEffect(u, { stat: pick, mult: 1.05, until: 999, tag: 'nandemo' });
+    }
+    if (u.charId === 'nanase' && u.alive) {
+      // 洛星（Ⅲ星で強く、Ⅵ星で2つ）
+      const n = lvOK(u, 25) ? 2 : 1;
+      const mult = lvOK(u, 10) ? 0.55 : 0.35;
+      const list = enemiesOf(b, u).filter(e => cheb(e, u) <= 3).sort((a, c) => a.hp / a.max - c.hp / c.max).slice(0, n);
+      for (const e of list) {
+        applyDamage(b, u, e, damage(b, u, e, { mult }), '洛星');
+        if (lvOK(u, 10) && e.alive) addEffect(e, { stat: 'move', add: -1, until: r });
+      }
+    }
+  }
+  if (checkEnd(b)) return;
+  const last = b.units.filter(u => u.lastRound === r).map(u => u.id);
+  b.order = b.units.filter(u => u.alive)
+    .sort((a, c) => getStat(b, c, 'spd') - getStat(b, a, 'spd') || a.role.localeCompare(c.role) || a.id.localeCompare(c.id))
+    .map(u => u.id);
+  b.order = [...b.order.filter(id => !last.includes(id)), ...b.order.filter(id => last.includes(id))];
+  b.idx = 0;
+}
+
+function nextActive(b) {
+  let guard = 500;
+  while (guard--) {
+    b.idx++;
+    if (b.idx >= b.order.length) {
+      if (b.round >= MAX_ROUNDS) { finish(b, b.defenderSide, '時間切れ。守りきった'); return; }
+      roundStart(b);
+      if (b.result) return;
+    }
+    const u = b.units.find(x => x.id === b.order[b.idx]);
+    if (!u || !u.alive) continue;
+    if (asleep(b, u)) { b.log.push(`${u.name} は眠っている`); continue; }
+    if (stunned(b, u)) { b.log.push(`${u.name} は動けない`); continue; }
+    if (u.charge) {
+      b.hits = [];
+      fireCharge(b, u);
+      if (checkEnd(b)) return;
+      continue;
+    }
+    b.hits = [];
+    b.actionKills = 0;
+    b.active = { unitId: u.id, moved: false, ox: u.x, oy: u.y };
+    return;
   }
 }
 
@@ -195,10 +509,11 @@ export function startBattle(battle) {
 function finish(battle, winnerSide, reason) {
   battle.result = { winner: winnerSide, reason };
   battle.active = null;
-  battle.log.push(`★ ${winnerSide === 'kingdom' ? '王国' : winnerSide === 'demon' ? '魔族' : '中立'}の勝ち（${reason}）`);
+  battle.log.push(`★ ${sideName(winnerSide)}の勝ち（${reason}）`);
 }
 
 function checkEnd(battle) {
+  if (battle.result) return true;
   for (const role of ['attacker', 'defender']) {
     const side = role === 'attacker' ? battle.attackerSide : battle.defenderSide;
     const other = role === 'attacker' ? battle.defenderSide : battle.attackerSide;
@@ -213,25 +528,13 @@ export function activeUnit(battle) {
   return battle.active && battle.units.find(u => u.id === battle.active.unitId);
 }
 
-function doAttack(battle, att, def) {
-  const dmg = damage(battle, att, def);
-  def.hp = Math.max(0, def.hp - dmg);
-  att.dealt += dmg;
-  battle.log.push(`${att.name} → ${def.name}：${dmg}${def.solo || def.isLeaderUnit ? '' : '人'}`);
-  battle.lastHit = { from: att.id, to: def.id, dmg, at: Date.now() };
-  if (def.hp <= 0) {
-    def.alive = false;
-    att.kills++;
-    battle.log.push(`${def.name} が倒れた`);
-  }
-}
-
 function doAttackWall(battle, att, x, y) {
-  const P = att.dmg === 'mag' ? att.mag : Math.max(att.atk, att.dmg === 'best' ? att.mag : 0);
+  const P = att.dmg === 'mag' ? getStat(battle, att, 'mag') : Math.max(getStat(battle, att, 'atk'), att.dmg === 'best' ? getStat(battle, att, 'mag') : 0);
   const dmg = Math.round(P * P / (P + 30) * 4 * (att.solo ? 1 : 0.5 + 0.5 * att.hp / att.max));
   const k = x + ',' + y;
   battle.wallHp[k] -= dmg;
   battle.log.push(`${att.name} が城壁を攻撃：${dmg}`);
+  if (att.charId === 'noguchi') att.visibleUntil = battle.round + 1;
   if (battle.wallHp[k] <= 0) {
     battle.grid[y][x] = '.';
     delete battle.wallHp[k];
@@ -239,89 +542,257 @@ function doAttackWall(battle, att, x, y) {
   }
 }
 
-function endTurn(battle) {
-  if (!checkEnd(battle)) nextActive(battle);
+// 行動のあと：殺戮・最盛期なら、もう一度行動できる
+function afterAction(b, u) {
+  if (checkEnd(b)) return;
+  const r = b.round;
+  if (u.alive && !stunned(b, u)) {
+    if (u.charId === 'sumire' && lvOK(u, 25) && b.actionKills > 0 && u.onceRound.satsuriku !== r) {
+      u.onceRound.satsuriku = r;
+      b.log.push('スミレの殺戮！ もう一度行動できる');
+      b.active = { unitId: u.id, moved: false, ox: u.x, oy: u.y, extra: true, noSkill: true };
+      b.actionKills = 0;
+      return;
+    }
+    if (hasTag(b, u, 'peak') && u.onceRound.peak !== r) {
+      u.onceRound.peak = r;
+      b.log.push('野口の最盛期！ もう一度行動できる');
+      b.active = { unitId: u.id, moved: false, ox: u.x, oy: u.y, extra: true };
+      b.actionKills = 0;
+      return;
+    }
+  }
+  nextActive(b);
 }
 
-// 人間の操作
+function resolveSkillTarget(b, u, s, action) {
+  const { units, cells } = skillTargets(b, u, s);
+  const tgt = {};
+  if (s.target === 'enemy' || s.target === 'ally') {
+    const t = units.find(x => x.id === action.targetId);
+    if (!t) throw new Error('そこには届きません');
+    tgt.units = [t];
+  } else if (s.target === 'enemy2' || s.target === 'ally2') {
+    const ids = [...new Set(action.targetIds || [])];
+    const list = ids.map(id => units.find(x => x.id === id));
+    if (!list.length || list.some(x => !x)) throw new Error('そこには届きません');
+    if (s.target === 'ally2' && list.length !== 2) throw new Error('味方を2つ選んでください');
+    tgt.units = list.slice(0, 2);
+  } else if (s.target === 'tile') {
+    if (!cells.some(([x, y]) => x === action.x && y === action.y)) throw new Error('そこには届きません');
+    tgt.x = action.x; tgt.y = action.y;
+  } else if (s.target === 'dir') {
+    const c = cells.find(([x, y]) => x === action.x && y === action.y);
+    if (!c) throw new Error('向きを選んでください');
+    tgt.dir = [action.x - u.x, action.y - u.y];
+  }
+  return tgt;
+}
+
+// 人間の操作（AIも同じ道を通る）
 export function applyBattleAction(battle, role, action) {
   if (battle.result) throw new Error('合戦は終わっています');
   const u = activeUnit(battle);
   if (!u) throw new Error('今動ける部隊がありません');
-  if (u.controller !== role) throw new Error('あなたの部隊の番ではありません');
+  if (role !== null && u.controller !== role) throw new Error('あなたの部隊の番ではありません');
   const a = battle.active;
+  const pacified = hasTag(battle, u, 'pacified');
   switch (action.type) {
     case 'move': {
       if (a.moved) throw new Error('もう移動しました');
       if (!reachable(battle, u).some(([x, y]) => x === action.x && y === action.y)) throw new Error('そこへは動けません');
       u.x = action.x; u.y = action.y; a.moved = true;
-      break;
+      return;
     }
-    case 'undo': {
+    case 'undo':
       u.x = a.ox; u.y = a.oy; a.moved = false;
-      break;
-    }
+      return;
     case 'attack': {
+      if (pacified) throw new Error('とりなされていて攻撃できません');
       const t = battle.units.find(x => x.id === action.targetId);
-      if (!t || !t.alive || t.side === u.side || !inRange(u.range, u.x, u.y, t.x, t.y)) throw new Error('攻撃が届きません');
-      doAttack(battle, u, t);
-      endTurn(battle);
+      if (!t || !t.alive || !targetsFrom(battle, u, u.x, u.y).units.includes(t)) throw new Error('攻撃が届きません');
+      battle.hits = [];
+      strike(battle, u, t);
       break;
     }
     case 'attackWall': {
+      if (pacified) throw new Error('とりなされていて攻撃できません');
       const { walls } = targetsFrom(battle, u, u.x, u.y);
       if (!walls.some(([x, y]) => x === action.x && y === action.y)) throw new Error('城壁に届きません');
       doAttackWall(battle, u, action.x, action.y);
-      endTurn(battle);
+      break;
+    }
+    case 'skill': {
+      const s = skillList(battle, u).find(x => x.id === action.skillId);
+      if (!s) throw new Error('その技はありません');
+      if (!s.ok) throw new Error(s.why);
+      if (pacified && s.target !== 'ally' && s.target !== 'ally2' && s.target !== 'self') throw new Error('とりなされていて攻撃できません');
+      const tgt = resolveSkillTarget(battle, u, s, action);
+      battle.hits = [];
+      useSkill(battle, u, s, tgt);
       break;
     }
     case 'wait':
       battle.log.push(`${u.name} は待機`);
-      endTurn(battle);
-      break;
+      nextActive(battle);
+      return;
     default:
       throw new Error('知らない操作です');
   }
+  afterAction(battle, u);
 }
 
-const dist = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+// ---------- AI ----------
+const BUFF_SKILLS = { gunyu: 2, hoko: 3, bighorn: 3, oen: 1, tehodoki: 1, majin: 0, shinka: 0, saiseiki: 0, suijin: 0, kittanai: 2 };
+
+// その技を、今の位置からどう使うと一番よいか（点数つき）
+function bestSkillUse(b, u, s) {
+  const { units, cells } = skillTargets(b, u, s);
+  const enemies = enemiesOf(b, u);
+  const close = enemies.some(e => cheb(e, u) <= 4);
+  const dmgScore = (t, opts) => {
+    const d = damage(b, u, t, opts);
+    let sc = Math.min(d, t.hp) * (t.solo ? 0.6 : 1);
+    if (d >= t.hp) sc += 120;
+    if (t.isCommander) sc += d >= t.hp ? 2000 : 40;
+    return sc;
+  };
+  const areaScore = (tiles, opts) => tiles.reduce((a, [x, y]) => { const t = unitAt(b, x, y); return a + (t && t.side !== u.side ? dmgScore(t, opts) : 0); }, 0);
+  const cost = s.mp * 2 + (s.once ? 60 : 0);
+  let best = null;
+  const consider = (score, action) => { if (score > 0 && (!best || score > best.score)) best = { score, action }; };
+  switch (s.id) {
+    case 'kirisute': case 'tokon': case 'yaguri': case 'star1': case 'ryoto': case 'tenbin': case 'kuroi': case 'suitoru': {
+      const mult = { kirisute: 1.3, tokon: 2, star1: 0.8, kuroi: 0.9, tenbin: 2 }[s.id] || 1;
+      for (const t of units) {
+        let m = mult;
+        if (s.id === 'yaguri') m = t.charId === 'yagyu' ? 3.5 : t.side === 'demon' ? 2.5 : 1;
+        let sc = dmgScore(t, { mult: m, type: s.id === 'ryoto' ? 'both' : undefined });
+        if (s.id === 'kirisute' && !t.solo && t.hp <= t.max * 0.3) sc += 150;
+        consider(sc - cost, { targetId: t.id });
+      }
+      break;
+    }
+    case 'star2': {
+      const top = units.map(t => ({ t, sc: dmgScore(t, { mult: 0.8 }) })).sort((a, c) => c.sc - a.sc).slice(0, 2);
+      if (top.length) consider(top.reduce((a, x) => a + x.sc, 0) - cost, { targetIds: top.map(x => x.t.id) });
+      break;
+    }
+    case 'ame': case 'star4': case 'star5': case 'bakuhatsu': {
+      const area = { ame: 'cross', star4: '2x2', star5: 'cross', bakuhatsu: '3x3' }[s.id];
+      const mult = { ame: 0.9, star4: 0.9, star5: 1, bakuhatsu: 0.8 }[s.id];
+      for (const [x, y] of cells) consider(areaScore(areaTiles(area, x, y), { mult, type: s.id === 'star4' || s.id === 'star5' ? undefined : 'mag' }) - cost, { x, y });
+      break;
+    }
+    case 'mayagi': consider(areaScore(areaTiles('sq:1', u.x, u.y), {}) - cost, {}); break;
+    case 'trashbox': consider(areaScore(areaTiles('sq:3', u.x, u.y), { mult: 0.6 + 0.15 * b.fallen[u.side] }) - cost, {}); break;
+    case 'star7': consider(enemies.sort((a, c) => a.hp / a.max - c.hp / c.max).slice(0, 7).reduce((a, t) => a + dmgScore(t, { mult: 1.2 }), 0) - cost, {}); break;
+    case 'tosshin': case 'totsugeki': case 'suigyu': case 'shogeki': {
+      for (const [x, y] of cells) {
+        const dir = [x - u.x, y - u.y];
+        const n = s.id === 'shogeki' ? 3 : 4;
+        let sc = 0;
+        if (s.id === 'suigyu' || s.id === 'shogeki') sc = areaScore(lineTiles(u, dir, n), { mult: s.id === 'shogeki' ? 1.5 : 1 });
+        else for (const [tx, ty] of lineTiles(u, dir, n)) {
+          const t = unitAt(b, tx, ty);
+          if (t && t.side !== u.side) { sc = dmgScore(t, { mult: s.id === 'tosshin' ? 1.6 : 2.2 }); break; }
+          if (t || moveCost(b.grid[ty][tx], u, b) === Infinity) break;
+        }
+        if (s.kind === 'charge' && !u.instantCharge) sc *= 0.6;
+        consider(sc - cost, { x, y });
+      }
+      break;
+    }
+    case 'iyashi':
+      for (const t of units) consider(Math.min(t.max - t.hp, getStat(b, u, 'mag') * 4) * 0.8 - 40 - cost, { targetId: t.id });
+      break;
+    case 'heel': {
+      const sc = alliesOf(b, u).filter(x => cheb(x, u) <= 2).reduce((a, x) => a + Math.min(x.max - x.hp, getStat(b, u, 'mag') * 6), 0);
+      consider(sc * 0.8 - 60 - cost, {});
+      break;
+    }
+    case 'oen': case 'tehodoki':
+      if (close) for (const t of units) consider(40 + (t.isLeaderUnit ? 20 : 0) - cost, { targetId: t.id });
+      break;
+    case 'gunyu': case 'hoko': case 'bighorn': case 'kittanai': {
+      const n = BUFF_SKILLS[s.id];
+      const who = s.id === 'hoko' || s.id === 'kittanai' ? enemies.filter(e => cheb(e, u) <= n) : alliesOf(b, u).filter(x => cheb(x, u) <= n);
+      if (close) consider(who.length * 30 - cost, {});
+      break;
+    }
+    case 'majin': case 'shinka': case 'saiseiki': case 'suijin':
+      if (enemies.some(e => cheb(e, u) <= 3)) consider(220 - cost, {});
+      break;
+    case 'torinashi': case 'nemuri':
+      for (const t of units) if (!ailmentImmune(t) || s.id === 'torinashi') consider(getStat(b, t, 'atk') * 3 + (t.solo ? 80 : 0) - cost, { targetId: t.id });
+      break;
+    case 'doku':
+      for (const t of units) if (!ailmentImmune(t) && !(t.poisonUntil >= b.round)) consider(t.max * 0.18 - cost, { targetId: t.id });
+      break;
+    case 'girori': case 'kyoho':
+      for (const t of units) consider(getStat(b, t, 'atk') * 1.5 - cost, { targetId: t.id });
+      break;
+    case 'kurayami':
+      for (const [x, y] of cells) {
+        const n = areaTiles('cross', x, y).filter(([a, c]) => { const t = unitAt(b, a, c); return t && t.side !== u.side && t.range !== 'adj8'; }).length;
+        consider(n * 45 - cost, { x, y });
+      }
+      break;
+    case 'tane':
+      for (const [x, y] of cells) consider(areaScore(areaTiles('3x3', x, y), {}) * 0.6 - cost, { x, y });
+      break;
+    default: break;
+  }
+  return best;
+}
 
 // AIの1手
 export function aiStep(battle) {
   const u = activeUnit(battle);
   if (!u) return;
-  const enemies = battle.units.filter(e => e.alive && e.side !== u.side);
-  const tiles = reachable(battle, u);
+  const b = battle;
+  const enemies = enemiesOf(b, u);
+  const tiles = reachable(b, u);
   const ox = u.x, oy = u.y;
+  const pacified = hasTag(b, u, 'pacified');
   let best = null;
   for (const [x, y] of tiles) {
     u.x = x; u.y = y;
-    const { units, walls } = targetsFrom(battle, u, x, y);
-    for (const t of units) {
-      const d = damage(battle, u, t);
-      let score = Math.min(d, t.hp) * (t.solo ? 0.5 : 1);
+    const danger = u.isCommander ? enemies.filter(e => cheb(e, { x, y }) <= 2).length * 40 : 0;
+    const { units, walls } = targetsFrom(b, u, x, y);
+    if (!pacified) for (const t of units) {
+      const d = damage(b, u, t);
+      let score = Math.min(d, t.hp) * (t.solo ? 0.6 : 1);
       if (d >= t.hp) score += 150;
       if (t.isCommander) score += d >= t.hp ? 2000 : 60;
-      // 大将は危ないところへ出ていかない
-      if (u.isCommander) score -= enemies.filter(e => dist(e, { x, y }) <= 2).length * 40;
-      if (!best || score > best.score) best = { score, x, y, target: t };
+      score -= danger;
+      if (!best || score > best.score) best = { score, x, y, action: { type: 'attack', targetId: t.id } };
     }
-    if (!u.isCommander) for (const [wx, wy] of walls) {
+    if (!u.isCommander && !pacified) for (const [wx, wy] of walls) {
       const score = 15 - Math.abs(wy - 5);
-      if (!best || score > best.score) best = { score, x, y, wall: [wx, wy] };
+      if (!best || score > best.score) best = { score, x, y, action: { type: 'attackWall', x: wx, y: wy } };
+    }
+    for (const s of skillList(b, u)) {
+      if (!s.ok) continue;
+      if (pacified && s.target !== 'ally' && s.target !== 'ally2' && s.target !== 'self') continue;
+      const use = bestSkillUse(b, u, s);
+      if (use && (!best || use.score - danger > best.score)) best = { score: use.score - danger, x, y, action: { type: 'skill', skillId: s.id, ...use.action } };
     }
   }
   u.x = ox; u.y = oy;
-  if (best && (best.target || best.wall)) {
-    u.x = best.x; u.y = best.y;
-    if (best.target) doAttack(battle, u, best.target);
-    else doAttackWall(battle, u, ...best.wall);
-    endTurn(battle);
+  if (best && best.score > 0) {
+    if (best.x !== ox || best.y !== oy) applyBattleAction(b, null, { type: 'move', x: best.x, y: best.y });
+    try {
+      applyBattleAction(b, null, best.action);
+    } catch (e) {
+      b.log.push(`${u.name} は待機`);
+      nextActive(b);
+    }
     return;
   }
   // 届く敵がいない：近づく（大将と、城壁の内側の守り手は持ち場を守る）
-  const nearest = enemies.slice().sort((a, b) => dist(a, u) - dist(b, u))[0];
-  const hold = u.isCommander || (u.role === 'defender' && nearest && dist(nearest, u) > 6);
+  const nearest = enemies.slice().sort((a, c) => cheb(a, u) - cheb(c, u))[0];
+  const hold = u.isCommander || (u.role === 'defender' && nearest && cheb(nearest, u) > 6);
   if (nearest && !hold) {
     let pick = null;
     for (const [x, y] of tiles) {
@@ -330,6 +801,6 @@ export function aiStep(battle) {
     }
     if (pick) { u.x = pick.x; u.y = pick.y; }
   }
-  battle.log.push(`${u.name} は${hold ? '構えている' : '前進'}`);
-  endTurn(battle);
+  b.log.push(`${u.name} は${hold ? '構えている' : '前進'}`);
+  nextActive(b);
 }

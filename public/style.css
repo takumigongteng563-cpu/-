@@ -100,6 +100,17 @@ input, select { font: inherit; padding: 5px 8px; border: 1px solid #c9bfa9; bord
 .turnList span { padding: 1px 6px; border-radius: 4px; color: #fff; font-size: 12px; }
 .result { padding: 10px; border-radius: 8px; background: #fff1d3; font-weight: bold; margin-bottom: 8px; }
 
+.skills { display: flex; flex-direction: column; gap: 4px; }
+.skill { text-align: left; display: flex; justify-content: space-between; gap: 8px; }
+.skill .mp { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.skill.primary .mp { color: #fff; }
+.aim { background: #fff7e6; border: 1px solid #f0cf8a; border-radius: 8px; padding: 8px; margin-top: 8px; font-size: 13px; }
+.book { font-size: 12px; margin-top: 6px; }
+.book > div { padding: 4px 0; border-top: 1px dotted #e6dfcf; }
+.book .tag { font-size: 11px; color: var(--muted); }
+.book .desc { color: #5d564b; }
+summary { cursor: pointer; font-size: 13px; }
+
 /* モーダル（イベント） */
 #modal { position: fixed; inset: 0; background: rgba(20, 16, 10, .6); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
 #modal .box { background: #fffaf0; max-width: 640px; width: 100%; border-radius: 12px; padding: 20px 22px; max-height: 85vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
