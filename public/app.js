@@ -2,7 +2,7 @@
 import {
   TERRITORIES, EDGES, SIZES, SPECIALTIES, CHARACTERS, UNIT_TYPES, ROLES, HERO_ROLES, REQUIRED_ROLES,
   BATTLE_W, BATTLE_H, TERRAIN, MAJORITY, MAX_ROUNDS, KINGDOM_ACTIONS, DEMON_ACTIONS, neighbors, gameStats, levelUpCost, expToNext,
-  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured,
+  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured, FACILITIES, canRemodel,
 } from '/shared/data.js';
 import { reachable, targetsFrom, damage, getStat, getMove, isTargetable, inDarkness } from '/shared/battlecore.js';
 import { SKILLS, skillOf, skillList, skillTargets, areaTiles } from '/shared/skills.js';
@@ -227,6 +227,7 @@ function renderMap(g) {
     h += `<text x="${t.x}" y="${t.y + 5}" text-anchor="middle" font-size="${r > 20 ? 15 : 13}" font-weight="bold" fill="${SIDE_COLOR[st.owner]}">${SIZE_MARK[t.size]}</text>`;
     h += `<text x="${t.x}" y="${t.y + r + 14}" text-anchor="middle" font-size="12" fill="#3a352d">${t.name}</text>`;
     h += `<text x="${t.x}" y="${t.y + r + 27}" text-anchor="middle" font-size="10" fill="#7a725f">兵${st.garrison}${t.specialty ? '・' + SPECIALTIES[t.specialty].name : ''}</text>`;
+    if (st.facility) h += `<rect x="${t.x - r - 10}" y="${t.y + r - 14}" width="16" height="16" rx="3" fill="${st.owner === 'demon' ? '#5d2a70' : '#7a5a10'}"/><text x="${t.x - r - 2}" y="${t.y + r - 2}" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold">${FACILITIES[st.facility].label}</text>`;
     if (st.damaged > 0) h += `<text x="${t.x - r - 2}" y="${t.y - r + 4}" font-size="12" fill="#c43f3f" font-weight="bold">荒${st.damaged}</text>`;
     h += `</g>`;
   }
@@ -292,6 +293,7 @@ function terrInfo(g, tid) {
       <span class="l">畑</span><span>${st.farm}</span><span class="l">商業</span><span>${st.commerce}</span>
       <span class="l">守り</span><span>${st.defense}</span>${mood}
     </div>
+    ${st.facility ? `<div class="hint"><b>${FACILITIES[st.facility].name}</b>：${esc(FACILITIES[st.facility].desc)}</div>` : ''}
     ${st.damaged ? `<div class="hint" style="color:#c43f3f">戦で荒れている：あと${st.damaged}日は収穫が半分</div>` : ''}
     ${here.length ? `<div style="margin-top:6px">${here.map(x => genRow(g, x)).join('')}</div>` : ''}
   </div>`;
@@ -308,7 +310,7 @@ function orderText(g, gen) {
   const m = S.draft.moves[gen.id];
   if (m !== undefined) return '→' + TERRITORIES[m].name;
   const a = S.draft.acts[gen.id];
-  if (a) return a.type === 'craft' ? `${recipeName(a.recipe, gen.owner)}づくり` : KINGDOM_ACTIONS[a.type].name;
+  if (a) return a.type === 'craft' ? `${recipeName(a.recipe, gen.owner)}づくり` : a.type === 'build' ? `${FACILITIES[a.facility].name}に作り変え` : KINGDOM_ACTIONS[a.type].name;
   return '';
 }
 
@@ -350,8 +352,15 @@ function selGenSection(g) {
     if (gen.kind === 'soldier' && g.territories[gen.location].owner === 'kingdom') {
       const cur = S.draft.acts[gen.id]?.type;
       h += `<div class="hint">この兵に、いる陣地で内政をさせる（その日は動かない）：</div><div class="acts">` +
-        Object.entries(KINGDOM_ACTIONS).filter(([, a]) => !a.queenOnly && !a.workshop).map(([k, a]) =>
+        Object.entries(KINGDOM_ACTIONS).filter(([, a]) => !a.queenOnly && !a.workshop && !a.build).map(([k, a]) =>
           `<button class="small ${cur === k ? 'primary' : ''}" data-kact="${k}" title="${esc(a.desc)}">${a.name}</button>`).join('') + `</div>`;
+      if (canRemodel(gen.location)) {
+        const curF = S.draft.acts[gen.id]?.type === 'build' ? S.draft.acts[gen.id].facility : null;
+        const here = g.territories[gen.location].facility;
+        h += `<div class="hint">この陣地を作り変える（今：${here ? FACILITIES[here].name : 'なし'}）：</div><div class="skills">` +
+          Object.entries(FACILITIES).filter(([, F]) => F.side === 'kingdom').map(([f, F]) =>
+            `<button class="small choice ${curF === f ? 'primary' : ''}" data-build="${f}" ${here === f ? 'disabled' : ''}><b>${F.name}（お金${F.cost.gold}）</b><span>${esc(F.desc)}</span></button>`).join('') + `</div>`;
+      }
     }
   } else if (!canOrder(gen) && gen.side !== mySide()) {
     h += `<div class="hint">相手の武将です。</div>`;
@@ -366,12 +375,12 @@ function demonSection(g) {
   const used = acts.length + S.draft.globals.length;
   const mine = g.territories.filter(t => t.owner === 'demon');
   let h = `<div class="sec"><h3>魔族の内政（${used}/${max}回）</h3>`;
-  h += acts.map(([k, a]) => `<div class="row"><span>${DEMON_ACTIONS[a.type].name}：${TERRITORIES[a.tid].name}</span><span style="flex:1"></span><button class="small" data-rmact="${k}">やめる</button></div>`).join('');
-  h += S.draft.globals.map((a, i) => `<div class="row"><span>レベル上げ：${CHARACTERS[a.charId].name}（今Lv${g.chars[a.charId].level}・魔力${levelUpCost(g.chars[a.charId].level)}）</span><span style="flex:1"></span><button class="small" data-rmglobal="${i}">やめる</button></div>`).join('');
+  h += acts.map(([k, a]) => `<div class="row"><span>${a.type === 'build' ? `作り変え（${FACILITIES[a.facility].name}）` : DEMON_ACTIONS[a.type].name}：${TERRITORIES[a.tid].name}</span><span style="flex:1"></span><button class="small" data-rmact="${k}">やめる</button></div>`).join('');
+  h += S.draft.globals.map((a, i) => `<div class="row"><span>${a.type === 'curse' ? `勇者を呪う：${CHARACTERS[a.charId].name}（魔力40）` : `レベル上げ：${CHARACTERS[a.charId].name}（今Lv${g.chars[a.charId].level}・魔力${levelUpCost(g.chars[a.charId].level)}）`}</span><span style="flex:1"></span><button class="small" data-rmglobal="${i}">やめる</button></div>`).join('');
   if (used < max) {
     const tsel = S.selTerr != null && g.territories[S.selTerr].owner === 'demon' ? S.selTerr : mine[0]?.id;
     h += `<div class="row" style="margin-top:6px">
-      <select id="dType">${Object.entries(DEMON_ACTIONS).map(([k, a]) => `<option value="${k}">${a.name}（${a.desc}）</option>`).join('')}</select>
+      <select id="dType">${demonTypeOptions().map(([v, label]) => `<option value="${v}" ${S.dType === v ? 'selected' : ''}>${label}</option>`).join('')}</select>
       <select id="dTarget"></select>
       <button class="small primary" id="dAdd">追加</button></div>`;
     S._demonDefault = tsel;
@@ -380,13 +389,31 @@ function demonSection(g) {
   return h;
 }
 
+// 魔族の内政の選択肢（作り変えは施設ごとに分ける）
+function demonTypeOptions() {
+  const out = [];
+  for (const [k, a] of Object.entries(DEMON_ACTIONS)) {
+    if (k === 'build') {
+      for (const [f, F] of Object.entries(FACILITIES)) if (F.side === 'demon') out.push([`build:${f}`, `作り変え：${F.name}（魔力${F.cost.magic}・${F.desc}）`]);
+    } else out.push([k, `${a.name}（${a.desc}）`]);
+  }
+  return out;
+}
+
 function fillDemonTarget(g) {
   const typeSel = $('#dType'), tSel = $('#dTarget');
   if (!typeSel) return;
   const fill = () => {
-    if (DEMON_ACTIONS[typeSel.value].enemy) {
+    S.dType = typeSel.value;
+    const [type, facility] = typeSel.value.split(':');
+    const A = DEMON_ACTIONS[type];
+    if (A.heroTarget) {
+      tSel.innerHTML = HERO_ROLES.map(c => `<option value="${c}">${CHARACTERS[c].name}${g.generals[c]?.status === 'active' ? '' : '（倒れている）'}</option>`).join('');
+    } else if (facility) {
+      tSel.innerHTML = g.territories.filter(t => t.owner === 'demon' && canRemodel(t.id)).map(t => `<option value="${t.id}" ${t.id === S._demonDefault ? 'selected' : ''}>${TERRITORIES[t.id].name}（今：${t.facility ? FACILITIES[t.facility].name : 'なし'}）</option>`).join('');
+    } else if (A.enemy) {
       tSel.innerHTML = g.territories.filter(t => t.owner === 'kingdom' && t.id !== 0).map(t => `<option value="${t.id}">${TERRITORIES[t.id].name}（王国・兵${t.garrison}）</option>`).join('');
-    } else if (DEMON_ACTIONS[typeSel.value].global) {
+    } else if (A.global) {
       tSel.innerHTML = ['yagyu', 'car', 'oh', 'kkb'].map(c => `<option value="${c}">${CHARACTERS[c].name}（Lv${g.chars[c].level}・魔力${levelUpCost(g.chars[c].level)}）</option>`).join('');
     } else {
       tSel.innerHTML = g.territories.filter(t => t.owner === 'demon').map(t => `<option value="${t.id}" ${t.id === S._demonDefault ? 'selected' : ''}>${TERRITORIES[t.id].name}（恐怖${t.fear}・兵${t.garrison}）</option>`).join('');
@@ -395,9 +422,9 @@ function fillDemonTarget(g) {
   typeSel.onchange = fill;
   fill();
   $('#dAdd').onclick = () => {
-    const type = typeSel.value;
-    if (DEMON_ACTIONS[type].global) S.draft.globals.push({ type, charId: tSel.value });
-    else S.draft.acts['a' + Date.now()] = { type, tid: Number(tSel.value) };
+    const [type, facility] = typeSel.value.split(':');
+    if (DEMON_ACTIONS[type].global || DEMON_ACTIONS[type].heroTarget) S.draft.globals.push({ type, charId: tSel.value });
+    else S.draft.acts['a' + Date.now()] = { type, tid: Number(tSel.value), ...(facility ? { facility } : {}) };
     sendDraft(); render();
   };
 }
@@ -514,6 +541,12 @@ $('#panel').addEventListener('click', async (e) => {
   if (b.id === 'btnReady') {
     if (S.sendTimer) await flushDraft();
     return act({ type: 'ready', ready: !g.ready[S.me.role] });
+  }
+  if (b.dataset.build) {
+    const gid = S.selGen;
+    if (S.draft.acts[gid]?.facility === b.dataset.build) delete S.draft.acts[gid];
+    else { S.draft.acts[gid] = { type: 'build', facility: b.dataset.build }; delete S.draft.moves[gid]; }
+    sendDraft(); render(); return;
   }
   if (b.dataset.kact) {
     const gid = S.selGen;

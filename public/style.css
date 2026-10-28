@@ -31,6 +31,7 @@ button.primary { background: var(--accent); border-color: #b07a10; color: #fff; 
 button.primary:hover:not(:disabled) { background: #e7a92c; }
 button.ghost { background: transparent; }
 button.small { padding: 2px 8px; font-size: 12px; }
+select { max-width: 100%; }
 input, select { font: inherit; padding: 5px 8px; border: 1px solid #c9bfa9; border-radius: 6px; background: #fff; color: var(--ink); }
 .hidden { display: none !important; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

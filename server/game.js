@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import {
   TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, REQUIRED_ROLES, UNIT_MAX, MAJORITY,
   neighbors, gameStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
-  MATERIALS, RECIPES, GEAR_MAX, SPECIALTIES, emptyMaterials, troopGearCost, recipeName,
+  MATERIALS, RECIPES, GEAR_MAX, SPECIALTIES, emptyMaterials, troopGearCost, recipeName, FACILITIES, canRemodel, garrisonCap,
 } from '../shared/data.js';
 import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit, setCommander, createPursuit } from './battle.js';
 import { getStat } from '../shared/battlecore.js';
@@ -20,11 +20,13 @@ export function actionCost(game, side, type, extra) {
     if (type === 'gearWeapon') return troopGearCost('weapon', K.gearWeapon);
     if (type === 'gearArmor') return troopGearCost('armor', K.gearArmor);
     if (type === 'craft') return { ...RECIPES[extra]?.cost };
+    if (type === 'build') return { ...FACILITIES[extra]?.cost };
     if (type === 'train') c.gold = Math.round(200 * (1 + 0.5 * tr));
     return c;
   }
   const c = { ...DEMON_ACTIONS[type].cost };
   if (type === 'levelup') c.magic = levelUpCost(game.chars[extra]?.level || 1);
+  if (type === 'build') return { ...FACILITIES[extra]?.cost };
   return c;
 }
 
@@ -173,14 +175,17 @@ export function setOrders(game, role, orders) {
     const max = demonActionCount(game);
     let n = 0;
     for (const a of Object.values(orders.acts || {})) {
-      if (n >= max || !DEMON_ACTIONS[a.type] || DEMON_ACTIONS[a.type].global) continue;
+      const D = DEMON_ACTIONS[a.type];
+      if (n >= max || !D || D.global || D.heroTarget) continue;
       // 魔物を送る先は王国の陣地、それ以外は魔族の陣地
-      if (game.territories[a.tid]?.owner !== (DEMON_ACTIONS[a.type].enemy ? 'kingdom' : 'demon')) continue;
-      clean.acts['t' + a.tid + '_' + n] = { type: a.type, tid: a.tid }; n++;
+      if (game.territories[a.tid]?.owner !== (D.enemy ? 'kingdom' : 'demon')) continue;
+      if (a.type === 'build' && (FACILITIES[a.facility]?.side !== 'demon' || !canRemodel(a.tid))) continue;
+      clean.acts['t' + a.tid + '_' + n] = { type: a.type, tid: a.tid, ...(a.type === 'build' ? { facility: a.facility } : {}) }; n++;
     }
     for (const a of orders.globals || []) {
-      if (n >= max || a.type !== 'levelup' || CHARACTERS[a.charId]?.side !== 'demon') continue;
-      clean.globals.push({ type: 'levelup', charId: a.charId }); n++;
+      if (n >= max) continue;
+      if (a.type === 'levelup' && CHARACTERS[a.charId]?.side === 'demon') { clean.globals.push({ type: 'levelup', charId: a.charId }); n++; }
+      if (a.type === 'curse' && HERO_ROLES.includes(a.charId)) { clean.globals.push({ type: 'curse', charId: a.charId }); n++; }
     }
   } else {
     // 勇者は自分の兵の武将に内政をさせられる（その日は動かない）
@@ -190,7 +195,8 @@ export function setOrders(game, role, orders) {
       if (!KINGDOM_ACTIONS[a.type] || KINGDOM_ACTIONS[a.type].queenOnly) continue;
       if (clean.moves[gid] !== undefined) continue;
       if (a.type === 'craft' && !RECIPES[a.recipe]) continue;
-      clean.acts[gid] = { type: a.type, tid: g.location, ...(a.type === 'craft' ? { recipe: a.recipe } : {}) };
+      if (a.type === 'build' && (FACILITIES[a.facility]?.side !== 'kingdom' || !canRemodel(g.location))) continue;
+      clean.acts[gid] = { type: a.type, tid: g.location, ...(a.type === 'craft' ? { recipe: a.recipe } : {}), ...(a.type === 'build' ? { facility: a.facility } : {}) };
     }
   }
   game.orders[role] = clean;
@@ -241,7 +247,9 @@ function doInternal(game, side, type, tid, by, extra) {
   const T = TERRITORIES[tid];
   const S = SIZES[T.size];
   const A = (side === 'kingdom' ? KINGDOM_ACTIONS : DEMON_ACTIONS)[type];
-  const cost = actionCost(game, side, type, extra?.recipe);
+  const cost = actionCost(game, side, type, extra?.recipe || extra?.facility);
+  if (type === 'build' && (!FACILITIES[extra?.facility] || FACILITIES[extra.facility].side !== side || !canRemodel(tid) || t.owner !== side)) return false;
+  if (type === 'build' && t.facility === extra.facility) return false;
   if ((type === 'gearWeapon' && res.gearWeapon >= GEAR_MAX) || (type === 'gearArmor' && res.gearArmor >= GEAR_MAX)) return false;
   if (!payCost(res, cost)) { game.log.push(`${by}：${A.workshop ? '' : T.name + 'で'}${A.name}…お金や素材が足りない`); return false; }
   switch (type) {
@@ -261,7 +269,7 @@ function doInternal(game, side, type, tid, by, extra) {
     case 'commerce': t.commerce = Math.min(Math.max(S.commerce, 20) * 2, t.commerce + 4); break;
     case 'people': t.pop = Math.min(Math.round(S.pop * 1.5), t.pop + 200); break;
     case 'conscript': {
-      const n = Math.min(150, t.pop - 200, S.cap - t.garrison);
+      const n = Math.min(t.facility === 'barracks' ? 250 : 150, t.pop - 200, garrisonCap(t) - t.garrison);
       if (n <= 0) { game.log.push(`${by}：${T.name}ではこれ以上兵を集められない`); return false; }
       t.pop -= n; t.garrison += n; t.loyalty = Math.max(0, t.loyalty - 2); break;
     }
@@ -269,7 +277,13 @@ function doInternal(game, side, type, tid, by, extra) {
     case 'alms': t.loyalty = Math.min(100, t.loyalty + 12); break;
     case 'train': res.training = Math.min(10, res.training + 1); break;
     case 'terror': t.fear = Math.min(100, t.fear + 15); t.pop = Math.max(100, t.pop - 80); break;
-    case 'spawn': t.garrison = Math.min(S.cap, t.garrison + 150); break;
+    case 'spawn': t.garrison = Math.min(garrisonCap(t), t.garrison + 150); break;
+    case 'build':
+      if (t.facility) game.log.push(`${T.name}の${FACILITIES[t.facility].name}をこわした`);
+      t.facility = extra.facility;
+      game.log.push(`${by}：${T.name}を${FACILITIES[extra.facility].name}に作り変えた`);
+      break;
+    case 'darkFortify': t.defense = Math.min(100, t.defense + 15); break;
     case 'monsters': sendMonsters(game, tid, 250); break;
     case 'monstersBig': sendMonsters(game, tid, 500); break;
   }
@@ -353,8 +367,21 @@ function queenWorkshop(game) {
   if (res[kind] < GEAR_MAX && canPay(res, cost) && res.gold - cost.gold >= 100) doInternal(game, 'kingdom', kind, 0, 'のぞちち');
 }
 
+// のぞちちの作り変え：5日に1回、お金に余裕があれば。前線は砦、それ以外は市場か畑
+function queenBuild(game) {
+  const res = game.resources.kingdom;
+  if (game.day % 5 !== 0 || res.gold < 600) return;
+  const mine = game.territories.filter(t => t.owner === 'kingdom' && canRemodel(t.id) && !t.facility);
+  const front = mine.filter(t => neighbors(t.id, 'demon').some(m => game.territories[m].owner === 'demon'));
+  const t = front[0] || mine.sort((a, b) => b.commerce + b.farm - a.commerce - a.farm)[0];
+  if (!t) return;
+  const facility = front.includes(t) ? 'fort' : (t.commerce >= t.farm ? 'market' : 'farm');
+  doInternal(game, 'kingdom', 'build', t.id, 'のぞちち', { facility });
+}
+
 function queenInternal(game) {
   queenWorkshop(game);
+  queenBuild(game);
   const n = queenActionCount(game);
   const res = game.resources.kingdom;
   const mine = game.territories.filter(t => t.owner === 'kingdom');
@@ -385,8 +412,15 @@ function resolveDay(game) {
     if (!o) continue;
     Object.assign(moves, o.moves);
     if (r === 'yagyu') {
-      for (const a of Object.values(o.acts)) doInternal(game, 'demon', a.type, a.tid, 'ヤギュー');
+      for (const a of Object.values(o.acts)) doInternal(game, 'demon', a.type, a.tid, 'ヤギュー', { facility: a.facility });
       for (const a of o.globals) {
+        if (a.type === 'curse') {
+          if (!payCost(game.resources.demon, DEMON_ACTIONS.curse.cost)) { game.log.push('魔力が足りず、呪いをかけられない'); continue; }
+          game.injuries ||= {};
+          game.injuries[a.charId] = Math.max(game.injuries[a.charId] || 0, game.day + 3);
+          game.log.push(`ヤギューの呪いが${CHARACTERS[a.charId].name}にかかった（3日）${a.charId === 'noguchi' && game.chars.noguchi.level >= 10 ? '…が、野口は何も感じていない（無感情）' : ''}`);
+          continue;
+        }
         const cost = actionCost(game, 'demon', 'levelup', a.charId);
         if (game.chars[a.charId].level >= 30) continue;
         if (payCost(game.resources.demon, cost)) {
@@ -399,7 +433,7 @@ function resolveDay(game) {
   }
   for (const a of kActs) {
     const g = game.generals[a.gid];
-    if (g && g.status === 'active' && game.territories[g.location].owner === 'kingdom') doInternal(game, 'kingdom', a.type, g.location, g.name, { recipe: a.recipe, hero: g.owner });
+    if (g && g.status === 'active' && game.territories[g.location].owner === 'kingdom') doInternal(game, 'kingdom', a.type, g.location, g.name, { recipe: a.recipe, hero: g.owner, facility: a.facility });
   }
   queenInternal(game);
 
@@ -845,6 +879,7 @@ function capture(game, tid, side, gens) {
   t.owner = side;
   t.garrison = Math.min(t.garrison, 50);
   t.loyalty = 40; t.fear = side === 'demon' ? 50 : 0; t.rebel = 0;
+  if (t.facility) { game.log.push(`${T.name}の${FACILITIES[t.facility].name}はこわされた`); t.facility = null; }
   game.log.push(`${T.name} を${side === 'kingdom' ? '王国' : side === 'demon' ? '魔族' : '中立'}が占領（もとは${before === 'kingdom' ? '王国' : before === 'demon' ? '魔族' : '中立'}）`);
   if (side === 'kingdom') {
     const hero = gens.find(g => g.kind === 'hero');
@@ -883,9 +918,16 @@ function endOfDay(game) {
   for (const t of game.territories) {
     if (t.owner !== 'kingdom' && t.owner !== 'demon') { if (t.damaged > 0) t.damaged--; continue; }
     const mult = t.damaged > 0 ? 0.5 : 1;
-    income[t.owner].food += t.farm * 0.25 * mult;
-    if (t.owner === 'kingdom') income.kingdom.gold += t.commerce * 0.5 * mult * (0.6 + t.loyalty / 150);
-    else income.demon.magic += t.fear * t.pop / 1000 * 0.04 * mult + (t.id === 28 ? 15 : 0);
+    const f = t.facility;
+    income[t.owner].food += t.farm * 0.25 * mult * (f === 'farm' ? 1.5 : 1);
+    if (t.owner === 'kingdom') income.kingdom.gold += t.commerce * 0.5 * mult * (0.6 + t.loyalty / 150) * (f === 'market' ? 1.5 : 1);
+    else income.demon.magic += (t.fear * t.pop / 1000 * 0.04 * mult + (t.id === 28 ? 15 : 0)) * (f === 'fear' ? 1.3 : 1);
+    // 恐怖の塔・魔物の巣
+    if (f === 'fear') {
+      t.fear = Math.min(100, t.fear + 3);
+      for (const n of neighbors(t.id, 'demon')) if (game.territories[n].owner === 'demon') game.territories[n].fear = Math.min(100, game.territories[n].fear + 1);
+    }
+    if (f === 'nest') t.garrison = Math.min(garrisonCap(t), t.garrison + 60);
     if (t.damaged > 0) t.damaged--;
     // 民の暮らし
     const S = SIZES[TERRITORIES[t.id].size];
@@ -903,7 +945,7 @@ function endOfDay(game) {
     if (t.rebel >= 5 && t.id !== 0 && t.id !== 28) {
       game.stats.rebellions = (game.stats.rebellions || 0) + 1;
       game.log.push(`${TERRITORIES[t.id].name} で反乱！ 民が独立した`);
-      t.owner = 'neutral'; t.garrison = 300; t.rebel = 0; t.loyalty = 50; t.fear = 0;
+      t.owner = 'neutral'; t.garrison = 300; t.rebel = 0; t.loyalty = 50; t.fear = 0; t.facility = null;
       for (const g of gensAt(game, t.id)) retreat(game, g);
     }
   }
@@ -953,7 +995,7 @@ function endOfDay(game) {
       g.hp = Math.min(st.hp, g.hp + Math.round(st.hp * (g.charId === 'yagyu' ? 0.3 : 0.25)));
     }
     for (const x of g.troops) {
-      const need = Math.min(100, x.max - x.hp, Math.max(0, t.garrison - 50));
+      const need = Math.min(t.facility === 'barracks' ? 200 : 100, x.max - x.hp, Math.max(0, t.garrison - 50));
       if (need > 0) { x.hp += need; t.garrison -= need; }
     }
   }

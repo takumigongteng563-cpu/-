@@ -52,6 +52,9 @@ function nearbyHeroes(game, tid) {
 function raidIncident(game, kind, tid, strength, fromYagyu) {
   const t = game.territories[tid];
   const T = TERRITORIES[tid];
+  // 見張り台（ここか、となりの王国の陣地）があれば、早く気づけるので強さが半分
+  const watched = [tid, ...neighbors(tid, 'kingdom')].some(n => game.territories[n].owner === 'kingdom' && game.territories[n].facility === 'tower');
+  if (watched) strength = Math.round(strength / 2);
   const monster = kind === 'monster';
   const what = monster ? (fromYagyu ? 'ヤギューが送りこんだ魔物' : 'はぐれ魔物') : '盗賊';
   const choices = [];
@@ -66,7 +69,7 @@ function raidIncident(game, kind, tid, strength, fromYagyu) {
   return {
     kind, side: 'kingdom', tid, strength,
     title: `${T.name}に${what}`,
-    text: `${T.name}に${what}（強さ${strength}）があらわれた。陣地の兵は${t.garrison}人。${monster ? '倒せば魔物の素材が手に入る。' : ''}`,
+    text: `${T.name}に${what}（強さ${strength}）があらわれた。陣地の兵は${t.garrison}人。${watched ? '見張り台のおかげで早く気づけた（強さ半分）。' : ''}${monster ? '倒せば魔物の素材が手に入る。' : ''}`,
     choices, def: 'garrison',
   };
 }

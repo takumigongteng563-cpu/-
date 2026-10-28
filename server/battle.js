@@ -74,7 +74,8 @@ export function hasWalls(game, terr) {
     // 王都の城壁は、まわりの砦（近衛の砦・白百合の城塞）が王国にあるかぎり残る
     return game.territories[2].owner === 'kingdom' || game.territories[3].owner === 'kingdom';
   }
-  return size === 'fortress' || size === 'metropolis';
+  const f = game.territories[terr.id].facility;
+  return size === 'fortress' || size === 'metropolis' || f === 'fort' || f === 'rock';
 }
 
 const COMMANDER_RANK = { yagyu: 100, nozomi: 90, sumire: 80, noguchi: 79, nanase: 78, horie: 70, kkb: 62, oh: 61, car: 60, yuki: 30 };
@@ -169,6 +170,12 @@ export function createBattle(game, { territoryId, attackerSide, defenderSide, at
       Object.assign(u, { id: 'u' + (++uid), side, role, alive: true, dealt: 0, kills: 0, effects: [], used: {}, onceRound: {} });
       if (place(u, back.includes(u) ? backOrder : placeOrder)) battle.units.push(u);
     }
+  }
+  // 見張り台：ここで守る側は、敵の動きが見えているので先に動ける
+  const here = game.territories[territoryId];
+  if (here.facility === 'tower' && here.owner === defenderSide) {
+    for (const u of battle.units) if (u.role === 'defender') u.spd += 2;
+    battle.log.push('見張り台：守る側の速さ+2');
   }
   const names = side => battle.generals[side].map(id => game.generals[id].name).join('・');
   battle.log.push(`【${terr.name}の合戦】 攻め：${names('attacker')} ／ 守り：${names('defender')}`);

@@ -38,6 +38,16 @@ while (game.phase !== 'ended' && game.day <= days && guard++ < 100000) {
       const c = inc.choices[game.day % inc.choices.length];
       G.incidentChoice(game, role, inc.id, c.id);
     }
+    if (game.day % 6 === 3) {
+      // 作り変えと闇の儀式も試す
+      const dt = game.territories.find(t => t.owner === 'demon' && t.id !== 28 && !t.facility);
+      const o = game.orders.yagyu;
+      if (dt) o.acts = { ...o.acts, b: { type: 'build', facility: ['fear', 'nest', 'rock'][game.day % 3], tid: dt.id }, f: { type: 'darkFortify', tid: dt.id } };
+      o.globals = [...o.globals, { type: 'curse', charId: 'sumire' }];
+      G.setOrders(game, 'yagyu', o);
+      const sg = Object.values(game.generals).find(g => g.kind === 'soldier' && g.controller === 'sumire' && g.status === 'active' && g.location !== 0);
+      if (sg) { const k = game.orders.sumire; k.acts = { ...k.acts, [sg.id]: { type: 'build', facility: ['farm', 'market', 'fort', 'barracks', 'tower'][game.day % 5] } }; delete k.moves[sg.id]; G.setOrders(game, 'sumire', k); }
+    }
     if (game.day % 4 === 0) {
       const kt = game.territories.find(t => t.owner === 'kingdom' && t.id !== 0);
       if (kt) { const o = game.orders.yagyu; o.acts = { ...o.acts, m: { type: game.day % 8 ? 'monsters' : 'monstersBig', tid: kt.id } }; G.setOrders(game, 'yagyu', o); }
@@ -55,5 +65,6 @@ console.log('資源', JSON.stringify(game.resources), '追撃戦', game.stats.pu
 console.log('民の被害', JSON.stringify(game.stats.civLoss));
 console.log('できごと', game.log.filter(l => l.startsWith('《できごと》')).length, '件（最後の80行のうち）', JSON.stringify(game.injuries), '通れない道', JSON.stringify(game.closed));
 console.log('イベント', game.eventLog.map(e => `${e.day}:${e.title}`).join(' / '));
+console.log('施設', game.territories.filter(t => t.facility).map(t => `${TERRITORIES[t.id].name}:${t.facility}`).join(' '));
 console.log('Lv', Object.entries(game.chars).map(([k, v]) => `${k}${v.level}`).join(' '));
 for (const g of Object.values(game.generals)) console.log(' ', g.name, g.status, g.location != null ? TERRITORIES[g.location].name : '-', g.hp ?? '', g.troops.map(t => t.hp).join(','));

@@ -225,6 +225,7 @@ export const KINGDOM_ACTIONS = {
   gearWeapon: { name: '兵の武器づくり', cost: {}, desc: '王国の兵全体の攻撃+5%', workshop: true },
   gearArmor:  { name: '兵の防具づくり', cost: {}, desc: '王国の兵全体の防御+5%', workshop: true },
   craft:      { name: '勇者の装備づくり', cost: {}, desc: '勇者の武器・防具を作る', workshop: true },
+  build:      { name: '作り変え', cost: {}, desc: 'いる陣地を、畑・市場・砦・兵舎・見張り台に作り変える', build: true },
 };
 export const DEMON_ACTIONS = {
   farm:    { name: '開墾',         cost: { magic: 10 },  desc: '畑+4' },
@@ -232,6 +233,9 @@ export const DEMON_ACTIONS = {
   terror:  { name: '恐怖を与える', cost: {},             desc: '恐怖+15（民が少し減る）' },
   spawn:   { name: '手下を生む',   cost: { magic: 25 },  desc: '陣地の兵+150' },
   levelup: { name: 'レベル上げ',   cost: { magic: 0 },   desc: '魔力でキャラのレベルを上げる', global: true },
+  build:       { name: '作り変え',         cost: {},            desc: '魔族の陣地を、恐怖の塔・魔物の巣・岩の砦に作り変える', build: true },
+  darkFortify: { name: '闇の儀式：陣地の強化', cost: { magic: 20 }, desc: '陣地の守り+15' },
+  curse:       { name: '闇の儀式：勇者を呪う', cost: { magic: 40 }, desc: '勇者1人を3日のあいだ呪う（怪我と同じくステータスが下がる）', heroTarget: true },
   monsters:    { name: '魔物を送る',       cost: { magic: 30 }, desc: '王国の陣地に魔物（強さ250）を送りこむ', enemy: true },
   monstersBig: { name: '強い魔物を送る',   cost: { magic: 60 }, desc: '王国の陣地に強い魔物（強さ500）を送りこむ', enemy: true },
 };
@@ -254,3 +258,19 @@ export function gameStats(game, charId) {
 }
 
 export const isInjured = (game, charId) => !!game.injuries?.[charId] && game.day <= game.injuries[charId];
+
+// ---- 陣地の作り変え（1つの陣地に1つ。奪われるとこわされる） ----
+export const FACILITIES = {
+  farm:     { name: '畑',       label: '畑', side: 'kingdom', cost: { gold: 150 }, desc: '食料の収穫が1.5倍' },
+  market:   { name: '市場',     label: '市', side: 'kingdom', cost: { gold: 150 }, desc: 'お金の収入が1.5倍' },
+  fort:     { name: '砦',       label: '砦', side: 'kingdom', cost: { gold: 250 }, desc: '守り+30。ここでの合戦に城壁が出る' },
+  barracks: { name: '兵舎',     label: '舎', side: 'kingdom', cost: { gold: 200 }, desc: '徴兵で集まる兵が多く、置ける兵の上限+1000。兵の補充も早い' },
+  tower:    { name: '見張り台', label: '見', side: 'kingdom', cost: { gold: 120 }, desc: 'ここととなりの陣地で、盗賊・魔物の強さが半分。ここで守る合戦では、守る側の速さ+2' },
+  fear:     { name: '恐怖の塔', label: '塔', side: 'demon',   cost: { magic: 40 }, desc: '毎日、恐怖+3（となりの魔族の陣地も+1）。魔力が1.3倍' },
+  nest:     { name: '魔物の巣', label: '巣', side: 'demon',   cost: { magic: 40 }, desc: '毎日、手下（陣地の兵）が60ずつ生まれる' },
+  rock:     { name: '岩の砦',   label: '岩', side: 'demon',   cost: { magic: 50 }, desc: '守り+30。ここでの合戦に城壁が出る' },
+};
+export const canRemodel = (tid) => tid !== 0 && tid !== 28; // 王都と魔王城は作り変えられない
+
+// 置ける兵の上限（兵舎で増える）
+export const garrisonCap = (t) => SIZES[TERRITORIES[t.id].size].cap + (t.facility === 'barracks' ? 1000 : 0);
