@@ -439,9 +439,29 @@ function beginBattle(game, c) {
     const humans = [...new Set(gens.map(g => g.controller).filter(r => r !== 'ai'))];
     if (humans.length && gens.length >= 2) b.pending[role] = humans;
   }
+  b.support = queenSupportFor(game, b);
   b.stage = Object.keys(b.pending).length ? 'commander' : 'fight';
   if (b.stage === 'fight') startBattle(b);
   progress(game);
+}
+
+// のぞちちの援護が届くか：女王が王都にいて、戦場が王国の補給線（またはそのとなり）にあること
+function queenSupportFor(game, b) {
+  const q = game.generals.nozomi;
+  if (b.attackerSide !== 'kingdom' && b.defenderSide !== 'kingdom') return null;
+  if (b.territoryId === 0 || !q || q.status !== 'active' || game.territories[0].owner !== 'kingdom') return null;
+  const supplied = suppliedSet(game, 'kingdom');
+  const tid = b.territoryId;
+  if (!supplied.has(tid) && !neighbors(tid, 'kingdom').some(n => supplied.has(n))) {
+    b.log.push('補給線が届かず、のぞちちの援護は来ない');
+    return null;
+  }
+  const st = charStats('nozomi', game.chars.nozomi.level);
+  b.log.push('のぞちちの援護が届く（1ターン目から2ターンごと・最大3回）');
+  return {
+    left: 3, next: 1, budget: Math.min(game.resources.kingdom.gold, 300), spent: 0, history: [],
+    reinforce: game.territories[0].garrison >= 600, atk: st.atk, mag: st.mag,
+  };
 }
 
 const rolesOf = (b, side) => [...new Set(b.units.filter(u => u.side === side).map(u => u.controller).filter(r => r !== 'ai'))];
@@ -671,6 +691,14 @@ function concludeBattle(game) {
     }
   }
   b.participants = [...participants];
+  // のぞちちの援護にかかったお金と、王都の兵
+  if (b.support) {
+    game.resources.kingdom.gold = Math.max(0, game.resources.kingdom.gold - b.support.spent);
+    if (b.support.sentTroops) {
+      const back = b.units.filter(u => u.reinforcement && u.alive).reduce((a, u) => a + u.hp, 0);
+      game.territories[0].garrison = Math.max(0, game.territories[0].garrison - b.support.sentTroops + back);
+    }
+  }
   recordBattleFlags(game, b);
 
   // 守備隊の残りを陣地へ戻す
@@ -878,6 +906,8 @@ function endOfDay(game) {
   }
 
   for (const g of Object.values(game.generals)) delete g.moved;
+  // のぞちちは戦いに出ないので、勇者たちの平均レベルについていく
+  game.chars.nozomi.level = Math.max(game.chars.nozomi.level, Math.round(HERO_ROLES.reduce((a, h) => a + game.chars[h].level, 0) / HERO_ROLES.length));
   checkWin(game);
   if (game.phase === 'ended') return;
   game.day++;
@@ -930,7 +960,7 @@ export function publicView(game, viewer) {
 export function autoBattleStep(game) {
   const b = game.battle;
   if (!b) return;
-  if (b.stage === 'commander') for (const role of Object.values(b.pending).flat()) { if (b.stage === 'commander') battleAction(game, role, { type: 'commander' }); }
+  if (b.stage === 'commander') battleAction(game, Object.values(b.pending)[0][0], { type: 'commander' });
   else if (b.stage === 'fight') advance(game, true);
   else if (b.stage === 'rearguard') battleAction(game, b.pendingRoles[0], { type: 'rearguard', unitIds: [] });
   else if (b.stage === 'pursue') battleAction(game, b.pendingRoles[0], { type: 'pursue', yes: true });

@@ -467,6 +467,7 @@ function roundStart(b) {
       }
     }
   }
+  if (b.support && b.support.left > 0 && r >= b.support.next) queenSupport(b);
   if (checkEnd(b)) return;
   const last = b.units.filter(u => u.lastRound === r).map(u => u.id);
   b.order = b.units.filter(u => u.alive)
@@ -861,4 +862,85 @@ export function createPursuit(game, main, { pursuerIds, rearIds, fleeIds, fleeCo
   if (rearIds.length) b.log.push(`しんがり：${rearIds.map(id => byId(id).name).join('・')}`);
   b.log.push(`逃げる大将：${fc ? fc.name : '-'}（倒されると倒れる）`);
   return b;
+}
+
+// ---------- のぞちちの援護 ----------
+// 王都から戦場へ、回復薬・強化薬・魔法・援軍のどれかを送る（AIが状況を見て選ぶ）
+export const SUPPORT = {
+  heal:      { name: '回復薬',     gold: 60, desc: '一番弱っている味方2部隊を4割回復' },
+  boost:     { name: '強化薬',     gold: 80, desc: '敵に近い味方3部隊の攻撃・防御を2ターン+15%' },
+  magic:     { name: '女王の魔法', gold: 0,  desc: '敵が一番集まっている3×3に魔法を撃ち込む' },
+  reinforce: { name: '兵の増援',   gold: 0,  desc: '王都の兵200人が駆けつける（1合戦に1回）' },
+};
+export const SUPPORT_EVERY = 2;
+
+function queenSupport(b) {
+  const sp = b.support;
+  const side = 'kingdom';
+  const own = b.units.filter(u => u.alive && u.side === side);
+  const foes = b.units.filter(u => u.alive && u.side !== side);
+  if (!own.length || !foes.length) return;
+  const ownHp = own.reduce((a, u) => a + u.hp, 0);
+  const foeHp = foes.reduce((a, u) => a + u.hp, 0);
+  const canPay = (k) => sp.budget - sp.spent >= SUPPORT[k].gold;
+  // 魔法を撃つなら、敵が一番集まっている所
+  const queen = { name: 'のぞちち', side, atk: sp.atk, mag: sp.mag, dmg: 'mag', solo: true, effects: [], dealt: 0, kills: 0, x: 0, y: 0 };
+  let cluster = null;
+  for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) {
+    const tiles = areaTiles('3x3', x, y);
+    let n = 0, dmg = 0;
+    for (const [tx, ty] of tiles) {
+      const t = unitAt(b, tx, ty);
+      if (t && t.side !== side) { n++; queen.x = tx; queen.y = ty; dmg += Math.min(t.hp, damage(b, queen, t, { mult: 1.1 })); }
+    }
+    if (n && (!cluster || dmg > cluster.dmg)) cluster = { x, y, n, dmg };
+  }
+  const hurt = own.filter(u => u.hp < u.max * 0.45).sort((a, c) => (c.isCommander ? 1 : 0) - (a.isCommander ? 1 : 0) || a.hp / a.max - c.hp / c.max);
+  let pick;
+  if (sp.reinforce && ownHp < foeHp * 0.8) pick = 'reinforce';
+  else if (hurt.length && canPay('heal')) pick = 'heal';
+  else if (cluster && cluster.n >= 2) pick = 'magic';
+  else if (canPay('boost') && foes.some(f => own.some(o => cheb(o, f) <= 3))) pick = 'boost';
+  else pick = 'magic';
+  sp.left--;
+  sp.next = b.round + SUPPORT_EVERY;
+  sp.spent += SUPPORT[pick].gold;
+  sp.history.push({ round: b.round, kind: pick });
+  b.log.push(`【女王の援護】のぞちちが「${SUPPORT[pick].name}」を送った`);
+  switch (pick) {
+    case 'heal':
+      for (const u of hurt.slice(0, 2)) heal(b, u, u.max * 0.4, '回復薬');
+      break;
+    case 'boost': {
+      const front = own.slice().sort((a, c) => Math.min(...foes.map(f => cheb(a, f))) - Math.min(...foes.map(f => cheb(c, f)))).slice(0, 3);
+      for (const u of front) { addEffect(u, { stat: 'atk', mult: 1.15, until: b.round + 2 }); addEffect(u, { stat: 'def', mult: 1.15, until: b.round + 2 }); }
+      b.log.push(`${front.map(u => u.name).join('・')} が強くなった`);
+      break;
+    }
+    case 'magic':
+      if (!cluster) break;
+      for (const [tx, ty] of areaTiles('3x3', cluster.x, cluster.y)) {
+        const t = unitAt(b, tx, ty);
+        if (t && t.side !== side) { queen.x = tx; queen.y = ty; applyDamage(b, queen, t, damage(b, queen, t, { mult: 1.1 }), '女王の魔法'); }
+      }
+      break;
+    case 'reinforce': {
+      sp.reinforce = false;
+      sp.sentTroops = 200;
+      const role = b.attackerSide === side ? 'attacker' : 'defender';
+      const cols = role === 'attacker' ? [0, 1, 2, 3] : [15, 14, 13, 12];
+      const t = UNIT_TYPES.spear;
+      const u = {
+        id: 'q' + b.round, kind: 'troop', type: 'spear', name: '王都の援軍・槍兵', label: '槍', side, role, controller: 'ai',
+        atk: t.atk, def: t.def, mag: t.mag, mdef: t.mdef, spd: t.spd, move: t.move, range: t.range, dmg: t.dmg, tri: t.tri,
+        hp: 200, max: 300, alive: true, dealt: 0, kills: 0, effects: [], used: {}, onceRound: {}, reinforcement: true,
+      };
+      for (const x of cols) {
+        const y = [5, 4, 6, 3, 7, 2, 8, 1, 9, 0, 10].find(yy => !unitAt(b, x, yy) && moveCost(b.grid[yy][x], u, b) !== Infinity);
+        if (y !== undefined) { u.x = x; u.y = y; break; }
+      }
+      if (u.x !== undefined) { b.units.push(u); b.log.push('王都から援軍の槍兵が駆けつけた'); }
+      break;
+    }
+  }
 }

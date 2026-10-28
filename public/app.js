@@ -617,6 +617,12 @@ function renderBattlePanel(g, b, active, mine, targets, aim) {
       <div class="hint"><span class="${b.attackerSide[0]}">${SIDE_NAME[b.attackerSide]}</span>が追う。★の逃げる大将を倒せば討ち取り（その武将は倒れる）。<span class="${b.defenderSide[0]}">${SIDE_NAME[b.defenderSide]}</span>は${b.maxRounds}ターン耐えれば逃げ切り。</div></div>`
     : `<div class="sec"><h3>${T.name}の合戦　${b.round}ターン目</h3>
       <div class="hint">攻め：<span class="${b.attackerSide[0]}">${SIDE_NAME[b.attackerSide]}</span>　守り：<span class="${b.defenderSide[0]}">${SIDE_NAME[b.defenderSide]}</span>　★の大将を倒せば勝ち（${MAX_ROUNDS}ターンで守り側の勝ち）</div></div>`;
+  if (b.support) {
+    const sp = b.support;
+    const NAMES = { heal: '回復薬', boost: '強化薬', magic: '女王の魔法', reinforce: '兵の増援' };
+    h += `<div class="sec queen"><b>👑 のぞちちの援護</b>　${sp.left > 0 ? `あと${sp.left}回（次は${sp.next}ターン目）` : 'もう来ない'}
+      ${sp.history.length ? `<div class="hint">${sp.history.map(x => `${x.round}ターン目：${NAMES[x.kind]}`).join('　')}</div>` : ''}</div>`;
+  }
   if (b.stage === 'commander') {
     h += commanderPanel(g, b);
   } else if (b.result) {

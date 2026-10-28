@@ -1,9 +1,10 @@
 // 合戦のバランス確認：いろいろな組み合わせをAIどうしで戦わせて、王国の勝率を見る
-//   node test/balance.js [レベル] [訓練]
+//   node test/balance.js [レベル] [訓練] [queen=のぞちちの援護あり]
 import * as G from '../server/game.js';
 import { createBattle, startBattle, aiStep } from '../server/battle.js';
 
 const lv = Number(process.argv[2] || 1), training = Number(process.argv[3] || 0), N = 24;
+const queen = process.argv[4] === 'queen';
 const MATCHES = {
   '勇者3人 vs 幹部3人': [['sumire', 'noguchi', 'nanase'], ['car', 'oh', 'kkb']],
   '勇者1人 vs 幹部1人': [['sumire'], ['kkb']],
@@ -27,10 +28,11 @@ for (const [label, [K, D]] of Object.entries(MATCHES)) {
     const att = i % 2 ? 'kingdom' : 'demon';
     const b = createBattle(game, { territoryId: [16, 13, 17, 11, 15, 12][i % 6], attackerSide: att, defenderSide: att === 'kingdom' ? 'demon' : 'kingdom', attackers: att === 'kingdom' ? K : D, defenders: att === 'kingdom' ? D : K });
     for (const u of b.units) if (u.hp > u.max) u.hp = u.max;
+    if (queen) b.support = { left: 3, next: 1, budget: 300, spent: 0, history: [], reinforce: true, atk: 18 + 0.5 * (lv - 1), mag: 30 + 1.5 * (lv - 1) };
     startBattle(b);
     let guard = 5000; while (!b.result && guard--) aiStep(b);
     if (b.result.winner === 'kingdom') kw++;
     rounds += b.round;
   }
-  console.log(`Lv${lv} 訓練${training} ${label}: 王国勝率 ${Math.round(kw / N * 100)}%（平均${(rounds / N).toFixed(1)}ターン）`);
+  console.log(`Lv${lv} 訓練${training}${queen ? ' 援護あり' : ''} ${label}: 王国勝率 ${Math.round(kw / N * 100)}%（平均${(rounds / N).toFixed(1)}ターン）`);
 }

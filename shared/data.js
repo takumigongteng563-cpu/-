@@ -119,7 +119,7 @@ export const CHARACTERS = {
              grow: { hp: 10,  mp: 3,  atk: 0.3, def: 0.6, mag: 1.6, mdef: 0.9, spd: 0.35 } },
   nozomi:  { name: 'のぞちち', title: '絶対女王', side: 'kingdom', label: '女', units: 1, range: 'line8:1-3', dmg: 'mag',
              base: { hp: 400, mp: 60, atk: 18, def: 22, mag: 30, mdef: 28, spd: 9,  move: 3, lead: 80, pol: 90 },
-             grow: { hp: 0, mp: 0, atk: 0, def: 0, mag: 0, mdef: 0, spd: 0 } },
+             grow: { hp: 12, mp: 3, atk: 0.5, def: 1, mag: 1.5, mdef: 1, spd: 0.3 } },
   yagyu:   { name: 'ヤギュー', title: '魔王',     side: 'demon',   label: '魔', units: 5, range: 'line8:1-2', dmg: 'phys', solo: true,
              base: { hp: 700, mp: 60, atk: 52, def: 38, mag: 20, mdef: 30, spd: 12, move: 5, lead: 90, pol: 30 },
              grow: { hp: 40,  mp: 4,  atk: 2.4, def: 2.2, mag: 0.6, mdef: 1.8, spd: 0.5 } },

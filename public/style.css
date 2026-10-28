@@ -98,6 +98,7 @@ input, select { font: inherit; padding: 5px 8px; border: 1px solid #c9bfa9; bord
 .order li { font-size: 12px; }
 .turnList { display: flex; flex-wrap: wrap; gap: 3px; }
 .turnList span { padding: 1px 6px; border-radius: 4px; color: #fff; font-size: 12px; }
+.queen { font-size: 13px; color: #7a5a10; }
 .result { padding: 10px; border-radius: 8px; background: #fff1d3; font-weight: bold; margin-bottom: 8px; }
 
 .skills { display: flex; flex-direction: column; gap: 4px; }
