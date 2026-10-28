@@ -54,6 +54,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .card h2 { margin: 0 0 10px; font-size: 16px; }
 .online { border: 2px solid var(--ok); background: #f1faf3; }
 .code { background: #fff7e6; border-radius: 6px; padding: 4px 8px; }
+.sharedBox { border: 2px solid var(--kingdom); }
+.gameItem.shared .title { color: var(--kingdom); }
 .solo { border: 2px solid var(--accent); }
 button.demonBtn { background: var(--demon); border-color: #6b2f85; }
 button.demonBtn:hover:not(:disabled) { background: #9c52ba; }
@@ -62,7 +64,8 @@ button.demonBtn:hover:not(:disabled) { background: #9c52ba; }
 .gameItem .title { font-weight: bold; }
 .roles { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .roleBtn { font-size: 13px; }
-.roleBtn.taken { background: #eee; }
+.roleBtn.taken { background: #efe6d2; }
+span.roleBtn { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
 
 /* ゲーム画面 */
 #game { display: flex; flex-direction: column; height: 100vh; }

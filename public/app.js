@@ -9,6 +9,10 @@ import { SKILLS, skillOf, skillList, skillTargets, areaTiles } from './shared/sk
 
 // サーバーなしでブラウザの中だけで遊ぶ版（ひとりで遊ぶ専用）
 const LOCAL = window.YAGI_LOCAL ? await import('./local.js') : null;
+// みんなで遊ぶ（Claude のページの共有データ）。使えるかどうかは少しあとでわかる
+const SHARED = window.YAGI_LOCAL ? await import('./shared.js') : null;
+let sharedOn = false;
+const sharedGame = (id) => sharedOn && SHARED.isShared(id);
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -34,7 +38,12 @@ const store = {
 };
 
 async function api(path, data) {
-  if (LOCAL) return LOCAL.api(path, data);
+  if (LOCAL) {
+    if (path === '/api/games' && !data) return [...(sharedOn ? await SHARED.api(path) : []), ...(await LOCAL.api(path))];
+    if (path === '/api/games') return data.solo || !sharedOn ? LOCAL.api(path, data) : SHARED.api(path, data);
+    const gid = path.match(/\/api\/games\/([0-9a-f]+)\//)?.[1];
+    return sharedGame(gid) ? SHARED.api(path, data) : LOCAL.api(path, data);
+  }
   const res = await fetch(path, data ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : {});
   const j = await res.json();
   if (!res.ok) throw new Error(j.error || 'エラー');
@@ -86,6 +95,24 @@ async function refreshOnline() {
   } catch { box.classList.add('hidden'); }
 }
 
+// みんなで遊ぶゲームの一行：空いている役に参加、自分の役なら続きから
+function sharedItem(g) {
+  const uid = SHARED.myUid();
+  const raw = sharedRaw.get(g.id);
+  const myRole = raw && ROLES.find(r => raw.players[r]?.uid === uid);
+  const phase = g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : `${g.day}日目`;
+  const roles = ROLES.map(r => {
+    const p = raw?.players[r];
+    if (p) return `<span class="roleBtn taken">${CHARACTERS[r].title}${CHARACTERS[r].name}：${esc(p.name)}${p.uid === uid ? '（あなた）' : ''}</span>`;
+    return myRole ? '' : `<button class="roleBtn" data-sjoin="${g.id}" data-role="${r}" ${g.phase !== 'ended' ? '' : 'disabled'}>${CHARACTERS[r].title}${CHARACTERS[r].name}：${g.phase === 'lobby' ? '空き' : '空き（今はAI）'}</button>`;
+  }).join('');
+  return `<div class="gameItem shared"><div class="row"><span class="title">👥 ${esc(g.name)}</span><span class="muted">みんなで・${phase}${g.trial ? '・お試し' : ''}</span>
+      <span style="flex:1"></span>
+      ${myRole ? `<button class="primary" data-sopen="${g.id}" data-role="${myRole}">続きから（${CHARACTERS[myRole].name}）</button>` : `<button class="ghost" data-sopen="${g.id}">見る</button>`}</div>
+    <div class="roles">${roles}</div></div>`;
+}
+const sharedRaw = new Map();
+
 async function refreshList() {
   refreshOnline();
   const list = await api('/api/games');
@@ -93,6 +120,7 @@ async function refreshList() {
   if (!list.length) { box.innerHTML = '<p class="muted">まだゲームがありません。</p>'; return; }
   box.innerHTML = list.map(g => {
     const mine = store.get('yagyu:seat:' + g.id);
+    if (g.shared) return sharedItem(g);
     if (LOCAL) {
       const phase = g.phase === 'ended' ? '決着' : `${g.day}日目`;
       return `<div class="gameItem"><div class="row"><span class="title">${esc(g.name)}</span><span class="muted">${phase}${g.trial ? '・お試し' : ''}</span>
@@ -152,6 +180,17 @@ $('#gameList').onclick = async (e) => {
       store.set('yagyu:seat:' + b.dataset.join, { role: r.role, token: r.token });
       openGame(b.dataset.join);
     } catch (err) { toast(err.message); refreshList(); }
+  } else if (b.dataset.sjoin) {
+    const name = $('#playerName').value.trim();
+    store.set('yagyu:name', name);
+    try {
+      const r = await api(`/api/games/${b.dataset.sjoin}/join`, { role: b.dataset.role, name });
+      store.set('yagyu:seat:' + b.dataset.sjoin, { role: r.role, token: r.token });
+      openGame(b.dataset.sjoin);
+    } catch (err) { toast(err.message); }
+  } else if (b.dataset.sopen) {
+    if (b.dataset.role) store.set('yagyu:seat:' + b.dataset.sopen, { role: b.dataset.role, token: SHARED.myUid() });
+    openGame(b.dataset.sopen, !b.dataset.role);
   } else if (b.dataset.del) {
     // 消すまえに、もう一度押してもらう
     if (b.dataset.sure) { await api(`/api/games/${b.dataset.del}/delete`, {}); refreshList(); }
@@ -178,7 +217,7 @@ function openGame(id, watchOnly) {
   if (S.es) S.es.close();
   if (S.unsub) S.unsub();
   if (LOCAL) {
-    S.unsub = LOCAL.subscribe(id, S.me?.token, (view) => { S.game = view; onState(); });
+    S.unsub = (sharedGame(id) ? SHARED : LOCAL).subscribe(id, S.me?.token, (view) => { S.game = view; onState(); });
     return;
   }
   S.es = new EventSource(`/api/games/${id}/stream${S.me ? '?token=' + S.me.token : ''}`);
@@ -1150,7 +1189,30 @@ function showEventHistory() {
 // ひとり用の版では、友だちと遊ぶ・インターネットの部分は出さない
 if (LOCAL) {
   document.querySelectorAll('.serverOnly').forEach(el => el.classList.add('hidden'));
-  $('#gameListTitle').textContent = 'セーブしたゲーム（このブラウザの中）';
+  $('#gameListTitle').textContent = 'ゲーム一覧';
+  $('#sharedBox').classList.remove('hidden');
+  SHARED.ready.then(ok => {
+    sharedOn = ok;
+    $('#sharedBox').innerHTML = ok ? `<h2>みんなで遊ぶ（このページを開ける人どうし）</h2>
+      <div class="row"><input id="sharedName" maxlength="30" placeholder="ゲームの名前（なくてもOK）"><button id="sharedCreate" class="primary">作る</button></div>
+      <label class="hint"><input type="checkbox" id="sharedTrial"> お試しモード（全員Lv30）</label>
+      <p class="hint">作ったゲームは、このページを開ける人みんなの「ゲーム一覧」に出ます。それぞれ空いている役を押して参加し、だれかが「ゲームを始める」を押せば始まります。空いている役はAIが動かします。自分の役には、別の端末からでも「続きから」で戻れます。</p>`
+      : `<h2>みんなで遊ぶ</h2><p class="hint">みんなで遊ぶには、このページを友だちと共有して、ゲームのデータを書きこめるようにする必要があります（Claudeにログインしているときだけ使えます）。今はひとりで遊ぶことだけできます。</p>`;
+    if (!ok) return;
+    $('#sharedCreate').onclick = async () => {
+      try {
+        const { id } = await api('/api/games', { name: $('#sharedName').value || 'みんなの戦争', trial: $('#sharedTrial').checked });
+        $('#sharedName').value = '';
+        toast('ゲームを作りました。下の一覧で役を選んで参加してください');
+        void id;
+      } catch (err) { toast(err.message); }
+    };
+    SHARED.watchList((items) => {
+      sharedRaw.clear();
+      for (const g of items) sharedRaw.set(g.id, g);
+      if (!$('#lobby').classList.contains('hidden')) refreshList();
+    });
+  });
 }
 const m = !LOCAL && location.hash.match(/g=([0-9a-f]+)/);
 if (m) openGame(m[1], !store.get('yagyu:seat:' + m[1]));
