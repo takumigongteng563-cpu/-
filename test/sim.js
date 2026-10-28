@@ -32,6 +32,16 @@ while (game.phase !== 'ended' && game.day <= days && guard++ < 100000) {
       }
       G.setOrders(game, role, { moves, acts, globals });
     }
+    // できごとには、毎回ちがう対応を選んでみる
+    for (const inc of game.incidents.filter(i => !i.resolved)) {
+      const role = inc.side === 'demon' ? 'yagyu' : 'sumire';
+      const c = inc.choices[game.day % inc.choices.length];
+      G.incidentChoice(game, role, inc.id, c.id);
+    }
+    if (game.day % 4 === 0) {
+      const kt = game.territories.find(t => t.owner === 'kingdom' && t.id !== 0);
+      if (kt) { const o = game.orders.yagyu; o.acts = { ...o.acts, m: { type: game.day % 8 ? 'monsters' : 'monstersBig', tid: kt.id } }; G.setOrders(game, 'yagyu', o); }
+    }
     for (const role of seedPlayers) G.setReady(game, role, true);
   } else if (game.phase === 'battle') {
     G.autoBattleStep(game);
@@ -43,6 +53,7 @@ console.log(`終了: ${game.day}日目 phase=${game.phase} winner=${game.winner}
 console.log(`陣地 王国${own('kingdom')} 魔族${own('demon')} 中立${own('neutral')}  合戦${game.stats.battles}回`);
 console.log('資源', JSON.stringify(game.resources), '追撃戦', game.stats.pursuits || 0, '討ち取り', game.stats.pursuitWins || 0);
 console.log('民の被害', JSON.stringify(game.stats.civLoss));
+console.log('できごと', game.log.filter(l => l.startsWith('《できごと》')).length, '件（最後の80行のうち）', JSON.stringify(game.injuries), '通れない道', JSON.stringify(game.closed));
 console.log('イベント', game.eventLog.map(e => `${e.day}:${e.title}`).join(' / '));
 console.log('Lv', Object.entries(game.chars).map(([k, v]) => `${k}${v.level}`).join(' '));
 for (const g of Object.values(game.generals)) console.log(' ', g.name, g.status, g.location != null ? TERRITORIES[g.location].name : '-', g.hp ?? '', g.troops.map(t => t.hp).join(','));

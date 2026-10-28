@@ -124,6 +124,7 @@ const server = http.createServer(async (req, res) => {
         case 'start': G.start(game); break;
         case 'orders': G.setOrders(game, role, a.orders || {}); break;
         case 'ready': G.setReady(game, role, a.ready); break;
+        case 'incident': G.incidentChoice(game, role, a.id, a.choice); break;
         case 'battle': G.battleAction(game, role, a.action || {}); break;
         default: throw new Error('知らない操作です');
       }

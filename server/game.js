@@ -8,6 +8,7 @@ import {
 import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit, setCommander, createPursuit } from './battle.js';
 import { getStat } from '../shared/battlecore.js';
 import { checkEvents, ENDINGS } from './events.js';
+import { rollIncidents, resolveIncidents, chooseIncident, dailyRecovery, sendMonsters } from './incidents.js';
 
 export function actionCost(game, side, type, extra) {
   if (side === 'kingdom') {
@@ -63,6 +64,7 @@ export function createGame(name, opts = {}) {
     reinforcements: [],
     stats: { civLoss: { kingdom: 0, demon: 0, neutral: 0 }, battles: 0 },
     eventLog: [], firedEvents: [], log: [], winner: null, ending: null,
+    incidents: [], closed: {}, injuries: {},
     trial: !!opts.trial,
   };
   // お試しモード：全員Lv30から（技をすぐ試せる）
@@ -164,7 +166,7 @@ export function setOrders(game, role, orders) {
   for (const [gid, tid] of Object.entries(orders.moves || {})) {
     const g = game.generals[gid];
     if (!g || g.status !== 'active' || g.controller !== role || g.kind === 'queen') continue;
-    if (!neighbors(g.location, g.side).includes(tid)) continue;
+    if (!neighbors(g.location, g.side, game.closed).includes(tid)) continue;
     clean.moves[gid] = tid;
   }
   if (role === 'yagyu') {
@@ -172,7 +174,8 @@ export function setOrders(game, role, orders) {
     let n = 0;
     for (const a of Object.values(orders.acts || {})) {
       if (n >= max || !DEMON_ACTIONS[a.type] || DEMON_ACTIONS[a.type].global) continue;
-      if (game.territories[a.tid]?.owner !== 'demon') continue;
+      // 魔物を送る先は王国の陣地、それ以外は魔族の陣地
+      if (game.territories[a.tid]?.owner !== (DEMON_ACTIONS[a.type].enemy ? 'kingdom' : 'demon')) continue;
       clean.acts['t' + a.tid + '_' + n] = { type: a.type, tid: a.tid }; n++;
     }
     for (const a of orders.globals || []) {
@@ -192,6 +195,11 @@ export function setOrders(game, role, orders) {
   }
   game.orders[role] = clean;
   game.ready[role] = false;
+}
+
+export function incidentChoice(game, role, id, choice) {
+  if (game.phase !== 'day') throw new Error('今は選べません');
+  chooseIncident(game, role, id, choice);
 }
 
 export function setReady(game, role, ready) {
@@ -262,6 +270,8 @@ function doInternal(game, side, type, tid, by, extra) {
     case 'train': res.training = Math.min(10, res.training + 1); break;
     case 'terror': t.fear = Math.min(100, t.fear + 15); t.pop = Math.max(100, t.pop - 80); break;
     case 'spawn': t.garrison = Math.min(S.cap, t.garrison + 150); break;
+    case 'monsters': sendMonsters(game, tid, 250); break;
+    case 'monstersBig': sendMonsters(game, tid, 500); break;
   }
   return true;
 }
@@ -290,7 +300,7 @@ function aiOrders(game) {
       continue;
     }
     let best = null;
-    for (const n of neighbors(g.location, 'kingdom')) {
+    for (const n of neighbors(g.location, 'kingdom', game.closed)) {
       const t = game.territories[n];
       if (t.owner === 'kingdom') continue;
       const enemy = territoryStrength(game, n, t.owner) + (t.owner === 'neutral' ? 0 : 0);
@@ -311,7 +321,7 @@ function stepToward(game, g, ok) {
   const q = [g.location];
   while (q.length) {
     const c = q.shift();
-    for (const n of neighbors(c, side)) {
+    for (const n of neighbors(c, side, game.closed)) {
       if (prev.has(n) || game.territories[n].owner !== side) continue;
       prev.set(n, c);
       if (ok(n)) {
@@ -366,6 +376,7 @@ function queenInternal(game) {
 // ---- 1日の結果をまとめて反映 ----
 function resolveDay(game) {
   game.log.push(`== ${game.day}日目の結果 ==`);
+  resolveIncidents(game);
   const ai = aiOrders(game);
   const moves = { ...ai.moves };
   const kActs = ai.acts.slice();
@@ -407,6 +418,7 @@ function resolveDay(game) {
   const touched = new Set();
   for (const [gid, tid] of Object.entries(moves)) {
     const g = game.generals[gid];
+    if (!g || g.status !== 'active' || !neighbors(g.location, g.side, game.closed).includes(tid)) continue; // 大雨・大雪で道が通れなくなった
     g.prevLocation = g.location;
     g.location = tid;
     g.moved = true;
@@ -736,6 +748,12 @@ function concludeBattle(game) {
     if (u.isLeaderUnit) {
       g.hp = u.hp;
       if (!u.alive) g.leaderDown = true;
+      // 本隊が3割を切るほど戦った勇者は、怪我をする（2日）
+      else if (HERO_ROLES.includes(u.charId) && u.hp < u.max * 0.3) {
+        game.injuries ||= {};
+        game.injuries[u.charId] = Math.max(game.injuries[u.charId] || 0, game.day + 2);
+        game.log.push(`${u.name}は怪我をした（2日）`);
+      }
       if (u.charId) gainExp(game, u.charId, u.dealt / 4 + u.kills * 15 + (u.role === winRole ? 30 : 0));
     } else {
       const tr = g.troops.find(x => x.uid === u.troopRef);
@@ -812,7 +830,7 @@ function concludeBattle(game) {
 }
 
 function retreat(game, g) {
-  const options = neighbors(g.location, g.side).filter(n => game.territories[n].owner === g.side);
+  const options = neighbors(g.location, g.side, game.closed).filter(n => game.territories[n].owner === g.side);
   const safe = options.filter(n => !gensAt(game, n).some(o => o.side !== g.side));
   const pick = (g.prevLocation !== undefined && safe.includes(g.prevLocation)) ? g.prevLocation : safe[0];
   if (pick === undefined) { game.log.push(`${g.name} は逃げ場がなかった`); knockDown(game, g); return; }
@@ -852,7 +870,7 @@ function suppliedSet(game, side) {
   seen.add(home);
   while (q.length) {
     const c = q.shift();
-    for (const n of neighbors(c, side)) if (!seen.has(n) && game.territories[n].owner === side) { seen.add(n); q.push(n); }
+    for (const n of neighbors(c, side, game.closed)) if (!seen.has(n) && game.territories[n].owner === side) { seen.add(n); q.push(n); }
   }
   return seen;
 }
@@ -984,10 +1002,13 @@ function endOfDay(game) {
   for (const g of Object.values(game.generals)) delete g.moved;
   // のぞちちは戦いに出ないので、勇者たちの平均レベルについていく
   game.chars.nozomi.level = Math.max(game.chars.nozomi.level, Math.round(HERO_ROLES.reduce((a, h) => a + game.chars[h].level, 0) / HERO_ROLES.length));
+  dailyRecovery(game);
+  if (game.log.length > 400) game.log = game.log.slice(-300);
   checkWin(game);
   if (game.phase === 'ended') return;
   game.day++;
   checkEvents(game, eventHelpers(game));
+  rollIncidents(game);
   resetOrders(game);
   game.phase = 'day';
 }
@@ -1022,10 +1043,13 @@ export function publicView(game, viewer) {
   const sideOf = r => (r === 'yagyu' ? 'demon' : 'kingdom');
   const orders = {};
   if (viewer) for (const [r, o] of Object.entries(game.orders)) if (sideOf(r) === sideOf(viewer)) orders[r] = o;
+  const incidents = (game.incidents || []).filter(i => viewer && i.side === sideOf(viewer));
   return {
     ...game,
     players,
     orders,
+    incidents,
+    sentMonsters: undefined,
     log: game.log.slice(-80),
     battle: game.battle ? { ...game.battle, log: game.battle.log.slice(-60), parent: game.battle.parent ? { id: game.battle.parent.id } : undefined } : null,
     meta: { demonActions: demonActionCount(game), queenActions: queenActionCount(game) },
@@ -1050,5 +1074,8 @@ export function migrate(game) {
   K.gearWeapon ??= 0;
   K.gearArmor ??= 0;
   game.gear ||= { sumire: {}, noguchi: {}, nanase: {} };
+  game.incidents ||= [];
+  game.closed ||= {};
+  game.injuries ||= {};
   return game;
 }

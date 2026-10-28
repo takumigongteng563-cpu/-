@@ -103,6 +103,10 @@ input, select { font: inherit; padding: 5px 8px; border: 1px solid #c9bfa9; bord
 .craft { font-size: 12px; justify-content: space-between; padding: 3px 0; border-top: 1px dotted #e6dfcf; }
 .craft .muted { font-size: 11px; }
 h4 { margin: 10px 0 4px; font-size: 13px; }
+.incident { border: 1px solid #f0cf8a; background: #fffaf0; border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+.choice { text-align: left; display: block; width: 100%; }
+.choice span { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.choice.primary span { color: #fff; }
 .queen { font-size: 13px; color: #7a5a10; }
 .result { padding: 10px; border-radius: 8px; background: #fff1d3; font-weight: bold; margin-bottom: 8px; }
 

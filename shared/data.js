@@ -78,10 +78,14 @@ export const EDGES = [
   ...CLIFFS.map(([a, b]) => ({ a, b, cliff: true })),
 ];
 
-export function neighbors(tid, side) {
+export const edgeKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+
+// となりの陣地。closed＝大雨・大雪で通れなくなっている道（{ "a-b": 何日目まで }）
+export function neighbors(tid, side, closed) {
   const out = [];
   for (const e of EDGES) {
     if (e.cliff && side !== 'demon') continue;
+    if (closed && closed[edgeKey(e.a, e.b)]) continue;
     if (e.a === tid) out.push(e.b);
     else if (e.b === tid) out.push(e.a);
   }
@@ -228,6 +232,8 @@ export const DEMON_ACTIONS = {
   terror:  { name: '恐怖を与える', cost: {},             desc: '恐怖+15（民が少し減る）' },
   spawn:   { name: '手下を生む',   cost: { magic: 25 },  desc: '陣地の兵+150' },
   levelup: { name: 'レベル上げ',   cost: { magic: 0 },   desc: '魔力でキャラのレベルを上げる', global: true },
+  monsters:    { name: '魔物を送る',       cost: { magic: 30 }, desc: '王国の陣地に魔物（強さ250）を送りこむ', enemy: true },
+  monstersBig: { name: '強い魔物を送る',   cost: { magic: 60 }, desc: '王国の陣地に強い魔物（強さ500）を送りこむ', enemy: true },
 };
 
 
@@ -240,5 +246,11 @@ export function gameStats(game, charId) {
     if (CHARACTERS[charId].dmg === 'mag') st.mag += r.power; else st.atk += r.power;
   }
   if (gear?.armor) for (const [k, v] of Object.entries(RECIPES[gear.armor].bonus)) st[k] += v;
+  // 怪我：数日ステータスが下がる（野口の「無感情」なら下がらない）
+  if (isInjured(game, charId) && !(charId === 'noguchi' && (game.chars.noguchi?.level || 1) >= 10)) {
+    for (const k of ['atk', 'def', 'mag', 'mdef', 'spd']) st[k] = Math.floor(st[k] * 0.85);
+  }
   return st;
 }
+
+export const isInjured = (game, charId) => !!game.injuries?.[charId] && game.day <= game.injuries[charId];

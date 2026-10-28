@@ -2,7 +2,7 @@
 import {
   TERRITORIES, EDGES, SIZES, SPECIALTIES, CHARACTERS, UNIT_TYPES, ROLES, HERO_ROLES, REQUIRED_ROLES,
   BATTLE_W, BATTLE_H, TERRAIN, MAJORITY, MAX_ROUNDS, KINGDOM_ACTIONS, DEMON_ACTIONS, neighbors, gameStats, levelUpCost, expToNext,
-  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName,
+  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured,
 } from '/shared/data.js';
 import { reachable, targetsFrom, damage, getStat, getMove, isTargetable, inDarkness } from '/shared/battlecore.js';
 import { SKILLS, skillOf, skillList, skillTargets, areaTiles } from '/shared/skills.js';
@@ -188,7 +188,7 @@ function renderMap(g) {
   const svg = $('#map');
   const T = TERRITORIES;
   const sel = S.selGen && g.generals[S.selGen];
-  const moveTargets = sel && canOrder(sel) && sel.kind !== 'queen' ? neighbors(sel.location, sel.side) : [];
+  const moveTargets = sel && canOrder(sel) && sel.kind !== 'queen' ? neighbors(sel.location, sel.side, g.closed) : [];
   let h = '';
   h += `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d99a1e"/></marker></defs>`;
   for (const e of EDGES) {
@@ -197,6 +197,11 @@ function renderMap(g) {
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 + (a.y < 330 ? -45 : 40);
       h += `<path d="M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}" fill="none" stroke="#8b5a2b" stroke-width="2.5" stroke-dasharray="6 5" opacity=".8"/>`;
     } else h += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#b5aa93" stroke-width="3"/>`;
+    if (g.closed?.[edgeKey(e.a, e.b)]) {
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      h += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#c43f3f" stroke-width="3" stroke-dasharray="3 4"/>
+        <text x="${mx}" y="${my + 6}" text-anchor="middle" font-size="18" font-weight="bold" fill="#c43f3f" stroke="#fff" stroke-width="3" paint-order="stroke">×</text>`;
+    }
   }
   // 自分（と仲間）の移動命令の矢印
   const allOrders = { ...(g.orders || {}) };
@@ -251,7 +256,7 @@ $('#map').addEventListener('click', (e) => {
   if (!tEl) return;
   const tid = Number(tEl.dataset.terr);
   const sel = S.selGen && g.generals[S.selGen];
-  if (sel && canOrder(sel) && g.phase === 'day' && sel.kind !== 'queen' && neighbors(sel.location, sel.side).includes(tid)) {
+  if (sel && canOrder(sel) && g.phase === 'day' && sel.kind !== 'queen' && neighbors(sel.location, sel.side, g.closed).includes(tid)) {
     if (S.draft.moves[sel.id] === tid) delete S.draft.moves[sel.id];
     else { S.draft.moves[sel.id] = tid; delete S.draft.acts[sel.id]; }
     sendDraft();
@@ -308,7 +313,7 @@ function orderText(g, gen) {
 }
 
 function genRow(g, gen) {
-  const lv = gen.charId ? ` Lv${g.chars[gen.charId].level}` : '';
+  const lv = (gen.charId ? ` Lv${g.chars[gen.charId].level}` : '') + (gen.charId && isInjured(g, gen.charId) ? ' <span style="color:#c43f3f">怪我</span>' : '');
   return `<div class="genRow ${S.selGen === gen.id ? 'sel' : ''}" data-selgen="${gen.id}">
     <span class="badge" style="background:${SIDE_COLOR[gen.side]}">${genLabel(gen)}</span>
     <div><div>${esc(gen.name)}${lv}</div><div class="muted" style="font-size:11px">${genHp(g, gen)}</div></div>
@@ -328,6 +333,7 @@ function selGenSection(g) {
       <span class="l">速さ</span><span>${st.spd}</span><span class="l">移動</span><span>${st.move}</span>
       <span class="l">統率</span><span>${st.lead}</span><span class="l">政治</span><span>${st.pol}</span></div>`;
   }
+  if (gen.charId && isInjured(g, gen.charId)) h += `<div class="hint" style="color:#c43f3f">怪我：${g.injuries[gen.charId]}日目まで、ステータスが下がっている${gen.charId === 'noguchi' && g.chars.noguchi.level >= 10 ? '（無感情で下がらない）' : ''}。野口と同じ陣地か、王都にいると早く治る。</div>`;
   if (gen.charId && g.gear?.[gen.charId]) h += gearLine(g, gen.charId);
   if (gen.charId) {
     const c = g.chars[gen.charId];
@@ -378,7 +384,9 @@ function fillDemonTarget(g) {
   const typeSel = $('#dType'), tSel = $('#dTarget');
   if (!typeSel) return;
   const fill = () => {
-    if (DEMON_ACTIONS[typeSel.value].global) {
+    if (DEMON_ACTIONS[typeSel.value].enemy) {
+      tSel.innerHTML = g.territories.filter(t => t.owner === 'kingdom' && t.id !== 0).map(t => `<option value="${t.id}">${TERRITORIES[t.id].name}（王国・兵${t.garrison}）</option>`).join('');
+    } else if (DEMON_ACTIONS[typeSel.value].global) {
       tSel.innerHTML = ['yagyu', 'car', 'oh', 'kkb'].map(c => `<option value="${c}">${CHARACTERS[c].name}（Lv${g.chars[c].level}・魔力${levelUpCost(g.chars[c].level)}）</option>`).join('');
     } else {
       tSel.innerHTML = g.territories.filter(t => t.owner === 'demon').map(t => `<option value="${t.id}" ${t.id === S._demonDefault ? 'selected' : ''}>${TERRITORIES[t.id].name}（恐怖${t.fear}・兵${t.garrison}）</option>`).join('');
@@ -392,6 +400,21 @@ function fillDemonTarget(g) {
     else S.draft.acts['a' + Date.now()] = { type, tid: Number(tSel.value) };
     sendDraft(); render();
   };
+}
+
+// ---------- できごと（対応を選ぶ） ----------
+function incidentSection(g) {
+  const list = (g.incidents || []).filter(i => !i.resolved);
+  const done = (g.incidents || []).filter(i => i.resolved && i.day === g.day - 1);
+  if (!list.length && !done.length) return '';
+  let h = `<div class="sec"><h3>できごと</h3>`;
+  for (const inc of list) {
+    const def = inc.choices.find(c => c.id === inc.def);
+    h += `<div class="incident"><b>${esc(inc.title)}</b><div class="hint">${esc(inc.text)}</div>
+      <div class="skills">${inc.choices.map(c => `<button class="small choice ${inc.choice === c.id ? 'primary' : ''}" data-inc="${inc.id}" data-choice="${c.id}"><b>${esc(c.label)}</b>${c.desc ? `<span>${esc(c.desc)}</span>` : ''}</button>`).join('')}</div>
+      <div class="hint">${inc.choice ? `選んだ：${esc(inc.choices.find(c => c.id === inc.choice)?.label)}${inc.by && inc.by !== S.me?.role ? `（${CHARACTERS[inc.by].name}）` : ''}` : `選ばなければ「${esc(def?.label)}」`}。結果はその日の終わりに出ます。</div></div>`;
+  }
+  return h + `</div>`;
 }
 
 // ---------- 工房（王国：素材と装備づくり） ----------
@@ -457,6 +480,7 @@ function renderPanel(g) {
     h += `<div class="sec"><button class="${readyNow ? '' : 'primary'} big" id="btnReady">${readyNow ? '準備完了を取り消す' : '準備完了'}</button>
       <div class="hint">${waiting.length ? `まだ考え中：${waiting.join('、')}` : ''}　全員そろうと、その日の結果がまとめて反映されます。</div></div>`;
   }
+  if (g.phase === 'day') h += incidentSection(g);
   if (g.phase !== 'lobby') {
     h += selGenSection(g);
     if (S.selTerr != null) h += terrInfo(g, S.selTerr);
@@ -497,6 +521,7 @@ $('#panel').addEventListener('click', async (e) => {
     else { S.draft.acts[gid] = { type: b.dataset.kact }; delete S.draft.moves[gid]; }
     sendDraft(); render(); return;
   }
+  if (b.dataset.inc) return act({ type: 'incident', id: b.dataset.inc, choice: b.dataset.choice });
   if (b.dataset.craft) {
     const free = freeSoldier(g);
     if (!free) return;
