@@ -13,7 +13,7 @@
   <section id="lobby" class="screen">
     <h1><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#3b2a1b"/><path d="M20 40 Q14 22 24 12 Q22 24 28 30 M44 40 Q50 22 40 12 Q42 24 36 30" fill="none" stroke="#e9c46a" stroke-width="4" stroke-linecap="round"/><path d="M24 34 Q32 26 40 34 L36 48 Q32 52 28 48 Z" fill="#e9dcc0"/><circle cx="28.5" cy="37" r="1.8" fill="#3b2a1b"/><circle cx="35.5" cy="37" r="1.8" fill="#3b2a1b"/></svg>山羊の野望</h1>
     <p class="sub">王国と魔族の戦争。ひとりでも、友だちと2〜4人でも遊べる国取りゲーム。</p>
-    <div class="card online hidden" id="onlineBox"></div>
+    <div class="card online hidden serverOnly" id="onlineBox"></div>
     <div class="card">
       <label>あなたの名前 <input id="playerName" maxlength="20" placeholder="なまえ"></label>
     </div>
@@ -37,7 +37,7 @@
       魔族：勇者3人を倒して陣地の大半を取るか、王都の女王のぞちちを倒せば勝ち。</p>
       <button class="ghost" id="btnHowto">遊び方を見る</button>
     </div>
-    <div class="card">
+    <div class="card serverOnly">
       <h2>友だちと遊ぶ（新しいゲームを作る）</h2>
       <div class="row">
         <input id="newGameName" maxlength="30" placeholder="ゲームの名前（なくてもOK）">
@@ -46,9 +46,9 @@
       <label class="hint"><input type="checkbox" id="trialMode"> お試しモード（全員Lv30・素材とお金も多め。技や装備をすぐ試したいとき用）</label>
     </div>
     <div class="card">
-      <h2>ゲーム一覧</h2>
+      <h2 id="gameListTitle">ゲーム一覧</h2>
       <div id="gameList">読み込み中…</div>
-      <button id="refreshList" class="ghost">一覧を更新</button>
+      <button id="refreshList" class="ghost serverOnly">一覧を更新</button>
     </div>
   </section>
 

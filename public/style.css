@@ -41,7 +41,8 @@ input, select { font: inherit; padding: 5px 8px; border: 1px solid #c9bfa9; bord
 .k { color: var(--kingdom); } .d { color: var(--demon); } .n { color: var(--neutral); }
 
 /* ロビー */
-#lobby { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+#lobby { max-width: 760px; margin: 0 auto; padding-block: 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 #lobby h1 { margin: 8px 0 0; font-size: 40px; font-family: var(--serif); letter-spacing: 6px; color: #3b2a1b; display: flex; align-items: center; gap: 12px; }
 #lobby h1 svg { width: 56px; height: 56px; }
 .serif, h2, h3 { font-family: var(--serif); }

@@ -3,9 +3,12 @@ import {
   TERRITORIES, EDGES, SIZES, SPECIALTIES, CHARACTERS, UNIT_TYPES, ROLES, HERO_ROLES,
   BATTLE_W, BATTLE_H, TERRAIN, MAJORITY, MAX_ROUNDS, KINGDOM_ACTIONS, DEMON_ACTIONS, neighbors, gameStats, levelUpCost, expToNext,
   MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured, FACILITIES, canRemodel,
-} from '/shared/data.js';
-import { reachable, targetsFrom, damage, getStat, getMove, isTargetable, inDarkness } from '/shared/battlecore.js';
-import { SKILLS, skillOf, skillList, skillTargets, areaTiles } from '/shared/skills.js';
+} from './shared/data.js';
+import { reachable, targetsFrom, damage, getStat, getMove, isTargetable, inDarkness } from './shared/battlecore.js';
+import { SKILLS, skillOf, skillList, skillTargets, areaTiles } from './shared/skills.js';
+
+// サーバーなしでブラウザの中だけで遊ぶ版（ひとりで遊ぶ専用）
+const LOCAL = window.YAGI_LOCAL ? await import('./local.js') : null;
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,6 +34,7 @@ const store = {
 };
 
 async function api(path, data) {
+  if (LOCAL) return LOCAL.api(path, data);
   const res = await fetch(path, data ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : {});
   const j = await res.json();
   if (!res.ok) throw new Error(j.error || 'エラー');
@@ -55,6 +59,7 @@ function toast(msg) {
 // ---------- ロビー ----------
 async function showLobby() {
   if (S.es) { S.es.close(); S.es = null; }
+  if (S.unsub) { S.unsub(); S.unsub = null; }
   S.game = null; S.gameId = null;
   $('#lobby').classList.remove('hidden');
   $('#game').classList.add('hidden');
@@ -88,6 +93,13 @@ async function refreshList() {
   if (!list.length) { box.innerHTML = '<p class="muted">まだゲームがありません。</p>'; return; }
   box.innerHTML = list.map(g => {
     const mine = store.get('yagyu:seat:' + g.id);
+    if (LOCAL) {
+      const phase = g.phase === 'ended' ? '決着' : `${g.day}日目`;
+      return `<div class="gameItem"><div class="row"><span class="title">${esc(g.name)}</span><span class="muted">${phase}${g.trial ? '・お試し' : ''}</span>
+        <span style="flex:1"></span>
+        ${mine ? `<button class="primary" data-open="${g.id}">続きから</button>` : ''}
+        <button class="ghost" data-del="${g.id}">消す</button></div></div>`;
+    }
     const phase = (g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : `${g.day}日目`) + (g.trial ? '・お試し（Lv30）' : '') + (g.solo ? '・ひとり用' : '');
     const roles = ROLES.map(r => {
       const taken = g.players[r];
@@ -140,6 +152,10 @@ $('#gameList').onclick = async (e) => {
       store.set('yagyu:seat:' + b.dataset.join, { role: r.role, token: r.token });
       openGame(b.dataset.join);
     } catch (err) { toast(err.message); refreshList(); }
+  } else if (b.dataset.del) {
+    // 消すまえに、もう一度押してもらう
+    if (b.dataset.sure) { await api(`/api/games/${b.dataset.del}/delete`, {}); refreshList(); }
+    else { b.dataset.sure = '1'; b.textContent = '本当に消す？'; b.classList.add('danger'); }
   } else if (b.dataset.rejoin) {
     const code = prompt(`${CHARACTERS[b.dataset.role].name}のあいことば（4けたの数字）を入れてください`);
     if (!code) return;
@@ -156,10 +172,15 @@ function openGame(id, watchOnly) {
   S.gameId = id;
   S.me = watchOnly ? null : store.get('yagyu:seat:' + id);
   S.draft = null; S.draftDay = null; S.selGen = null; S.selTerr = null;
-  location.hash = 'g=' + id;
+  if (!LOCAL) location.hash = 'g=' + id;
   $('#lobby').classList.add('hidden');
   $('#game').classList.remove('hidden');
   if (S.es) S.es.close();
+  if (S.unsub) S.unsub();
+  if (LOCAL) {
+    S.unsub = LOCAL.subscribe(id, S.me?.token, (view) => { S.game = view; onState(); });
+    return;
+  }
   S.es = new EventSource(`/api/games/${id}/stream${S.me ? '?token=' + S.me.token : ''}`);
   S.es.onmessage = (ev) => { S.game = JSON.parse(ev.data); onState(); };
   S.es.onerror = () => { /* 自動で再接続される */ };
@@ -216,7 +237,7 @@ function renderTopbar(g) {
     <button id="btnHowto2" class="small">遊び方</button>
     <button id="btnEvents" class="small">イベント</button>
     <button id="btnLobby" class="small">ロビーへ</button>`;
-  $('#btnLobby').onclick = () => { location.hash = ''; showLobby(); };
+  $('#btnLobby').onclick = () => { if (!LOCAL) location.hash = ''; showLobby(); };
   $('#btnEvents').onclick = showEventHistory;
   $('#btnHowto2').onclick = () => showHowto();
 }
@@ -1126,6 +1147,11 @@ function showEventHistory() {
 }
 
 // ---------- はじまり ----------
-const m = location.hash.match(/g=([0-9a-f]+)/);
+// ひとり用の版では、友だちと遊ぶ・インターネットの部分は出さない
+if (LOCAL) {
+  document.querySelectorAll('.serverOnly').forEach(el => el.classList.add('hidden'));
+  $('#gameListTitle').textContent = 'セーブしたゲーム（このブラウザの中）';
+}
+const m = !LOCAL && location.hash.match(/g=([0-9a-f]+)/);
 if (m) openGame(m[1], !store.get('yagyu:seat:' + m[1]));
 else showLobby();

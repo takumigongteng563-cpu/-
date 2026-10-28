@@ -1,5 +1,7 @@
 // ゲーム全体の進行（ふだんの1日・合戦の順番・内政・AI・勝ち負け）
-import crypto from 'node:crypto';
+// 乱数（Node でもブラウザでも動く Web Crypto を使う）
+const randomHex = (bytes) => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(bytes)), b => b.toString(16).padStart(2, '0')).join('');
+const randomCode = () => String(globalThis.crypto.getRandomValues(new Uint32Array(1))[0] % 10000).padStart(4, '0');
 import {
   TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, UNIT_MAX, MAJORITY,
   neighbors, gameStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
@@ -43,7 +45,7 @@ const ownedCount = (game, side) => game.territories.filter(t => t.owner === side
 
 // ---- ゲームを作る ----
 export function createGame(name, opts = {}) {
-  const id = crypto.randomBytes(4).toString('hex');
+  const id = randomHex(4);
   const game = {
     id, name: name || '魔王ヤギュー討伐戦', createdAt: Date.now(), version: 1,
     phase: 'lobby', day: 0,
@@ -134,9 +136,9 @@ export function join(game, role, name) {
   if (!ROLES.includes(role)) throw new Error('その役はありません');
   if (game.players[role]) throw new Error('その役はもう選ばれています');
   if (game.phase === 'ended') throw new Error('もう決着しています');
-  const token = crypto.randomBytes(12).toString('hex');
+  const token = randomHex(12);
   // あいことば：別のパソコンや、URLが変わったあとでも、自分の役に戻るための4けたの数字
-  const code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+  const code = randomCode();
   game.players[role] = { name: (name || '').slice(0, 20) || CHARACTERS[role].name, token, code };
   if (game.phase !== 'lobby') {
     refreshControllers(game);
@@ -1143,7 +1145,7 @@ export function migrate(game) {
   K.gearWeapon ??= 0;
   K.gearArmor ??= 0;
   game.gear ||= { sumire: {}, noguchi: {}, nanase: {} };
-  for (const r of ROLES) if (game.players[r] && !game.players[r].code) game.players[r].code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+  for (const r of ROLES) if (game.players[r] && !game.players[r].code) game.players[r].code = randomCode();
   game.incidents ||= [];
   game.closed ||= {};
   game.injuries ||= {};
