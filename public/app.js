@@ -1,6 +1,6 @@
 // ブラウザ側：ロビー・地図・合戦・イベントの画面
 import {
-  TERRITORIES, EDGES, SIZES, SPECIALTIES, CHARACTERS, UNIT_TYPES, ROLES, HERO_ROLES, REQUIRED_ROLES,
+  TERRITORIES, EDGES, SIZES, SPECIALTIES, CHARACTERS, UNIT_TYPES, ROLES, HERO_ROLES,
   BATTLE_W, BATTLE_H, TERRAIN, MAJORITY, MAX_ROUNDS, KINGDOM_ACTIONS, DEMON_ACTIONS, neighbors, gameStats, levelUpCost, expToNext,
   MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured, FACILITIES, canRemodel,
 } from '/shared/data.js';
@@ -66,13 +66,12 @@ async function refreshList() {
   if (!list.length) { box.innerHTML = '<p class="muted">まだゲームがありません。</p>'; return; }
   box.innerHTML = list.map(g => {
     const mine = store.get('yagyu:seat:' + g.id);
-    const phase = (g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : `${g.day}日目`) + (g.trial ? '・お試し（Lv30）' : '');
+    const phase = (g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : `${g.day}日目`) + (g.trial ? '・お試し（Lv30）' : '') + (g.solo ? '・ひとり用' : '');
     const roles = ROLES.map(r => {
       const taken = g.players[r];
-      const canJoin = !taken && (g.phase === 'lobby' || r === 'noguchi' || r === 'nanase');
-      const need = REQUIRED_ROLES.includes(r) ? '（必須）' : '';
+      const canJoin = !taken && g.phase !== 'ended';
       return `<button class="roleBtn ${taken ? 'taken' : ''}" data-join="${g.id}" data-role="${r}" ${canJoin ? '' : 'disabled'}>
-        ${CHARACTERS[r].title}${CHARACTERS[r].name}${need}：${taken ? esc(taken) : '空き'}</button>`;
+        ${CHARACTERS[r].title}${CHARACTERS[r].name}：${taken ? esc(taken) : g.phase === 'lobby' ? '空き' : '空き（今はAI）'}</button>`;
     }).join('');
     return `<div class="gameItem">
       <div class="row"><span class="title">${esc(g.name)}</span><span class="muted">${phase}</span>
@@ -84,6 +83,23 @@ async function refreshList() {
 }
 
 $('#refreshList').onclick = refreshList;
+
+// ひとりで遊ぶ：ゲームを作って、選んだ側で参加して、すぐ始める
+document.querySelector('.solo').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-solo]');
+  if (!b) return;
+  const role = b.dataset.solo;
+  const name = $('#playerName').value.trim();
+  store.set('yagyu:name', name);
+  try {
+    const { id } = await api('/api/games', { name: `${name || 'ひとり'}の${role === 'yagyu' ? '魔族' : '王国'}`, trial: $('#soloTrial').checked, difficulty: $('#soloDifficulty').value, solo: true });
+    const r = await api(`/api/games/${id}/join`, { role, name });
+    store.set('yagyu:seat:' + id, { role: r.role, token: r.token });
+    await api(`/api/games/${id}/action`, { token: r.token, action: { type: 'start' } });
+    openGame(id);
+  } catch (err) { toast(err.message); }
+});
+$('#btnHowto').onclick = () => showHowto();
 $('#createGame').onclick = async () => {
   const { id } = await api('/api/games', { name: $('#newGameName').value, trial: $('#trialMode').checked });
   $('#newGameName').value = '';
@@ -157,7 +173,7 @@ function renderTopbar(g) {
   }
   const chips = ROLES.map(r => {
     const p = g.players[r];
-    if (!p) return HERO_ROLES.includes(r) ? `<span class="chip">${CHARACTERS[r].name}:AI</span>` : '';
+    if (!p) return `<span class="chip">${CHARACTERS[r].name}:AI</span>`;
     const ready = g.phase === 'day' && g.ready[r];
     return `<span class="chip ${ready ? 'ready' : ''}" title="${esc(p.name)}">${CHARACTERS[r].name}${S.me?.role === r ? '（あなた）' : ''}${ready ? ' ✓' : ''}</span>`;
   }).join('');
@@ -167,10 +183,12 @@ function renderTopbar(g) {
     <span>陣地 <b class="k">王国${owned(g, 'kingdom')}</b> / <b class="d">魔族${owned(g, 'demon')}</b> / 中立${owned(g, 'neutral')}（大半=${MAJORITY}）</span>
     <span class="res">${res}</span>
     <span class="spacer"></span>${chips}
+    <button id="btnHowto2" class="small">遊び方</button>
     <button id="btnEvents" class="small">イベント</button>
     <button id="btnLobby" class="small">ロビーへ</button>`;
   $('#btnLobby').onclick = () => { location.hash = ''; showLobby(); };
   $('#btnEvents').onclick = showEventHistory;
+  $('#btnHowto2').onclick = () => showHowto();
 }
 
 // ---------- 地図 ----------
@@ -493,10 +511,10 @@ function workshopSection(g) {
 function renderPanel(g) {
   let h = '';
   if (g.phase === 'lobby') {
-    const ok = REQUIRED_ROLES.every(r => g.players[r]);
+    const ok = ROLES.some(r => g.players[r]);
     h += `<div class="sec"><h3>参加者を待っています</h3>
-      ${ROLES.map(r => `<div>${CHARACTERS[r].title}${CHARACTERS[r].name}：${g.players[r] ? esc(g.players[r].name) : '<span class="muted">' + (HERO_ROLES.includes(r) && !REQUIRED_ROLES.includes(r) ? '空き（AIが動かす）' : '空き（必須）') + '</span>'}</div>`).join('')}
-      <p class="hint">ヤギューとスミレがそろったら始められます。野口・七星はあとからでも参加できます。</p>
+      ${ROLES.map(r => `<div>${CHARACTERS[r].title}${CHARACTERS[r].name}：${g.players[r] ? esc(g.players[r].name) : '<span class="muted">空き（AIが動かす）</span>'}</div>`).join('')}
+      <p class="hint">だれもいない役はAIが動かします。始まったあとからでも、空いている役に参加できます。</p>
       <button class="primary big" id="btnStart" ${ok && S.me ? '' : 'disabled'}>ゲームを始める</button></div>`;
   } else if (g.phase === 'ended') {
     h += `<div class="sec"><h3>決着！ ${SIDE_NAME[g.winner]}の勝利</h3><button id="btnEnding" class="primary">エンディングを見る</button></div>`;
@@ -958,6 +976,28 @@ function showStory(title, when, lines, onClose) {
     else if (id === 'mClose') { $('#modal').classList.add('hidden'); S.modalOpen = false; onClose && onClose(); }
   };
   draw();
+  $('#modal').classList.remove('hidden');
+}
+
+// 遊び方
+const HOWTO = [
+  ['どんなゲーム？', '王国と魔族の戦争ゲーム。1日ずつ進み、地図の上で武将を動かして陣地を取りあう。敵とぶつかると合戦になる。'],
+  ['勝ち方', '王国：魔王ヤギューを倒して、陣地の大半（18個）を取る。<br>魔族：勇者3人を全員倒して陣地の大半を取る。または、王都の女王のぞちちを倒す（すぐ勝ち）。'],
+  ['ふだんの1日', '① 自分の武将（金色のふちのコマ）をクリック → 光っているとなりの陣地をクリックで移動。<br>② 右の「できごと」があれば対応を選ぶ。<br>③ 内政（勇者は兵の武将に、ヤギューは右の「魔族の内政」で）を決める。<br>④ 「準備完了」を押すと、その日の結果がまとめて出る。'],
+  ['合戦', '速い部隊から順番に動く。自分の番は「移動（青いマス）＋攻撃か技を1回」。★の大将を倒せば勝ち。30ターンたつと守る側の勝ち。<br>三すくみ：槍兵・オーク → 騎兵・山羊騎兵 → 弓兵・ハーピー → 槍兵・オーク（矢印の先に強い）。<br>地形：森は守りが上がる、川は遅くて守りが下がる、高台から攻撃すると強い、崖は魔族だけ通れる。'],
+  ['合戦のあと', '負けた側は退却する。しんがりを残すと、追ってくる敵を足止めできる。勝った側は追撃するか選べる。速さ比べで勝てば3ターンの追撃戦になり、逃げる大将を倒せばその武将は倒れる。'],
+  ['戦争にはお金と食料がいる', '兵は毎日食料を食べる。食料が尽きると兵が逃げる。王都（魔王城）から自分の陣地だけでつながっていない所は補給が届かず、兵が減っていく。'],
+  ['戦争は民の暮らしを壊す', '合戦があった陣地は、民が減って畑が荒れ、しばらく収穫が半分になる。勝っても負けても同じ。'],
+  ['強くなるには', '勇者：合戦で経験を積んでレベルが上がる。工房で素材から装備を作る。特産のある陣地を取ると素材が手に入る。<br>魔族：魔力でレベルを上げる。恐怖から魔力が生まれる（恐怖が下がりすぎると反乱）。'],
+  ['技', '合戦で自分のキャラの番に、右のボタンから使う。レベル5ごとに増える。地図でキャラを選ぶと「技・スキル」で一覧が見られる。'],
+  ['歴史イベント', '何日目かになって条件がそろうと、物語が進む。条件がそろわないと起きないイベントもある。上の「イベント」でもう一度読める。'],
+];
+function showHowto() {
+  S.modalOpen = true;
+  const box = $('#modalBox');
+  box.innerHTML = `<h2>遊び方</h2>` + HOWTO.map(([t, d]) => `<h4>${t}</h4><div class="line">${d}</div>`).join('') +
+    `<div class="foot"><button id="mClose" class="primary">閉じる</button></div>`;
+  box.onclick = (e) => { if (e.target.id === 'mClose') { $('#modal').classList.add('hidden'); S.modalOpen = false; if (S.game) maybeShowEvents(); } };
   $('#modal').classList.remove('hidden');
 }
 

@@ -146,7 +146,6 @@ export const CHARACTERS = {
 
 export const HERO_ROLES = ['sumire', 'noguchi', 'nanase'];
 export const ROLES = ['yagyu', 'sumire', 'noguchi', 'nanase'];
-export const REQUIRED_ROLES = ['yagyu', 'sumire'];
 
 // レベル上げ：魔族は魔力で、勇者たちは合戦の経験で
 export const levelUpCost = (lv) => 15 + 5 * lv;
@@ -231,7 +230,7 @@ export const DEMON_ACTIONS = {
   farm:    { name: '開墾',         cost: { magic: 10 },  desc: '畑+4' },
   people:  { name: '民を増やす',   cost: { food: 40 },   desc: '民+200' },
   terror:  { name: '恐怖を与える', cost: {},             desc: '恐怖+15（民が少し減る）' },
-  spawn:   { name: '手下を生む',   cost: { magic: 25 },  desc: '陣地の兵+150' },
+  spawn:   { name: '手下を生む',   cost: { magic: 20 },  desc: '陣地の兵+200' },
   levelup: { name: 'レベル上げ',   cost: { magic: 0 },   desc: '魔力でキャラのレベルを上げる', global: true },
   build:       { name: '作り変え',         cost: {},            desc: '魔族の陣地を、恐怖の塔・魔物の巣・岩の砦に作り変える', build: true },
   darkFortify: { name: '闇の儀式：陣地の強化', cost: { magic: 20 }, desc: '陣地の守り+15' },

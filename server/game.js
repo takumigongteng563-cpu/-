@@ -1,7 +1,7 @@
 // ゲーム全体の進行（ふだんの1日・合戦の順番・内政・AI・勝ち負け）
 import crypto from 'node:crypto';
 import {
-  TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, REQUIRED_ROLES, UNIT_MAX, MAJORITY,
+  TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, UNIT_MAX, MAJORITY,
   neighbors, gameStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
   MATERIALS, RECIPES, GEAR_MAX, SPECIALTIES, emptyMaterials, troopGearCost, recipeName, FACILITIES, canRemodel, garrisonCap,
 } from '../shared/data.js';
@@ -9,6 +9,8 @@ import { createBattle, startBattle, applyBattleAction, aiStep, activeUnit, setCo
 import { getStat } from '../shared/battlecore.js';
 import { checkEvents, ENDINGS } from './events.js';
 import { rollIncidents, resolveIncidents, chooseIncident, dailyRecovery, sendMonsters } from './incidents.js';
+import { demonAIOrders, aiIncidentChoices } from './demonai.js';
+import { planMoves } from './ai.js';
 
 export function actionCost(game, side, type, extra) {
   if (side === 'kingdom') {
@@ -68,6 +70,9 @@ export function createGame(name, opts = {}) {
     eventLog: [], firedEvents: [], log: [], winner: null, ending: null,
     incidents: [], closed: {}, injuries: {},
     trial: !!opts.trial,
+    allowNoHumans: !!opts.allowNoHumans, // テスト用：AIどうしで最後まで
+    difficulty: ['easy', 'normal', 'hard'].includes(opts.difficulty) ? opts.difficulty : 'normal',
+    solo: !!opts.solo,
   };
   // お試しモード：全員Lv30から（技をすぐ試せる）
   const startLv = opts.trial ? 30 : 1;
@@ -115,7 +120,7 @@ function setupGenerals(game) {
 
 // 武将を誰が動かすか
 export function controllerFor(game, gen) {
-  if (gen.side === 'demon') return 'yagyu';
+  if (gen.side === 'demon') return game.players.yagyu ? 'yagyu' : 'ai';
   if (gen.kind === 'hero' && game.players[gen.charId]) return gen.charId;
   if (gen.kind === 'soldier' && gen.owner && game.players[gen.owner]) return gen.owner;
   return 'ai';
@@ -128,7 +133,7 @@ function refreshControllers(game) {
 export function join(game, role, name) {
   if (!ROLES.includes(role)) throw new Error('その役はありません');
   if (game.players[role]) throw new Error('その役はもう選ばれています');
-  if (game.phase !== 'lobby' && role !== 'noguchi' && role !== 'nanase') throw new Error('始まったあとに入れるのは野口・七星だけです');
+  if (game.phase === 'ended') throw new Error('もう決着しています');
   const token = crypto.randomBytes(12).toString('hex');
   game.players[role] = { name: (name || '').slice(0, 20) || CHARACTERS[role].name, token };
   if (game.phase !== 'lobby') {
@@ -145,7 +150,8 @@ export function roleOf(game, token) {
 
 export function start(game) {
   if (game.phase !== 'lobby') throw new Error('もう始まっています');
-  for (const r of REQUIRED_ROLES) if (!game.players[r]) throw new Error(`${CHARACTERS[r].name}の役の人が必要です`);
+  // 人が1人でもいれば始められる。いない役はAIが動かす
+  if (!ROLES.some(r => game.players[r]) && !game.allowNoHumans) throw new Error('だれも参加していません');
   setupGenerals(game);
   refreshControllers(game);
   game.phase = 'day';
@@ -215,19 +221,24 @@ export function setReady(game, role, ready) {
 }
 
 // ---- 強さの見積もり（AI用） ----
-function genStrength(game, g) {
+export function genStrength(game, g) {
   let s = 0;
   if (g.charId) {
     const st = gameStats(game, g.charId);
-    s += g.hp * Math.max(st.atk, st.mag) / 18;
+    s += g.hp * Math.max(st.atk, st.mag) / 30;
   }
   for (const t of g.troops) s += t.hp;
   return s;
 }
-function territoryStrength(game, tid, side) {
+export function territoryStrength(game, tid, side) {
   let s = 0;
   const t = game.territories[tid];
-  if (t.owner === side) s += t.garrison * 0.8;
+  // 守備隊として戦えるのは3部隊（900人）まで
+  if (t.owner === side) {
+    const T = TERRITORIES[tid];
+    const walls = ['fortress', 'metropolis', 'capital', 'castle'].includes(T.size) || t.facility === 'fort' || t.facility === 'rock';
+    s += Math.min(t.garrison, 900) * (1 + t.defense / 200) * (walls ? 1.4 : 1);
+  }
   for (const g of Object.values(game.generals)) if (g.status === 'active' && g.location === tid && g.side === side) s += genStrength(game, g);
   return s;
 }
@@ -277,7 +288,7 @@ function doInternal(game, side, type, tid, by, extra) {
     case 'alms': t.loyalty = Math.min(100, t.loyalty + 12); break;
     case 'train': res.training = Math.min(10, res.training + 1); break;
     case 'terror': t.fear = Math.min(100, t.fear + 15); t.pop = Math.max(100, t.pop - 80); break;
-    case 'spawn': t.garrison = Math.min(garrisonCap(t), t.garrison + 150); break;
+    case 'spawn': t.garrison = Math.min(garrisonCap(t), t.garrison + 200); break;
     case 'build':
       if (t.facility) game.log.push(`${T.name}の${FACILITIES[t.facility].name}をこわした`);
       t.facility = extra.facility;
@@ -292,43 +303,25 @@ function doInternal(game, side, type, tid, by, extra) {
 
 // ---- AI ----
 function aiOrders(game) {
-  const moves = {};
   const acts = [];
-  // 王国のAI武将
-  const aiGens = Object.values(game.generals).filter(g => g.status === 'active' && g.side === 'kingdom' && g.controller === 'ai' && g.kind !== 'queen');
-  const claimed = {};
-  for (const g of aiGens) {
-    const own = genStrength(game, g);
-    if (g.kind === 'soldier') {
-      const t = game.territories[g.location];
-      const S = SIZES[TERRITORIES[g.location].size];
-      acts.push({ gid: g.id, type: t.garrison < S.garrison * 0.6 ? 'conscript' : (game.resources.kingdom.food < 600 ? 'farm' : (game.day % 2 ? 'commerce' : 'farm')), tid: g.location });
-      continue;
-    }
-    const full = g.troops.reduce((a, t) => a + t.hp, 0) / (g.troops.length * UNIT_MAX || 1);
-    const st = gameStats(game, g.charId);
-    if (full < 0.6 || g.hp < st.hp * 0.6) {
-      // 兵が減ったら、兵の多い自分の陣地へ戻って補充する
-      const step = stepToward(game, g, n => game.territories[n].garrison >= 300);
-      if (step !== null) moves[g.id] = step;
-      continue;
-    }
-    let best = null;
-    for (const n of neighbors(g.location, 'kingdom', game.closed)) {
-      const t = game.territories[n];
-      if (t.owner === 'kingdom') continue;
-      const enemy = territoryStrength(game, n, t.owner) + (t.owner === 'neutral' ? 0 : 0);
-      const allies = (claimed[n] || 0) + own;
-      const score = allies / (enemy + 1) + (TERRITORIES[n].metropolis ? 0.3 : 0) + (t.owner === 'demon' ? 0.1 : 0);
-      if (allies > enemy * 1.3 && (!best || score > best.score)) best = { n, score };
-    }
-    if (best) { moves[g.id] = best.n; claimed[best.n] = (claimed[best.n] || 0) + own; }
+  // 王国のAI武将：兵の武将は内政、勇者たちは一緒に攻める
+  const aiGens = Object.values(game.generals).filter(g => g.status === 'active' && g.side === 'kingdom' && g.controller === 'ai' && g.kind !== 'queen' && !g.temp);
+  // 前線にいる兵の武将は戦いに加わり、うしろの兵の武将は内政をする
+  const atFront = (g) => neighbors(g.location, 'kingdom', game.closed).some(n => game.territories[n].owner !== 'kingdom');
+  const fighters = aiGens.filter(x => x.kind !== 'soldier' || atFront(x));
+  // 魔族の陣地が3つ以下になったら、魔王城へ総攻撃
+  const siege = game.territories.filter(t => t.owner === 'demon').length <= 3;
+  const moves = planMoves(game, 'kingdom', fighters, siege ? 0.9 : 1.3);
+  for (const g of aiGens.filter(x => x.kind === 'soldier' && moves[x.id] === undefined)) {
+    const t = game.territories[g.location];
+    const S = SIZES[TERRITORIES[g.location].size];
+    acts.push({ gid: g.id, type: t.garrison < S.garrison * 0.6 ? 'conscript' : (game.resources.kingdom.food < 600 ? 'farm' : (game.day % 2 ? 'commerce' : 'farm')), tid: g.location });
   }
   return { moves, acts };
 }
 
 // 自分の陣地だけを通って、条件に合う一番近い陣地へ向かう最初の一歩
-function stepToward(game, g, ok) {
+export function stepToward(game, g, ok) {
   const side = g.side;
   if (ok(g.location) && game.territories[g.location].owner === side) return null;
   const prev = new Map([[g.location, null]]);
@@ -403,6 +396,9 @@ function queenInternal(game) {
 // ---- 1日の結果をまとめて反映 ----
 function resolveDay(game) {
   game.log.push(`== ${game.day}日目の結果 ==`);
+  // 人のいない陣営は、AIが命令とできごとの対応を決める
+  if (!game.players.yagyu) { game.orders.yagyu = demonAIOrders(game); aiIncidentChoices(game, 'demon'); }
+  if (!HERO_ROLES.some(h => game.players[h])) aiIncidentChoices(game, 'kingdom');
   resolveIncidents(game);
   const ai = aiOrders(game);
   const moves = { ...ai.moves };
@@ -788,7 +784,7 @@ function concludeBattle(game) {
         game.injuries[u.charId] = Math.max(game.injuries[u.charId] || 0, game.day + 2);
         game.log.push(`${u.name}は怪我をした（2日）`);
       }
-      if (u.charId) gainExp(game, u.charId, u.dealt / 4 + u.kills * 15 + (u.role === winRole ? 30 : 0));
+      if (u.charId) gainExp(game, u.charId, u.dealt / 2 + u.kills * 25 + (u.role === winRole ? 60 : 20));
     } else {
       const tr = g.troops.find(x => x.uid === u.troopRef);
       if (tr) tr.hp = u.hp;
@@ -884,6 +880,7 @@ function capture(game, tid, side, gens) {
   if (side === 'kingdom') {
     const hero = gens.find(g => g.kind === 'hero');
     if (hero) game.reinforcements.push({ tid, owner: hero.charId, day: game.day + 3 });
+    for (const g of gens) if (g.charId) gainExp(game, g.charId, 30); // 陣地を取ると経験が入る
   }
 }
 
@@ -921,7 +918,7 @@ function endOfDay(game) {
     const f = t.facility;
     income[t.owner].food += t.farm * 0.25 * mult * (f === 'farm' ? 1.5 : 1);
     if (t.owner === 'kingdom') income.kingdom.gold += t.commerce * 0.5 * mult * (0.6 + t.loyalty / 150) * (f === 'market' ? 1.5 : 1);
-    else income.demon.magic += (t.fear * t.pop / 1000 * 0.04 * mult + (t.id === 28 ? 15 : 0)) * (f === 'fear' ? 1.3 : 1);
+    else income.demon.magic += (t.fear * t.pop / 1000 * 0.07 * mult + (t.id === 28 ? 25 : 0)) * (f === 'fear' ? 1.3 : 1);
     // 恐怖の塔・魔物の巣
     if (f === 'fear') {
       t.fear = Math.min(100, t.fear + 3);
@@ -948,6 +945,13 @@ function endOfDay(game) {
       t.owner = 'neutral'; t.garrison = 300; t.rebel = 0; t.loyalty = 50; t.fear = 0; t.facility = null;
       for (const g of gensAt(game, t.id)) retreat(game, g);
     }
+  }
+  // ひとりで遊ぶとき：AIの陣営は、むずかしさに合わせて収入が増える
+  const aiBonus = { easy: 1, normal: 1.3, hard: 1.7 }[game.difficulty || 'normal'];
+  for (const side of ['kingdom', 'demon']) {
+    const human = side === 'demon' ? game.players.yagyu : HERO_ROLES.some(h => game.players[h]);
+    if (human) continue;
+    for (const k of Object.keys(income[side])) income[side][k] *= aiBonus;
   }
   R.kingdom.gold += Math.round(income.kingdom.gold);
   // 特産地から素材が取れる（王国の陣地だけ。戦で荒れていると半分）
@@ -1020,7 +1024,11 @@ function endOfDay(game) {
   // 王国からの増援（勇者が占領した陣地へ、兵の武将が届く）
   game.reinforcements = game.reinforcements.filter(r => {
     if (game.day + 1 < r.day) return true;
-    if (game.territories[r.tid].owner === 'kingdom') {
+    // 援軍は王都の兵から出す（王都の兵が足りなければ来ない）
+    if (game.territories[r.tid].owner === 'kingdom' && game.territories[0].garrison < 600) {
+      game.log.push(`王都の兵が足りず、${TERRITORIES[r.tid].name}への援軍を送れなかった`);
+    } else if (game.territories[r.tid].owner === 'kingdom') {
+      game.territories[0].garrison -= 300;
       const g = addGeneral(game, { name: `${CHARACTERS[r.owner].name}の兵`, side: 'kingdom', kind: 'soldier', owner: r.owner, location: r.tid, troops: [newTroop(game, ['spear', 'cavalry', 'archer'][game.genCount % 3], 'kingdom')] });
       g.controller = controllerFor(game, g);
       game.log.push(`${TERRITORIES[r.tid].name} に王国から兵が届いた（${g.name}）`);
@@ -1120,4 +1128,9 @@ export function migrate(game) {
   game.closed ||= {};
   game.injuries ||= {};
   return game;
+}
+
+// テスト用：人がいないゲームで、1日を進める
+export function resolveDayForTest(game) {
+  if (game.phase === 'day') resolveDay(game);
 }

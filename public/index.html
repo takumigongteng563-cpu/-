@@ -10,12 +10,32 @@
 <div id="app">
   <section id="lobby" class="screen">
     <h1>魔王ヤギュー討伐戦<small>（仮）</small></h1>
-    <p class="sub">王国と魔族の戦争。2〜4人で遊ぶ国取りゲーム。</p>
+    <p class="sub">王国と魔族の戦争。ひとりでも、友だちと2〜4人でも遊べる国取りゲーム。</p>
     <div class="card">
       <label>あなたの名前 <input id="playerName" maxlength="20" placeholder="なまえ"></label>
     </div>
+    <div class="card solo">
+      <h2>ひとりで遊ぶ（相手はAI）</h2>
+      <div class="row">
+        <label>むずかしさ
+          <select id="soloDifficulty">
+            <option value="easy">かんたん</option>
+            <option value="normal" selected>ふつう</option>
+            <option value="hard">むずかしい</option>
+          </select>
+        </label>
+        <label class="hint"><input type="checkbox" id="soloTrial"> お試しモード（全員Lv30）</label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="primary" data-solo="sumire">王国で遊ぶ（勇者スミレ）</button>
+        <button class="primary demonBtn" data-solo="yagyu">魔族で遊ぶ（魔王ヤギュー）</button>
+      </div>
+      <p class="hint">王国：ヤギューを倒して、陣地の大半（18）を取れば勝ち。野口・七星・のぞちちはAIが手伝ってくれる。<br>
+      魔族：勇者3人を倒して陣地の大半を取るか、王都の女王のぞちちを倒せば勝ち。</p>
+      <button class="ghost" id="btnHowto">遊び方を見る</button>
+    </div>
     <div class="card">
-      <h2>新しいゲームを作る</h2>
+      <h2>友だちと遊ぶ（新しいゲームを作る）</h2>
       <div class="row">
         <input id="newGameName" maxlength="30" placeholder="ゲームの名前（なくてもOK）">
         <button id="createGame">作る</button>

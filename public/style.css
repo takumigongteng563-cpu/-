@@ -45,6 +45,9 @@ input, select { font: inherit; padding: 5px 8px; border: 1px solid #c9bfa9; bord
 .sub { color: var(--muted); margin-top: 4px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
 .card h2 { margin: 0 0 10px; font-size: 16px; }
+.solo { border: 2px solid var(--accent); }
+button.demonBtn { background: var(--demon); border-color: #6b2f85; }
+button.demonBtn:hover:not(:disabled) { background: #9c52ba; }
 .gameItem { border-top: 1px solid var(--line); padding: 10px 0; }
 .gameItem:first-child { border-top: 0; }
 .gameItem .title { font-weight: bold; }
