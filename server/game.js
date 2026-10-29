@@ -1,7 +1,7 @@
 // ゲーム全体の進行（ふだんの1日・合戦の順番・内政・AI・勝ち負け）
 // 乱数（Node でもブラウザでも動く Web Crypto を使う）
-const randomHex = (bytes) => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(bytes)), b => b.toString(16).padStart(2, '0')).join('');
-const randomCode = () => String(globalThis.crypto.getRandomValues(new Uint32Array(1))[0] % 10000).padStart(4, '0');
+export const randomHex = (bytes) => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(bytes)), b => b.toString(16).padStart(2, '0')).join('');
+export const randomCode = () => String(globalThis.crypto.getRandomValues(new Uint32Array(1))[0] % 10000).padStart(4, '0');
 import {
   TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, UNIT_MAX, MAJORITY,
   neighbors, gameStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
@@ -13,6 +13,14 @@ import { checkEvents, ENDINGS } from './events.js';
 import { rollIncidents, resolveIncidents, chooseIncident, dailyRecovery, sendMonsters } from './incidents.js';
 import { demonAIOrders, aiIncidentChoices } from './demonai.js';
 import { planMoves } from './ai.js';
+import {
+  initConquest, joinConquest, startConquest, setConquestOrders, resolveConquestDay, conquestConflictAt, conquestCapture,
+  conquestEndOfDay, checkConquestWin, conquestRoles, controllerOf, factionName, actionCount, conquestSummary,
+} from './conquest.js';
+
+const isConquest = (game) => game.mode === 'conquest';
+// 命令を出す人の役（群雄割拠では、滅びていない勢力の当主）
+const humanRoles = (game) => (isConquest(game) ? conquestRoles(game) : ROLES.filter(r => game.players[r]));
 
 export function actionCost(game, side, type, extra) {
   if (side === 'kingdom') {
@@ -85,6 +93,7 @@ export function createGame(name, opts = {}) {
     game.royale = { level: [10, 20, 30].includes(Number(opts.level)) ? Number(opts.level) : 20, bots: Math.max(0, Math.min(7, Number(opts.bots ?? 3))), entrants: [] };
     if (!name) game.name = 'バトルロワイヤル';
   }
+  if (opts.mode === 'conquest') initConquest(game, opts, name);
   for (const c of Object.keys(CHARACTERS)) game.chars[c] = { level: startLv, exp: 0 };
   if (opts.trial) {
     // お試しモード：装備づくりもすぐ試せるように、素材とお金を多めに
@@ -94,11 +103,11 @@ export function createGame(name, opts = {}) {
   return game;
 }
 
-function newTroop(game, type, q, hp = UNIT_MAX) {
+export function newTroop(game, type, q, hp = UNIT_MAX) {
   return { uid: 't' + (++game.troopCount), type, q, hp, max: UNIT_MAX };
 }
 
-function addGeneral(game, g) {
+export function addGeneral(game, g) {
   const id = g.charId || ('g' + (++game.genCount));
   const gen = { id, status: 'active', controller: 'ai', troops: [], ...g };
   if (gen.charId) {
@@ -129,6 +138,7 @@ function setupGenerals(game) {
 
 // 武将を誰が動かすか
 export function controllerFor(game, gen) {
+  if (isConquest(game)) return controllerOf(game, gen.side);
   if (gen.side === 'demon') return game.players.yagyu ? 'yagyu' : 'ai';
   if (gen.kind === 'hero' && game.players[gen.charId]) return gen.charId;
   if (gen.kind === 'soldier' && gen.owner && game.players[gen.owner]) return gen.owner;
@@ -141,6 +151,7 @@ function refreshControllers(game) {
 
 export function join(game, role, name) {
   if (game.mode === 'royale') return joinRoyale(game, role, name);
+  if (isConquest(game)) return joinConquest(game, role, name);
   if (!ROLES.includes(role)) throw new Error('その役はありません');
   if (game.players[role]) throw new Error('その役はもう選ばれています');
   if (game.phase === 'ended') throw new Error('もう決着しています');
@@ -181,6 +192,7 @@ export function roleOf(game, token) {
 export function start(game) {
   if (game.phase !== 'lobby') throw new Error('もう始まっています');
   if (game.mode === 'royale') return startRoyale(game);
+  if (isConquest(game)) { startConquest(game); resetOrders(game); return; }
   // 人が1人でもいれば始められる。いない役はAIが動かす
   if (!ROLES.some(r => game.players[r]) && !game.allowNoHumans) throw new Error('だれも参加していません');
   setupGenerals(game);
@@ -194,13 +206,14 @@ export function start(game) {
 function resetOrders(game) {
   game.orders = {};
   game.ready = {};
-  for (const r of ROLES) if (game.players[r]) { game.orders[r] = { moves: {}, acts: {}, globals: [] }; game.ready[r] = false; }
+  for (const r of humanRoles(game)) { game.orders[r] = isConquest(game) ? { moves: {}, acts: [], diplo: [] } : { moves: {}, acts: {}, globals: [] }; game.ready[r] = false; }
 }
 
 // ---- 命令 ----
 // orders = { moves: {genId: tid}, acts: {genId|'tid:N': {type, tid}}, globals: [{type, charId}] }
 export function setOrders(game, role, orders) {
   if (game.phase !== 'day') throw new Error('今は命令を出せません');
+  if (isConquest(game)) return setConquestOrders(game, role, orders);
   const clean = { moves: {}, acts: {}, globals: [] };
   for (const [gid, tid] of Object.entries(orders.moves || {})) {
     const g = game.generals[gid];
@@ -248,7 +261,7 @@ export function incidentChoice(game, role, id, choice) {
 export function setReady(game, role, ready) {
   if (game.phase !== 'day') throw new Error('今は準備できません');
   game.ready[role] = !!ready;
-  if (ROLES.every(r => !game.players[r] || game.ready[r])) resolveDay(game);
+  if (humanRoles(game).every(r => game.ready[r])) resolveDay(game);
 }
 
 // ---- 強さの見積もり（AI用） ----
@@ -275,7 +288,7 @@ export function territoryStrength(game, tid, side) {
 }
 
 // お金・食料・魔力は res に、素材は res.materials にある
-function payCost(res, cost) {
+export function payCost(res, cost) {
   const pool = (k) => (k in MATERIALS ? res.materials : res);
   for (const [k, v] of Object.entries(cost)) if ((pool(k)[k] || 0) < v) return false;
   for (const [k, v] of Object.entries(cost)) pool(k)[k] -= v;
@@ -426,6 +439,7 @@ function queenInternal(game) {
 
 // ---- 1日の結果をまとめて反映 ----
 function resolveDay(game) {
+  if (isConquest(game)) return resolveConquestDay(game);
   game.log.push(`== ${game.day}日目の結果 ==`);
   // 人のいない陣営は、AIが命令とできごとの対応を決める
   if (!game.players.yagyu) { game.orders.yagyu = demonAIOrders(game); aiIncidentChoices(game, 'demon'); }
@@ -490,10 +504,10 @@ function resolveDay(game) {
 }
 
 // 合戦・占領が必要か調べて、必要なら次の合戦を始める
-function processPending(game) {
+export function processPending(game) {
   while (game.pending.length) {
     const tid = game.pending[0];
-    const c = conflictAt(game, tid);
+    const c = isConquest(game) ? conquestConflictAt(game, tid) : conflictAt(game, tid);
     if (!c) { game.pending.shift(); continue; }
     if (c.capture) { capture(game, tid, c.side, c.gens); continue; }
     beginBattle(game, c);
@@ -502,7 +516,7 @@ function processPending(game) {
   endOfDay(game);
 }
 
-function gensAt(game, tid) {
+export function gensAt(game, tid) {
   return Object.values(game.generals).filter(g => g.status === 'active' && g.location === tid && !g.temp);
 }
 
@@ -564,7 +578,8 @@ function beginBattle(game, c) {
     const humans = [...new Set(gens.map(g => g.controller).filter(r => r !== 'ai'))];
     if (humans.length && gens.length >= 2) b.pending[role] = humans;
   }
-  b.support = queenSupportFor(game, b);
+  b.support = isConquest(game) ? null : queenSupportFor(game, b);
+  if (isConquest(game)) b.sideNames = { [b.attackerSide]: factionName(game, b.attackerSide), [b.defenderSide]: factionName(game, b.defenderSide) };
   b.stage = Object.keys(b.pending).length ? 'commander' : 'fight';
   if (b.stage === 'fight') startBattle(b);
   progress(game);
@@ -605,6 +620,12 @@ function progress(game) {
     }
     if (b.stage === 'fight' && b.result) { enterAftermath(game); continue; }
     if (b.stage === 'rearguard' && !b.pendingRoles.length) { enterPursueStage(game); continue; }
+    // 群雄割拠では、AIどうしの合戦は画面に出さずにすぐ終わらせる（合戦が多いので）
+    if (b.stage === 'done' && b.auto && isConquest(game)) {
+      if (b.kind === 'pursuit') mergePursuit(game);
+      concludeBattle(game);
+      return;
+    }
     return;
   }
 }
@@ -623,7 +644,7 @@ function enterAftermath(game) {
   b.rear = {};
   b.pendingRoles = rolesOf(b, loser).filter(r => fleeing.some(u => u.controller === r && u.kind === 'troop'));
   b.stage = 'rearguard';
-  b.log.push(`${loser === 'kingdom' ? '王国' : loser === 'demon' ? '魔族' : '中立'}は退却する`);
+  b.log.push(`${b.sideNames?.[loser] ?? (loser === 'kingdom' ? '王国' : loser === 'demon' ? '魔族' : '中立')}は退却する`);
 }
 
 function enterPursueStage(game) {
@@ -773,8 +794,8 @@ function levelUp(game, charId) {
   game.log.push(`${CHARACTERS[charId].name} が Lv${c.level} になった`);
 }
 
-function gainExp(game, charId, exp) {
-  if (!HERO_ROLES.includes(charId) && charId !== 'horie') return;
+export function gainExp(game, charId, exp) {
+  if (!isConquest(game) && !HERO_ROLES.includes(charId) && charId !== 'horie') return;
   const c = game.chars[charId];
   c.exp += Math.round(exp);
   while (c.level < 30 && c.exp >= expToNext(c.level)) { c.exp -= expToNext(c.level); levelUp(game, charId); }
@@ -785,7 +806,7 @@ function knockDown(game, g) {
   if (!g.charId) { delete game.generals[g.id]; game.log.push(`${g.name} は散り散りになった`); return; }
   g.status = 'down';
   g.location = null;
-  const wait = { yagyu: 2, nozomi: 0 }[g.charId] ?? (g.kind === 'hero' ? 3 : 4);
+  const wait = isConquest(game) ? 3 : ({ yagyu: 2, nozomi: 0 }[g.charId] ?? (g.kind === 'hero' ? 3 : 4));
   g.respawnDay = game.day + wait;
   for (const t of g.troops) t.hp = 0;
   game.log.push(`${g.name} が倒れた`);
@@ -811,7 +832,7 @@ function concludeBattle(game) {
       g.hp = u.hp;
       if (!u.alive) g.leaderDown = true;
       // 本隊が3割を切るほど戦った勇者は、怪我をする（2日）
-      else if (HERO_ROLES.includes(u.charId) && u.hp < u.max * 0.3) {
+      else if ((HERO_ROLES.includes(u.charId) || isConquest(game)) && u.hp < u.max * 0.3) {
         game.injuries ||= {};
         game.injuries[u.charId] = Math.max(game.injuries[u.charId] || 0, game.day + 2);
         game.log.push(`${u.name}は怪我をした（2日）`);
@@ -863,7 +884,7 @@ function concludeBattle(game) {
 
   // 戦場になった陣地の民と畑
   const loss = Math.round(t.pop * 0.15);
-  game.stats.civLoss[t.owner] += loss;
+  game.stats.civLoss[t.owner] = (game.stats.civLoss[t.owner] || 0) + loss;
   t.pop -= loss;
   t.farm = Math.max(5, Math.round(t.farm * 0.75));
   t.commerce = Math.max(0, Math.round(t.commerce * 0.85));
@@ -878,7 +899,7 @@ function concludeBattle(game) {
   for (const g of losers) retreat(game, g);
   if (loseRole === 'defender' && t.owner === b.defenderSide) t.garrison = 0;
 
-  if (b.generals.defender.includes('nozomi') && game.generals.nozomi.status === 'down') {
+  if (!isConquest(game) && b.generals.defender.includes('nozomi') && game.generals.nozomi.status === 'down') {
     game.flags.queenDefeated = true;
   }
 
@@ -891,7 +912,7 @@ function concludeBattle(game) {
   processPending(game);
 }
 
-function retreat(game, g) {
+export function retreat(game, g) {
   const options = neighbors(g.location, g.side, game.closed).filter(n => game.territories[n].owner === g.side);
   const safe = options.filter(n => !gensAt(game, n).some(o => o.side !== g.side));
   const pick = (g.prevLocation !== undefined && safe.includes(g.prevLocation)) ? g.prevLocation : safe[0];
@@ -901,6 +922,7 @@ function retreat(game, g) {
 }
 
 function capture(game, tid, side, gens) {
+  if (isConquest(game)) return conquestCapture(game, tid, side, gens);
   const t = game.territories[tid];
   const T = TERRITORIES[tid];
   const before = t.owner;
@@ -917,6 +939,7 @@ function capture(game, tid, side, gens) {
 }
 
 function recordBattleFlags(game, b) {
+  if (isConquest(game)) return;
   const p = new Set(b.participants);
   // 「〇日目以降に合戦でぶつかる」イベント用に、最後にぶつかった日を覚えておく
   if (p.has('sumire') && p.has('car')) game.flags.sumireMetCar = game.day;
@@ -940,6 +963,13 @@ function suppliedSet(game, side) {
 }
 
 function endOfDay(game) {
+  if (isConquest(game)) {
+    conquestEndOfDay(game);
+    if (game.phase === 'ended') return;
+    resetOrders(game);
+    game.phase = 'day';
+    return;
+  }
   const R = game.resources;
   const supplied = { kingdom: suppliedSet(game, 'kingdom'), demon: suppliedSet(game, 'demon') };
   // 生産
@@ -1103,6 +1133,7 @@ function eventHelpers(game) {
 }
 
 function checkWin(game) {
+  if (isConquest(game)) return checkConquestWin(game);
   const k = ownedCount(game, 'kingdom'), d = ownedCount(game, 'demon');
   const G = game.generals;
   let winner = null, kind = null;
@@ -1121,8 +1152,8 @@ function checkWin(game) {
 // 命令は同じ陣営の人にだけ見せる（王国の三人はおたがいの命令が見える）
 export function publicView(game, viewer) {
   const players = {};
-  for (const r of game.mode === 'royale' ? Object.keys(game.players) : ROLES) players[r] = game.players[r] ? { name: game.players[r].name, ...(r === viewer ? { code: game.players[r].code } : {}) } : null;
-  const sideOf = r => (r === 'yagyu' ? 'demon' : 'kingdom');
+  for (const r of game.mode === 'royale' || isConquest(game) ? Object.keys(game.players) : ROLES) players[r] = game.players[r] ? { name: game.players[r].name, ...(r === viewer ? { code: game.players[r].code } : {}) } : null;
+  const sideOf = r => (isConquest(game) ? 'f:' + r : r === 'yagyu' ? 'demon' : 'kingdom');
   const orders = {};
   if (viewer) for (const [r, o] of Object.entries(game.orders)) if (sideOf(r) === sideOf(viewer)) orders[r] = o;
   const incidents = (game.incidents || []).filter(i => viewer && i.side === sideOf(viewer));
@@ -1134,7 +1165,9 @@ export function publicView(game, viewer) {
     sentMonsters: undefined,
     log: game.log.slice(-80),
     battle: game.battle ? { ...game.battle, log: game.battle.log.slice(-60), parent: game.battle.parent ? { id: game.battle.parent.id } : undefined } : null,
-    meta: { demonActions: demonActionCount(game), queenActions: queenActionCount(game) },
+    meta: isConquest(game)
+      ? { actions: viewer && game.conquest.factions.includes('f:' + viewer) ? actionCount(game, 'f:' + viewer) : 0, factions: conquestSummary(game) }
+      : { demonActions: demonActionCount(game), queenActions: queenActionCount(game) },
   };
 }
 
@@ -1152,9 +1185,11 @@ export function autoBattleStep(game) {
 // 古いセーブデータに、あとから増えた項目を足す
 export function migrate(game) {
   const K = game.resources.kingdom;
-  K.materials ||= emptyMaterials();
-  K.gearWeapon ??= 0;
-  K.gearArmor ??= 0;
+  if (K) {
+    K.materials ||= emptyMaterials();
+    K.gearWeapon ??= 0;
+    K.gearArmor ??= 0;
+  }
   game.gear ||= { sumire: {}, noguchi: {}, nanase: {} };
   for (const r of ROLES) if (game.players[r] && !game.players[r].code) game.players[r].code = randomCode();
   game.incidents ||= [];

@@ -66,7 +66,7 @@ export async function api(path, data) {
   if (path === '/api/info') return { online: false };
   if (path === '/api/games' && !data) {
     return [...games.values()].sort((a, b) => b.createdAt - a.createdAt).map(g => ({
-      id: g.id, name: g.name, phase: g.phase, day: g.day, trial: !!g.trial, solo: !!g.solo, mode: g.mode || 'war', royale: g.royale ? { level: g.royale.level, bots: g.royale.bots } : null,
+      id: g.id, name: g.name, phase: g.phase, day: g.day, trial: !!g.trial, solo: !!g.solo, mode: g.mode || 'war', royale: (g.royale || g.conquest) ? { level: (g.royale || g.conquest).level, bots: (g.royale || g.conquest).bots } : null,
       players: Object.fromEntries(Object.entries(g.players).map(([r, v]) => [r, v ? v.name : null])),
     }));
   }

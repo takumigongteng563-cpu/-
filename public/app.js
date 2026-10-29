@@ -2,7 +2,7 @@
 import {
   TERRITORIES, EDGES, SIZES, SPECIALTIES, CHARACTERS, UNIT_TYPES, ROLES, HERO_ROLES,
   BATTLE_W, BATTLE_H, TERRAIN, MAJORITY, MAX_ROUNDS, KINGDOM_ACTIONS, DEMON_ACTIONS, neighbors, gameStats, levelUpCost, expToNext,
-  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured, FACILITIES, canRemodel, ROYALE_CHARS,
+  MATERIALS, RECIPES, GEAR_MAX, troopGearCost, recipeName, edgeKey, isInjured, FACILITIES, canRemodel, ROYALE_CHARS, CONQUEST_ACTIONS, CONQUEST_WIN,
 } from './shared/data.js';
 import { reachable, targetsFrom, damage, getStat, getMove, isTargetable, inDarkness } from './shared/battlecore.js';
 import { SKILLS, skillOf, skillList, skillTargets, areaTiles } from './shared/skills.js';
@@ -21,7 +21,12 @@ const SIDE_COLOR = { kingdom: '#3f6fc4', demon: '#8a3fa8', neutral: '#9a958b' };
 const SIDE_SOFT = { kingdom: '#dbe6fa', demon: '#efdcf5', neutral: '#ebe8e1' };
 const ROLE_SIDE = { yagyu: 'demon', sumire: 'kingdom', noguchi: 'kingdom', nanase: 'kingdom' };
 // 陣営の色（バトルロワイヤルでは「p:キャラ」ごとにキャラの色）
-const sideColor = (side) => SIDE_COLOR[side] || CHAR_COLOR[String(side).slice(2)] || '#777';
+// 群雄割拠の勢力の色（となりあっても見分けやすいように、はっきりちがう色）
+const FACTION_COLOR = { sumire: '#2f6fd0', noguchi: '#14958a', nanase: '#d0589a', nozomi: '#d49a10', horie: '#8a5a2a', yagyu: '#4b1a5e', car: '#d04a2a', oh: '#5a9a1a', kkb: '#5f6680' };
+const sideColor = (side) => SIDE_COLOR[side] || (String(side).startsWith('f:') ? FACTION_COLOR : CHAR_COLOR)[String(side).slice(2)] || '#777';
+const sideSoft = (side) => SIDE_SOFT[side] || sideColor(side) + '3a';
+// 陣営の名前（群雄割拠では「〇〇軍」）
+const sideName = (side) => SIDE_NAME[side] || (CHARACTERS[String(side).slice(2)] ? CHARACTERS[String(side).slice(2)].name + '軍' : '中立');
 // キャラごとの色（地図のコマ）
 const CHAR_COLOR = { sumire: '#4a62c9', noguchi: '#2f8a8a', nanase: '#6a5acd', nozomi: '#c49a1a', horie: '#8a6a2a', yuki: '#5a9ad8', yagyu: '#5a1f6e', car: '#7a3f9a', oh: '#3f7a5a', kkb: '#9a3f5a' };
 const TILE_COLOR = { '.': '#d6e6b0', F: '#6fa35a', R: '#7fb5e0', C: '#8f7c69', H: '#d2bb7f', W: '#6e6a66', S: '#ece4cf' };
@@ -102,9 +107,10 @@ async function refreshOnline() {
 function royaleItem(g, mine, shared, raw) {
   const uid = shared ? SHARED.myUid() : null;
   const myChar = shared ? raw && Object.keys(raw.players).find(c => raw.players[c]?.uid === uid) : mine?.role;
-  const phase = g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : '戦闘中';
+  const conquest = g.mode === 'conquest';
+  const phase = g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : conquest ? `${g.day}日目` : '戦闘中';
   const names = shared ? raw?.players || {} : g.players;
-  const chars = ROYALE_CHARS.map(c => {
+  const chars = (conquest ? CONQUEST_LEADERS : ROYALE_CHARS).map(c => {
     const p = names[c];
     const pname = p ? (typeof p === 'string' ? p : p.name) : null;
     if (pname) {
@@ -117,13 +123,13 @@ function royaleItem(g, mine, shared, raw) {
   const open = myChar
     ? `<button class="primary" ${shared ? `data-sopen="${g.id}" data-role="${myChar}"` : `data-open="${g.id}"`}>続きから（${CHARACTERS[myChar].name}）</button>`
     : `<button class="ghost" ${shared ? `data-sopen="${g.id}"` : `data-watch="${g.id}"`}>見る</button>`;
-  return `<div class="gameItem ${shared ? 'shared' : ''}"><div class="row"><span class="title">⚔ ${esc(g.name)}</span>
-      <span class="muted">バトルロワイヤル・Lv${g.royale?.level ?? ''}・AI${g.royale?.bots ?? 0}人・${phase}</span><span style="flex:1"></span>${open}</div>
+  return `<div class="gameItem ${shared ? 'shared' : ''}"><div class="row"><span class="title">${conquest ? '🏯' : '⚔'} ${esc(g.name)}</span>
+      <span class="muted">${conquest ? `バトルロワイヤル（群雄割拠）・AI${g.royale?.bots ?? 0}勢力` : `乱戦・Lv${g.royale?.level ?? ''}・AI${g.royale?.bots ?? 0}人`}・${phase}</span><span style="flex:1"></span>${open}</div>
     ${g.phase === 'lobby' && !myChar ? '<div class="hint">キャラを押して参加</div>' : ''}<div class="roles">${chars}</div></div>`;
 }
 
 function sharedItem(g) {
-  if (g.mode === 'royale') return royaleItem(g, null, true, sharedRaw.get(g.id));
+  if (g.mode === 'royale' || g.mode === 'conquest') return royaleItem(g, null, true, sharedRaw.get(g.id));
   const uid = SHARED.myUid();
   const raw = sharedRaw.get(g.id);
   const myRole = raw && ROLES.find(r => raw.players[r]?.uid === uid);
@@ -155,7 +161,7 @@ async function refreshList() {
         ${mine ? `<button class="primary" data-open="${g.id}">続きから</button>` : ''}
         <button class="ghost" data-del="${g.id}">消す</button></div></div>`;
     }
-    if (g.mode === 'royale') return royaleItem(g, mine, false);
+    if (g.mode === 'royale' || g.mode === 'conquest') return royaleItem(g, mine, false);
     const phase = (g.phase === 'lobby' ? '参加者を募集中' : g.phase === 'ended' ? '決着' : `${g.day}日目`) + (g.trial ? '・お試し（Lv30）' : '') + (g.solo ? '・ひとり用' : '');
     const roles = ROLES.map(r => {
       const taken = g.players[r];
@@ -191,12 +197,26 @@ document.querySelector('.solo').addEventListener('click', async (e) => {
 });
 $('#btnHowto').onclick = () => showHowto();
 $('#soloRoyaleChar').innerHTML = ROYALE_CHARS.map(c => `<option value="${c}">${CHARACTERS[c].title}${CHARACTERS[c].name}</option>`).join('');
+const CONQUEST_LEADERS = ROYALE_CHARS.filter(c => c !== 'yuki');
+$('#soloConquestChar').innerHTML = CONQUEST_LEADERS.map(c => `<option value="${c}">${CHARACTERS[c].title}${CHARACTERS[c].name}</option>`).join('');
+$('#soloConquestGo').onclick = async () => {
+  const name = $('#playerName').value.trim();
+  store.set('yagyu:name', name);
+  const role = $('#soloConquestChar').value;
+  try {
+    const { id } = await api('/api/games', { name: `${name || 'ひとり'}の群雄割拠`, solo: true, mode: 'conquest', difficulty: $('#soloDifficulty').value, bots: Number($('#soloConquestBots').value) });
+    const r = await api(`/api/games/${id}/join`, { role, name });
+    store.set('yagyu:seat:' + id, { role: r.role, token: r.token });
+    await api(`/api/games/${id}/action`, { token: r.token, action: { type: 'start' } });
+    openGame(id);
+  } catch (err) { toast(err.message); }
+};
 $('#soloRoyaleGo').onclick = async () => {
   const name = $('#playerName').value.trim();
   store.set('yagyu:name', name);
   const role = $('#soloRoyaleChar').value;
   try {
-    const { id } = await api('/api/games', { name: `${name || 'ひとり'}のバトルロワイヤル`, solo: true, mode: 'royale', level: Number($('#soloRoyaleLevel').value), bots: Number($('#soloRoyaleBots').value) });
+    const { id } = await api('/api/games', { name: `${name || 'ひとり'}の乱戦`, solo: true, mode: 'royale', level: Number($('#soloRoyaleLevel').value), bots: Number($('#soloRoyaleBots').value) });
     const r = await api(`/api/games/${id}/join`, { role, name });
     store.set('yagyu:seat:' + id, { role: r.role, token: r.token });
     await api(`/api/games/${id}/action`, { token: r.token, action: { type: 'start' } });
@@ -273,7 +293,7 @@ function onState() {
   if (activeId !== S.lastActive) { S.aim = null; S.lastActive = activeId; }
   if (S.me && g.phase === 'day' && S.draftDay !== g.day) {
     const o = g.orders[S.me.role];
-    S.draft = o ? JSON.parse(JSON.stringify(o)) : { moves: {}, acts: {}, globals: [] };
+    S.draft = o ? JSON.parse(JSON.stringify(o)) : isConquest(g) ? { moves: {}, acts: [], diplo: [] } : { moves: {}, acts: {}, globals: [] };
     S.draftDay = g.day;
   }
   render();
@@ -291,10 +311,12 @@ function render() {
   else { renderMap(g); renderPanel(g); }
 }
 
-const mySide = () => (S.me ? ROLE_SIDE[S.me.role] : null);
+const isConquest = (g) => g?.mode === 'conquest';
+const mySide = () => (S.me ? (isConquest(S.game) ? 'f:' + S.me.role : ROLE_SIDE[S.me.role]) : null);
 const owned = (g, s) => g.territories.filter(t => t.owner === s).length;
 
 function renderTopbar(g) {
+  if (isConquest(g)) return conquestTopbar(g);
   if (g.mode === 'royale') {
     const b = g.battle;
     const left = b ? b.sides.filter(sd => !b.out.some(o => o.side === sd)).length : Object.keys(g.players).length;
@@ -341,7 +363,7 @@ const SIZE_MARK = { village: '村', town: '町', fortress: '城', metropolis: '�
 
 function genLabel(gen) {
   if (gen.charId) return CHARACTERS[gen.charId].label;
-  return { soldier: '兵', majo: '将', garrison: '守' }[gen.kind] || '?';
+  return { soldier: '兵', majo: '将', garrison: '守', retainer: '将' }[gen.kind] || '?';
 }
 
 function activeGens(g) { return Object.values(g.generals).filter(x => x.status === 'active' && !x.temp); }
@@ -412,7 +434,7 @@ function renderMap(g) {
   const svg = $('#map');
   const T = TERRITORIES;
   const sel = S.selGen && g.generals[S.selGen];
-  const moveTargets = sel && canOrder(sel) && sel.kind !== 'queen' ? neighbors(sel.location, sel.side, g.closed) : [];
+  const moveTargets = sel && canOrder(sel) && sel.kind !== 'queen' ? neighbors(sel.location, sel.side, g.closed).filter(n => canEnterC(g, sel.side, n)) : [];
   let h = mapBackground();
   for (const e of EDGES) {
     const a = T[e.a], b = T[e.b];
@@ -450,8 +472,8 @@ function renderMap(g) {
     h += `<g class="terr" data-terr="${t.id}">`;
     if (target) h += `<circle cx="${t.x}" cy="${t.y}" r="${r + 8}" fill="#f2c55c" opacity=".35"/><circle cx="${t.x}" cy="${t.y}" r="${r + 8}" fill="none" stroke="#c9861a" stroke-width="2.5" stroke-dasharray="4 3"/>`;
     h += `<circle cx="${t.x + 1.5}" cy="${t.y + 2}" r="${r}" fill="#000" opacity=".15"/>`;
-    h += `<circle cx="${t.x}" cy="${t.y}" r="${r}" fill="${SIDE_SOFT[st.owner]}" stroke="${SIDE_COLOR[st.owner]}" stroke-width="${isSel ? 5 : 2.5}"/>`;
-    h += nodeIcon(t.size, t.x, t.y, SIDE_COLOR[st.owner]);
+    h += `<circle cx="${t.x}" cy="${t.y}" r="${r}" fill="${sideSoft(st.owner)}" stroke="${sideColor(st.owner)}" stroke-width="${isSel ? 5 : 2.5}"/>`;
+    h += nodeIcon(t.size, t.x, t.y, sideColor(st.owner));
     h += `<text x="${t.x}" y="${t.y + r + 14}" text-anchor="middle" font-size="12.5" fill="#3b2f22" class="serif label">${t.name}</text>`;
     h += `<text x="${t.x}" y="${t.y + r + 27}" text-anchor="middle" font-size="10" fill="#7a6648" class="label">兵${st.garrison}${t.specialty ? '・' + SPECIALTIES[t.specialty].name : ''}</text>`;
     if (st.facility) h += `<rect x="${t.x - r - 10}" y="${t.y + r - 14}" width="16" height="16" rx="3" fill="${st.owner === 'demon' ? '#5d2a70' : '#7a5a10'}" stroke="#fff" stroke-width="1"/><text x="${t.x - r - 2}" y="${t.y + r - 2}" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold">${FACILITIES[st.facility].label}</text>`;
@@ -468,7 +490,7 @@ function renderMap(g) {
       const x = t.x + r - 2 + (i % 4) * 20, y = t.y - r - 10 + Math.floor(i / 4) * 22;
       const mine = canOrder(gen);
       const isSel = S.selGen === gen.id;
-      const color = gen.charId && CHAR_COLOR[gen.charId] ? CHAR_COLOR[gen.charId] : SIDE_COLOR[gen.side];
+      const color = !isConquest(g) && gen.charId && CHAR_COLOR[gen.charId] ? CHAR_COLOR[gen.charId] : sideColor(gen.side);
       h += `<g class="gen" data-gen="${gen.id}">
         <path d="${shield(x + 1, y + 1.5)}" fill="#000" opacity=".2"/>
         <path d="${shield(x, y)}" fill="${color}" stroke="${isSel ? '#ffcf4a' : mine ? '#f5d58a' : '#fff'}" stroke-width="${isSel ? 3 : mine ? 2 : 1}"/>
@@ -486,7 +508,7 @@ $('#map').addEventListener('click', (e) => {
   if (!tEl) return;
   const tid = Number(tEl.dataset.terr);
   const sel = S.selGen && g.generals[S.selGen];
-  if (sel && canOrder(sel) && g.phase === 'day' && sel.kind !== 'queen' && neighbors(sel.location, sel.side, g.closed).includes(tid)) {
+  if (sel && canOrder(sel) && g.phase === 'day' && sel.kind !== 'queen' && neighbors(sel.location, sel.side, g.closed).includes(tid) && canEnterC(g, sel.side, tid)) {
     if (S.draft.moves[sel.id] === tid) delete S.draft.moves[sel.id];
     else { S.draft.moves[sel.id] = tid; delete S.draft.acts[sel.id]; }
     sendDraft();
@@ -515,7 +537,7 @@ function terrInfo(g, tid) {
   const here = activeGens(g).filter(x => x.location === tid);
   const sp = t.specialty ? SPECIALTIES[t.specialty].name : 'なし';
   const mood = st.owner === 'demon' ? `<span class="l">恐怖</span><span>${st.fear}</span>` : `<span class="l">忠誠</span><span>${st.loyalty}</span>`;
-  return `<div class="sec"><h3>${t.name} <span class="${st.owner[0]}">［${SIDE_NAME[st.owner]}］</span></h3>
+  return `<div class="sec"><h3>${t.name} <span class="${st.owner[0]}">［${sideName(st.owner)}］</span></h3>
     <div class="stats">
       <span class="l">大きさ</span><span>${SIZES[t.size].name}</span><span class="l">特産</span><span>${sp}</span>
       <span class="l">民</span><span>${st.pop}</span><span class="l">兵</span><span>${st.garrison}</span>
@@ -546,7 +568,7 @@ function orderText(g, gen) {
 function genRow(g, gen) {
   const lv = (gen.charId ? ` Lv${g.chars[gen.charId].level}` : '') + (gen.charId && isInjured(g, gen.charId) ? ' <span style="color:#c43f3f">怪我</span>' : '');
   return `<div class="genRow ${S.selGen === gen.id ? 'sel' : ''}" data-selgen="${gen.id}">
-    <span class="badge" style="background:${SIDE_COLOR[gen.side]}">${genLabel(gen)}</span>
+    <span class="badge" style="background:${sideColor(gen.side)}">${genLabel(gen)}</span>
     <div><div>${esc(gen.name)}${lv}</div><div class="muted" style="font-size:11px">${genHp(g, gen)}</div></div>
     <span class="order">${orderText(g, gen)}</span></div>`;
 }
@@ -568,7 +590,7 @@ function selGenSection(g) {
   if (gen.charId && g.gear?.[gen.charId]) h += gearLine(g, gen.charId);
   if (gen.charId) {
     const c = g.chars[gen.charId];
-    if (HERO_ROLES.includes(gen.charId) || gen.charId === 'horie') h += `<div class="hint">経験 ${c.exp}/${expToNext(c.level)}</div>`;
+    if (HERO_ROLES.includes(gen.charId) || gen.charId === 'horie' || isConquest(g)) h += `<div class="hint">経験 ${c.exp}/${expToNext(c.level)}</div>`;
     h += `<details style="margin-top:6px"><summary>技・スキル</summary>${skillBook(gen.charId, c.level)}</details>`;
   }
   if (gen.troops.length) {
@@ -719,7 +741,130 @@ function workshopSection(g) {
   return h + `</details></div>`;
 }
 
+// ---------- 群雄割拠 ----------
+const C_ACTIONS = CONQUEST_ACTIONS;
+const C_WIN = CONQUEST_WIN;
+const pairKey = (a, b) => [a, b].sort().join('|');
+const alliedC = (g, a, b) => isConquest(g) && a !== b && g.conquest.allies.includes(pairKey(a, b));
+const canEnterC = (g, side, tid) => !alliedC(g, side, g.territories[tid].owner);
+
+function conquestTopbar(g) {
+  const me = mySide();
+  const R = me && g.resources[me];
+  const fs = g.meta?.factions || [];
+  const dayText = g.phase === 'lobby' ? '準備中' : g.phase === 'ended' ? `決着（${g.day}日目）` : `${g.day}日目${g.phase === 'battle' ? '・合戦中' : ''}`;
+  const chips = fs.map(f => {
+    const ready = g.phase === 'day' && f.player && g.ready[f.charId];
+    return `<span class="chip ${ready ? 'ready' : ''}" style="${f.out ? 'opacity:.45;text-decoration:line-through' : `background:${sideColor(f.f)}`}" title="${esc(f.player || 'AI')}">${esc(f.name)} ${f.count}${S.me?.role === f.charId ? '（あなた）' : ''}${ready ? ' ✓' : ''}</span>`;
+  }).join('');
+  const lobbyChips = g.phase === 'lobby' ? Object.entries(g.players).filter(([, p]) => p).map(([c, p]) => `<span class="chip" style="background:${FACTION_COLOR[c]}">${CHARACTERS[c].name}：${esc(p.name)}</span>`).join('') : '';
+  $('#topbar').innerHTML = `<span class="day">群雄割拠 ${dayText}</span>
+    ${R ? `<span class="res"><span>💰${R.gold}</span><span>🌾${R.food}</span><span>訓練${R.training}</span><span>陣地 ${owned(g, me)}/${C_WIN}</span></span>` : ''}
+    <span class="spacer"></span>${chips}${lobbyChips}
+    <button id="btnHowto2" class="small">遊び方</button>
+    <button id="btnLobby" class="small">ロビーへ</button>`;
+  $('#btnLobby').onclick = () => { if (!LOCAL) location.hash = ''; showLobby(); };
+  $('#btnHowto2').onclick = () => showHowto();
+}
+
+function conquestInternal(g) {
+  const me = mySide();
+  const R = g.resources[me];
+  const max = g.meta.actions;
+  const acts = S.draft.acts || [];
+  let h = `<div class="sec"><h3>内政（${acts.length}/${max}回）</h3>`;
+  h += acts.length ? acts.map((a, i) => `<div class="row craft"><span>${C_ACTIONS[a.type].name}${a.tid != null ? '：' + TERRITORIES[a.tid].name : ''}</span><button class="small" data-rmcact="${i}">取り消し</button></div>`).join('')
+    : '<div class="hint">陣地を1回ずつ良くできます。陣地が4つ増えるごとに1回ふえます。</div>';
+  const st = S.selTerr != null ? g.territories[S.selTerr] : null;
+  const btn = (k, tid) => {
+    const A = C_ACTIONS[k];
+    const ok = canPayClient({ ...R, materials: {} }, A.cost) && acts.length < max;
+    return `<button class="small" data-cact="${k}" ${tid != null ? `data-tid="${tid}"` : ''} title="${esc(A.desc)}" ${ok ? '' : 'disabled'}>${A.name}（${costText(A.cost)}）</button>`;
+  };
+  if (st && st.owner === me) {
+    h += `<h4>${TERRITORIES[st.id].name}で</h4><div class="acts">${Object.keys(C_ACTIONS).filter(k => !C_ACTIONS[k].global).map(k => btn(k, st.id)).join('')}</div>`;
+  } else h += `<div class="hint">地図で自分の陣地をクリックすると、その陣地の内政を選べます。</div>`;
+  h += `<h4>勢力ぜんたい</h4><div class="acts">${Object.keys(C_ACTIONS).filter(k => C_ACTIONS[k].global).map(k => btn(k)).join('')}</div>`;
+  return h + '</div>';
+}
+
+function conquestDiplomacy(g) {
+  const me = mySide();
+  const C = g.conquest;
+  const others = (g.meta.factions || []).filter(f => f.f !== me && !f.out);
+  const plan = (to) => (S.draft.diplo || []).find(d => d.to === to)?.type;
+  const b = (type, to, label) => `<button class="small ${plan(to) === type ? 'primary' : ''}" data-diplo="${type}" data-to="${to}">${label}</button>`;
+  const rows = others.map(f => {
+    const ally = alliedC(g, me, f.f);
+    const incoming = C.proposals.some(p => p.from === f.f && p.to === me);
+    const outgoing = C.proposals.some(p => p.from === me && p.to === f.f);
+    const breaking = C.breaks.some(x => (x.from === me && x.to === f.f) || (x.from === f.f && x.to === me));
+    let status = ally ? '🤝 同盟中' : incoming ? '✉ 同盟の申し込みが来ている' : outgoing ? '申し込み中（返事待ち）' : '敵';
+    if (breaking) status = '⚠ 明日で同盟が切れる';
+    let btns = '';
+    if (ally && !breaking) btns = b('break', f.f, '同盟を切る');
+    else if (incoming) btns = b('accept', f.f, '受ける') + b('decline', f.f, '断る');
+    else if (!ally && !outgoing) btns = b('propose', f.f, '同盟を申し込む');
+    return `<div class="row craft"><span><span class="badge" style="background:${sideColor(f.f)};color:#fff;border-radius:4px;padding:0 5px">${CHARACTERS[f.charId].label}</span> ${esc(f.name)}${f.player ? `（${esc(f.player)}）` : '（AI）'} 陣地${f.count}<br><span class="muted">${status}</span></span><span class="row" style="gap:4px">${btns}</span></div>`;
+  }).join('');
+  return `<div class="sec"><h3>外交</h3>${rows || '<div class="hint">ほかの勢力はもういません。</div>'}
+    <div class="hint">同盟した相手とは戦わず、相手の陣地にも入れません。同盟を切ると、次の日から攻められます。</div></div>`;
+}
+
+function conquestRanking(g) {
+  const fs = (g.meta.factions || []).slice().sort((a, b) => (a.out ? 1 : 0) - (b.out ? 1 : 0) || b.count - a.count);
+  return `<div class="sec"><h3>勢力（${C_WIN}陣地で天下統一）</h3><div class="royaleList">${fs.map(f => `<div class="row" style="${f.out ? 'opacity:.5' : ''}">
+    <span class="badge" style="background:${sideColor(f.f)}">${CHARACTERS[f.charId].label}</span>
+    <span style="flex:1">${esc(f.name)}${f.player ? `（${esc(f.player)}）` : '（AI）'}${S.me?.role === f.charId ? ' ★あなた' : ''}</span>
+    <span>${f.out ? '滅亡' : `陣地${f.count}・武将${f.gens}`}</span></div>`).join('')}</div></div>`;
+}
+
+function conquestPanel(g) {
+  let h = '';
+  if (g.phase === 'lobby') {
+    const joined = Object.entries(g.players).filter(([, p]) => p);
+    h += `<div class="sec"><h3>群雄割拠：参加者を待っています</h3>
+      ${joined.map(([c, p]) => `<div class="row"><span class="badge" style="background:${CHAR_COLOR[c]};color:#fff;border-radius:4px;padding:0 6px">${CHARACTERS[c].label}</span> ${CHARACTERS[c].name}軍：${esc(p.name)}</div>`).join('')}
+      <p class="hint">ほかの人は、ロビーの一覧でキャラを押すと参加できます。始めると、AIの勢力が${g.conquest.bots}つ（合わせて8勢力まで）入ります。</p>
+      <button class="primary big" id="btnStart" ${joined.length && S.me ? '' : 'disabled'}>群雄割拠を始める</button></div>`;
+    $('#panel').innerHTML = h;
+    return;
+  }
+  const me = mySide();
+  const alive = me && (g.meta.factions || []).some(f => f.f === me && !f.out);
+  if (g.phase === 'ended') h += `<div class="sec"><h3>決着！ ${sideName(g.winner)}の天下</h3><button id="btnEnding" class="primary">結果を見る</button></div>`;
+  else if (me && !alive) h += `<div class="sec"><h3>あなたの勢力は滅びました</h3><div class="hint">このまま最後まで見ていられます。</div></div>`;
+  if (S.me && g.players[S.me.role]?.code && g.phase !== 'ended' && !LOCAL) {
+    h += `<div class="hint code">あなたのあいことば：<b>${esc(g.players[S.me.role].code)}</b></div>`;
+  }
+  if (g.phase === 'day' && alive) {
+    const readyNow = g.ready[S.me.role];
+    const waiting = Object.keys(g.ready).filter(r => !g.ready[r]).map(r => CHARACTERS[r].name + '軍');
+    h += `<div class="sec"><button class="${readyNow ? '' : 'primary'} big" id="btnReady">${readyNow ? '準備完了を取り消す' : '準備完了'}</button>
+      <div class="hint">${waiting.length ? `まだ考え中：${waiting.join('、')}` : ''}　全員そろうと、その日の結果がまとめて反映されます。</div></div>`;
+    h += selGenSection(g);
+    if (S.selTerr != null) h += terrInfo(g, S.selTerr);
+    h += conquestInternal(g);
+    h += conquestDiplomacy(g);
+  } else {
+    h += selGenSection(g);
+    if (S.selTerr != null) h += terrInfo(g, S.selTerr);
+  }
+  h += conquestRanking(g);
+  const mineGens = activeGens(g).filter(canOrder);
+  if (mineGens.length) h += `<div class="sec"><h3>自分の武将</h3>${mineGens.map(x => genRow(g, x)).join('')}</div>`;
+  const down = Object.values(g.generals).filter(x => x.status === 'down' && (!me || x.side === me));
+  if (down.length) h += `<div class="sec"><h3>倒れている</h3>${down.map(x => `<div class="muted">${esc(x.name)}（${x.respawnDay}日目以降に立て直す）</div>`).join('')}</div>`;
+  if (g.lastBattle) h += `<div class="sec hint">前の合戦：${TERRITORIES[g.lastBattle.territoryId].name}（${g.lastBattle.day}日目）→ ${sideName(g.lastBattle.winner)}の勝ち・${esc(g.lastBattle.reason)}</div>`;
+  h += `<div class="sec"><h3>できごと</h3><div class="log">${g.log.slice(-40).reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div></div>`;
+  const panel = $('#panel');
+  const scroll = panel.scrollTop;
+  panel.innerHTML = h;
+  panel.scrollTop = scroll;
+}
+
 function renderPanel(g) {
+  if (isConquest(g)) return conquestPanel(g);
   let h = '';
   if (g.phase === 'lobby' && g.mode === 'royale') {
     const joined = Object.entries(g.players).filter(([, p]) => p);
@@ -737,7 +882,7 @@ function renderPanel(g) {
       <p class="hint">だれもいない役はAIが動かします。始まったあとからでも、空いている役に参加できます。</p>
       <button class="primary big" id="btnStart" ${ok && S.me ? '' : 'disabled'}>ゲームを始める</button></div>`;
   } else if (g.phase === 'ended') {
-    h += `<div class="sec"><h3>決着！ ${SIDE_NAME[g.winner]}の勝利</h3><button id="btnEnding" class="primary">エンディングを見る</button></div>`;
+    h += `<div class="sec"><h3>決着！ ${sideName(g.winner)}の勝利</h3><button id="btnEnding" class="primary">エンディングを見る</button></div>`;
   }
   if (S.me && g.players[S.me.role]?.code && g.phase !== 'ended') {
     h += `<div class="hint code">あなたのあいことば：<b>${esc(g.players[S.me.role].code)}</b>（ほかのパソコンやURLが変わったときに、自分の役へ戻るのに使います）</div>`;
@@ -758,7 +903,7 @@ function renderPanel(g) {
     if (mineGens.length) h += `<div class="sec"><h3>自分の武将</h3>${mineGens.map(x => genRow(g, x)).join('')}</div>`;
     const down = Object.values(g.generals).filter(x => x.status === 'down');
     if (down.length) h += `<div class="sec"><h3>倒れている</h3>${down.map(x => `<div class="muted">${esc(x.name)}（${x.respawnDay}日目以降に復活）</div>`).join('')}</div>`;
-    if (g.lastBattle) h += `<div class="sec hint">前の合戦：${TERRITORIES[g.lastBattle.territoryId].name}（${g.lastBattle.day}日目）→ ${SIDE_NAME[g.lastBattle.winner]}の勝ち・${esc(g.lastBattle.reason)}</div>`;
+    if (g.lastBattle) h += `<div class="sec hint">前の合戦：${TERRITORIES[g.lastBattle.territoryId].name}（${g.lastBattle.day}日目）→ ${sideName(g.lastBattle.winner)}の勝ち・${esc(g.lastBattle.reason)}</div>`;
     h += `<div class="sec"><h3>できごと</h3><div class="log">${g.log.slice(-40).reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div></div>`;
   }
   const panel = $('#panel');
@@ -793,6 +938,19 @@ $('#panel').addEventListener('click', async (e) => {
     const gid = S.selGen;
     if (S.draft.acts[gid]?.type === b.dataset.kact) delete S.draft.acts[gid];
     else { S.draft.acts[gid] = { type: b.dataset.kact }; delete S.draft.moves[gid]; }
+    sendDraft(); render(); return;
+  }
+  if (b.dataset.cact) {
+    const max = g.meta.actions;
+    if (S.draft.acts.length >= max) return toast(`内政は1日${max}回までです`);
+    S.draft.acts.push(b.dataset.tid ? { type: b.dataset.cact, tid: Number(b.dataset.tid) } : { type: b.dataset.cact });
+    sendDraft(); render(); return;
+  }
+  if (b.dataset.rmcact) { S.draft.acts.splice(Number(b.dataset.rmcact), 1); sendDraft(); render(); return; }
+  if (b.dataset.diplo) {
+    const i = S.draft.diplo.findIndex(d => d.to === b.dataset.to);
+    if (i >= 0 && S.draft.diplo[i].type === b.dataset.diplo) S.draft.diplo.splice(i, 1);
+    else { if (i >= 0) S.draft.diplo.splice(i, 1); S.draft.diplo.push({ type: b.dataset.diplo, to: b.dataset.to }); }
     sendDraft(); render(); return;
   }
   if (b.dataset.inc) return act({ type: 'incident', id: b.dataset.inc, choice: b.dataset.choice });
@@ -1027,9 +1185,9 @@ function renderBattlePanel(g, b, active, mine, targets, aim) {
   if (b.kind === 'royale') return renderRoyalePanel(g, b, active, mine, targets, aim);
   let h = b.kind === 'pursuit'
     ? `<div class="sec"><h3>${T.name}の追撃戦　${b.round}/${b.maxRounds}ターン</h3>
-      <div class="hint"><span class="${b.attackerSide[0]}">${SIDE_NAME[b.attackerSide]}</span>が追う。★の逃げる大将を倒せば討ち取り（その武将は倒れる）。<span class="${b.defenderSide[0]}">${SIDE_NAME[b.defenderSide]}</span>は${b.maxRounds}ターン耐えれば逃げ切り。</div></div>`
+      <div class="hint"><span class="${b.attackerSide[0]}">${sideName(b.attackerSide)}</span>が追う。★の逃げる大将を倒せば討ち取り（その武将は倒れる）。<span class="${b.defenderSide[0]}">${sideName(b.defenderSide)}</span>は${b.maxRounds}ターン耐えれば逃げ切り。</div></div>`
     : `<div class="sec"><h3>${T.name}の合戦　${b.round}ターン目</h3>
-      <div class="hint">攻め：<span class="${b.attackerSide[0]}">${SIDE_NAME[b.attackerSide]}</span>　守り：<span class="${b.defenderSide[0]}">${SIDE_NAME[b.defenderSide]}</span>　★の大将を倒せば勝ち（${MAX_ROUNDS}ターンで守り側の勝ち）</div></div>`;
+      <div class="hint">攻め：<span class="${b.attackerSide[0]}">${sideName(b.attackerSide)}</span>　守り：<span class="${b.defenderSide[0]}">${sideName(b.defenderSide)}</span>　★の大将を倒せば勝ち（${MAX_ROUNDS}ターンで守り側の勝ち）</div></div>`;
   if (b.support) {
     const sp = b.support;
     const NAMES = { heal: '回復薬', boost: '強化薬', magic: '女王の魔法', reinforce: '兵の増援' };
@@ -1039,7 +1197,7 @@ function renderBattlePanel(g, b, active, mine, targets, aim) {
   if (b.stage === 'commander') {
     h += commanderPanel(g, b);
   } else if (b.result) {
-    h += `<div class="result">${SIDE_NAME[b.result.winner]}の勝ち！（${esc(b.result.reason)}）</div>`;
+    h += `<div class="result">${sideName(b.result.winner)}の勝ち！（${esc(b.result.reason)}）</div>`;
     if (b.pursuitResult) h += `<div class="hint">追撃戦：${b.pursuitResult.winner === b.result.winner ? '討ち取った' : '逃げ切られた'}（${esc(b.pursuitResult.reason)}）</div>`;
     if (b.stage === 'rearguard') h += rearguardPanel(b);
     else if (b.stage === 'pursue') h += pursuePanel(b);
@@ -1269,6 +1427,8 @@ const HOWTO = [
   ['戦争は民の暮らしを壊す', '合戦があった陣地は、民が減って畑が荒れ、しばらく収穫が半分になる。勝っても負けても同じ。'],
   ['強くなるには', '勇者：合戦で経験を積んでレベルが上がる。工房で素材から装備を作る。特産のある陣地を取ると素材が手に入る。<br>魔族：魔力でレベルを上げる。恐怖から魔力が生まれる（恐怖が下がりすぎると反乱）。'],
   ['技', '合戦で自分のキャラの番に、右のボタンから使う。レベル5ごとに増える。地図でキャラを選ぶと「技・スキル」で一覧が見られる。'],
+  ['バトルロワイヤル（群雄割拠）', '2〜8の勢力が同じ地図で天下を争う。最初は本拠地1つと、当主＋武将2人だけ。まわりはぜんぶ中立。<br>毎日：武将を動かす・内政（陣地が4つ増えるごとに1回ふえる）・外交（同盟を申し込む／受ける／切る）を決めて「準備完了」。<br>同盟した相手とは戦わない。切ると次の日から攻められる。陣地がなくなった勢力は滅びる。20陣地を取るか、最後の1勢力になれば勝ち。'],
+  ['乱戦', '1回の大きな合戦に全員が入る。全員が敵どうしで、最後まで残った人の勝ち。だんだん嵐がせまってくる。'],
   ['歴史イベント', '何日目かになって条件がそろうと、物語が進む。条件がそろわないと起きないイベントもある。上の「イベント」でもう一度読める。'],
 ];
 function showHowto() {
@@ -1306,10 +1466,11 @@ if (LOCAL) {
     $('#sharedBox').innerHTML = ok ? `<h2>みんなで遊ぶ（このページを開ける人どうし）</h2>
       <div class="row"><input id="sharedName" maxlength="30" placeholder="ゲームの名前（なくてもOK）"><button id="sharedCreate" class="primary">作る</button></div>
       <div class="row modeRow">
-        <label>あそびかた <select id="sharedMode"><option value="war">王国と魔族の戦争</option><option value="royale">バトルロワイヤル</option></select></label>
+        <label>あそびかた <select id="sharedMode"><option value="war">王国と魔族の戦争</option><option value="conquest">バトルロワイヤル（群雄割拠の国取り）</option><option value="royale">乱戦（1回の合戦）</option></select></label>
         <label>レベル <select id="sharedLevel"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option></select></label>
         <label>AIの人数 <select id="sharedBots"><option>0</option><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
       </div>
+      <p class="hint">AIの人数はバトルロワイヤルと乱戦で、レベルは乱戦で使います。</p>
       <label class="hint"><input type="checkbox" id="sharedTrial"> お試しモード（全員Lv30）</label>
       <p class="hint">作ったゲームは、このページを開ける人みんなの「ゲーム一覧」に出ます。それぞれ空いている役を押して参加し、だれかが「ゲームを始める」を押せば始まります。空いている役はAIが動かします。自分の役には、別の端末からでも「続きから」で戻れます。</p>`
       : `<h2>みんなで遊ぶ</h2><p class="hint">今はひとりで遊ぶことだけできます。</p>
@@ -1323,8 +1484,8 @@ if (LOCAL) {
     if (!ok) return;
     $('#sharedCreate').onclick = async () => {
       try {
-        const royale = $('#sharedMode').value === 'royale';
-        const { id } = await api('/api/games', { name: $('#sharedName').value || (royale ? 'みんなのバトルロワイヤル' : 'みんなの戦争'), trial: $('#sharedTrial').checked, mode: $('#sharedMode').value, level: Number($('#sharedLevel').value), bots: Number($('#sharedBots').value) });
+        const mode = $('#sharedMode').value;
+        const { id } = await api('/api/games', { name: $('#sharedName').value || ({ royale: 'みんなの乱戦', conquest: 'みんなの群雄割拠' }[mode] || 'みんなの戦争'), trial: $('#sharedTrial').checked, mode: $('#sharedMode').value, level: Number($('#sharedLevel').value), bots: Number($('#sharedBots').value) });
         $('#sharedName').value = '';
         toast('ゲームを作りました。下の一覧で役を選んで参加してください');
         void id;

@@ -241,8 +241,22 @@ export const DEMON_ACTIONS = {
 
 
 // レベルと装備を合わせた、今のステータス
+// 同じレベルなら、だれでも基本の強さは同じ（ちがいは技）。バトルロワイヤル・群雄割拠で使う
+export function evenStats(charId, level) {
+  const st = charStats(charId, level);
+  const main = Math.max(st.atk, st.mag);
+  const f = (28 + 1.4 * (level - 1)) / main;
+  const g = (18 + 0.9 * (level - 1)) / ((st.def + st.mdef) / 2);
+  return {
+    ...st,
+    hp: Math.round(520 + 16 * (level - 1)),
+    atk: Math.round(st.atk * f), mag: Math.round(st.mag * f), def: Math.round(st.def * g), mdef: Math.round(st.mdef * g),
+    spd: Math.min(14 + Math.floor(level / 6), st.spd), move: Math.max(4, st.move),
+  };
+}
+
 export function gameStats(game, charId) {
-  const st = charStats(charId, game.chars[charId]?.level || 1);
+  const st = game.mode === 'conquest' ? evenStats(charId, game.chars[charId]?.level || 1) : charStats(charId, game.chars[charId]?.level || 1);
   const gear = game.gear?.[charId];
   if (gear?.weapon) {
     const r = RECIPES[gear.weapon];
@@ -276,3 +290,15 @@ export const garrisonCap = (t) => SIZES[TERRITORIES[t.id].size].cap + (t.facilit
 
 // バトルロワイヤルで選べるキャラ
 export const ROYALE_CHARS = ['sumire', 'noguchi', 'nanase', 'nozomi', 'yagyu', 'car', 'oh', 'kkb', 'horie', 'yuki'];
+
+// ---- 群雄割拠（いろんな勢力の国取り） ----
+export const CONQUEST_WIN = 20; // 30陣地のうち20を取れば天下統一
+export const CONQUEST_ACTIONS = {
+  farm:      { name: '開墾',       cost: { gold: 60 },            desc: '畑+4（食料が増える）' },
+  commerce:  { name: '商業',       cost: { gold: 60 },            desc: '商業+4（お金が増える）' },
+  conscript: { name: '徴兵',       cost: { gold: 50, food: 30 },  desc: '民150人を兵にする' },
+  fortify:   { name: '築城',       cost: { gold: 100 },           desc: '守り+10' },
+  alms:      { name: '施し',       cost: { food: 60 },            desc: '民の忠誠+12（反乱を防ぐ）' },
+  train:     { name: '訓練',       cost: { gold: 200 },           desc: '自分の兵みんなが少し強くなる', global: true },
+  hire:      { name: '武将を雇う', cost: { gold: 300, food: 100 }, desc: '新しい武将（兵2部隊）が本拠地に来る', global: true },
+};

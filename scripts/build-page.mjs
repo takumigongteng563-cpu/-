@@ -14,7 +14,7 @@ copy('public/local.js', 'local.js');
 copy('public/shared.js', 'shared.js');
 copy('public/style.css', 'style.css');
 for (const f of ['data.js', 'battlecore.js', 'skills.js']) copy('shared/' + f);
-for (const f of ['game.js', 'battle.js', 'events.js', 'incidents.js', 'ai.js', 'demonai.js']) copy('server/' + f);
+for (const f of ['game.js', 'battle.js', 'events.js', 'incidents.js', 'ai.js', 'demonai.js', 'conquest.js']) copy('server/' + f);
 const src = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
 const body = src.slice(src.indexOf('<div id="app">'), src.indexOf('<script type="module"'));
 fs.writeFileSync(path.join(OUT, 'index.html'), `<title>山羊の野望</title>

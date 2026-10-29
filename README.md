@@ -50,7 +50,8 @@ node test/each-skill.js           # すべての技を1回ずつ使ってみる
 node test/skills.js 20            # Lv30どうしの大合戦で、AIが技を使うか見る
 node test/balance.js 15 0         # 合戦の組み合わせごとの王国の勝率（Lv15・訓練0）
 node test/aivsai.js 10 200        # 王国AI vs 魔族AI で最後まで流す
-node test/royale.js 10            # バトルロワイヤルをAIだけで流す
+node test/royale.js 10            # 乱戦（1回の合戦）をAIだけで流す
+node test/conquest.js 10 6        # バトルロワイヤル（群雄割拠）をAIの6勢力だけで流す
 ```
 
 ロビーで「お試しモード」にチェックを入れてゲームを作ると、全員Lv30から始まるので技をすぐ試せます。

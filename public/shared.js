@@ -36,7 +36,7 @@ const decode = (snap) => (snap.exists ? G.migrate(JSON.parse(snap.data().state))
 function meta(game) {
   return {
     id: game.id, name: game.name, phase: game.phase, day: game.day, trial: !!game.trial, createdAt: game.createdAt,
-    mode: game.mode || 'war', royale: game.royale ? { level: game.royale.level, bots: game.royale.bots } : null,
+    mode: game.mode || 'war', royale: (game.royale || game.conquest) ? { level: (game.royale || game.conquest).level, bots: (game.royale || game.conquest).bots } : null,
     players: Object.fromEntries(Object.entries(game.players).map(([r, v]) => [r, v ? { name: v.name, uid: v.token } : null])),
   };
 }

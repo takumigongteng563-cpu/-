@@ -12,7 +12,7 @@
 <div id="app">
   <section id="lobby" class="screen">
     <h1><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#3b2a1b"/><path d="M20 40 Q14 22 24 12 Q22 24 28 30 M44 40 Q50 22 40 12 Q42 24 36 30" fill="none" stroke="#e9c46a" stroke-width="4" stroke-linecap="round"/><path d="M24 34 Q32 26 40 34 L36 48 Q32 52 28 48 Z" fill="#e9dcc0"/><circle cx="28.5" cy="37" r="1.8" fill="#3b2a1b"/><circle cx="35.5" cy="37" r="1.8" fill="#3b2a1b"/></svg>山羊の野望</h1>
-    <p class="sub">王国と魔族の戦争。ひとりでも、友だちと2〜4人でも遊べる国取りゲーム。</p>
+    <p class="sub">王国と魔族の戦争。ひとりでも、友だちとでも遊べる国取りゲーム。いろんな勢力で天下を争うバトルロワイヤルもある。</p>
     <div class="card online hidden serverOnly" id="onlineBox"></div>
     <div class="card">
       <label>あなたの名前 <input id="playerName" maxlength="20" placeholder="なまえ"></label>
@@ -37,7 +37,16 @@
       魔族：勇者3人を倒して陣地の大半を取るか、王都の女王のぞちちを倒せば勝ち。</p>
       <button class="ghost" id="btnHowto">遊び方を見る</button>
       <div class="royaleSolo">
-        <h3>AIとバトルロワイヤル</h3>
+        <h3>AIとバトルロワイヤル（群雄割拠の国取り）</h3>
+        <div class="row">
+          <label>当主 <select id="soloConquestChar"></select></label>
+          <label>AIの勢力 <select id="soloConquestBots"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option></select></label>
+          <button class="primary" id="soloConquestGo">はじめる</button>
+        </div>
+        <p class="hint">いろんな勢力が同じ地図で天下を争う。内政で国を育て、武将を雇い、同盟を結んだり切ったりしながら陣地を取る。20陣地を取るか、最後の1勢力になれば勝ち。むずかしさは上の設定を使う。</p>
+      </div>
+      <div class="royaleSolo">
+        <h3>AIと乱戦（1回の合戦で全員バトル）</h3>
         <div class="row">
           <label>キャラ <select id="soloRoyaleChar"></select></label>
           <label>AIの人数 <select id="soloRoyaleBots"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
@@ -55,11 +64,11 @@
         <button id="createGame">作る</button>
       </div>
       <div class="row modeRow">
-        <label>あそびかた <select id="newGameMode"><option value="war">王国と魔族の戦争</option><option value="royale">バトルロワイヤル</option></select></label>
+        <label>あそびかた <select id="newGameMode"><option value="war">王国と魔族の戦争</option><option value="conquest">バトルロワイヤル（群雄割拠の国取り）</option><option value="royale">乱戦（1回の合戦）</option></select></label>
         <label>レベル <select id="newGameLevel"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option></select></label>
         <label>AIの人数 <select id="newGameBots"><option>0</option><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
       </div>
-      <p class="hint">レベルとAIの人数は、バトルロワイヤルのときだけ使います。</p>
+      <p class="hint">AIの人数は、バトルロワイヤルと乱戦のときだけ使います。レベルは乱戦のときだけ使います。</p>
       <label class="hint"><input type="checkbox" id="trialMode"> お試しモード（全員Lv30・素材とお金も多め。技や装備をすぐ試したいとき用）</label>
     </div>
     <div class="card">

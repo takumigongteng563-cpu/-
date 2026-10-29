@@ -1,6 +1,6 @@
 // 合戦（戦場画面のターン制バトル）
 import {
-  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, gameStats, charStats,
+  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, gameStats, evenStats,
 } from '../shared/data.js';
 import {
   reachable, targetsFrom, damage, getStat, getRange, reachTiles, isTargetable, unitAt, cheb, inBounds, moveCost, WALL_HP,
@@ -90,8 +90,9 @@ function troopUnit(game, gen, troop, side) {
   const t = UNIT_TYPES[troop.type];
   let q = QUALITY[troop.q] || 1;
   let wq = 1, aq = 1;
-  if (side === 'kingdom') {
-    const K = game.resources.kingdom;
+  // 訓練と兵の装備は、王国（群雄割拠ではどの勢力でも）の兵に効く
+  const K = game.resources[side];
+  if (K && K.training != null) {
     q *= 1 + 0.04 * K.training;
     wq = 1 + 0.05 * (K.gearWeapon || 0); // 兵の武器
     aq = 1 + 0.05 * (K.gearArmor || 0);  // 兵の防具
@@ -993,19 +994,6 @@ function nextZone(b) {
   return z;
 }
 
-// 同じレベルなら、だれでも基本の強さは同じ（ちがいは技）
-function royaleStats(charId, level) {
-  const st = charStats(charId, level);
-  const main = Math.max(st.atk, st.mag);
-  const f = (28 + 1.4 * (level - 1)) / main;
-  const g = (18 + 0.9 * (level - 1)) / ((st.def + st.mdef) / 2);
-  return {
-    hp: Math.round(520 + 16 * (level - 1)), mp: st.mp,
-    atk: Math.round(st.atk * f), mag: Math.round(st.mag * f), def: Math.round(st.def * g), mdef: Math.round(st.mdef * g),
-    spd: Math.min(14 + Math.floor(level / 6), st.spd), move: Math.max(4, st.move),
-  };
-}
-
 export function createRoyale(game) {
   const R = game.royale;
   const L = R.level;
@@ -1028,7 +1016,7 @@ export function createRoyale(game) {
   R.entrants.forEach((e, i) => {
     const side = 'p:' + e.charId;
     const c = CHARACTERS[e.charId];
-    const st = royaleStats(e.charId, L);
+    const st = evenStats(e.charId, L);
     const [sx, sy] = SPAWNS[i % SPAWNS.length];
     b.sides.push(side);
     b.sideNames[side] = `${c.name}（${e.name}）`;
