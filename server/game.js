@@ -294,6 +294,10 @@ export function payCost(res, cost) {
   for (const [k, v] of Object.entries(cost)) pool(k)[k] -= v;
   return true;
 }
+function payBack(res, cost) {
+  for (const [k, v] of Object.entries(cost)) (k in MATERIALS ? res.materials : res)[k] += v;
+}
+const soldiersOf = (game, hero) => Object.values(game.generals).filter(g => g.kind === 'soldier' && g.owner === hero).length;
 export const canPay = (res, cost) => Object.entries(cost).every(([k, v]) => ((k in MATERIALS ? res.materials : res)[k] || 0) >= v);
 
 function doInternal(game, side, type, tid, by, extra) {
@@ -341,6 +345,23 @@ function doInternal(game, side, type, tid, by, extra) {
     case 'darkFortify': t.defense = Math.min(100, t.defense + 15); break;
     case 'monsters': sendMonsters(game, tid, 250); break;
     case 'monstersBig': sendMonsters(game, tid, 500); break;
+    case 'hire':
+    case 'summon': {
+      // 陣地の兵300人をまとめて、新しい武将にする
+      if (t.garrison < 300) { game.log.push(`${by}：${T.name}の兵が300人より少なく、武将を立てられない`); payBack(res, cost); return false; }
+      t.garrison -= 300;
+      let g;
+      if (side === 'kingdom') {
+        const owner = extra?.hero || HERO_ROLES.slice().sort((a, b) => soldiersOf(game, a) - soldiersOf(game, b))[0];
+        g = addGeneral(game, { name: `${CHARACTERS[owner].name}の兵`, side, kind: 'soldier', owner, location: tid, troops: [newTroop(game, ['spear', 'cavalry', 'archer'][game.genCount % 3], 'kingdom')] });
+      } else {
+        const names = ['ガル', 'ドラ', 'ベオ', 'ジン', 'モルド', 'ヴァズ', 'グリム', 'ネロ'];
+        g = addGeneral(game, { name: `魔将${names[game.genCount % names.length]}`, side, kind: 'majo', location: tid, troops: [newTroop(game, ['orc', 'goat', 'harpy'][game.genCount % 3], 'zako')] });
+      }
+      g.controller = controllerFor(game, g);
+      game.log.push(`${by}：${T.name}に新しい武将「${g.name}」が来た`);
+      break;
+    }
   }
   return true;
 }
@@ -419,6 +440,9 @@ function queenBuild(game) {
 function queenInternal(game) {
   queenWorkshop(game);
   queenBuild(game);
+  // お金に余裕があれば、王都で兵の武将を雇う
+  const soldiers = Object.values(game.generals).filter(g => g.side === 'kingdom' && g.kind === 'soldier').length;
+  if (game.resources.kingdom.gold > 400 && soldiers < 8 && game.territories[0].owner === 'kingdom' && game.territories[0].garrison >= 600) doInternal(game, 'kingdom', 'hire', 0, 'のぞちち');
   const n = queenActionCount(game);
   const res = game.resources.kingdom;
   const mine = game.territories.filter(t => t.owner === 'kingdom');

@@ -36,7 +36,7 @@ export const SKILLS = {
     { id: 'star7', name: 'Ⅶ星', kind: 'active', lv: 30, mp: 15, once: true, target: 'self', desc: '戦場のどこでも。弱っている順に敵部隊7つへ星を落とす（威力1.2倍）' },
   ],
   yagyu: [
-    { id: 'shiso', name: '始祖の力', kind: 'personal', lv: 1, desc: '魔族部隊が全部+10%。1合戦に1回HP半分で立ち上がる。毎ターンHP5%回復、HPが減るほど攻撃が上がる' },
+    { id: 'shiso', name: '始祖の力', kind: 'personal', lv: 1, desc: '魔族部隊が全部+5%。1合戦に1回HP3割で立ち上がる。毎ターンHP3%回復、HPが減るほど攻撃が少し上がる' },
     { id: 'tosshin', name: '突進', kind: 'active', lv: 5, mp: 8, target: 'dir', desc: 'まっすぐ最大4マス突進。ぶつかった敵に1.6倍のダメージを与えて1マス押し戻す' },
     { id: 'hoko', name: '大山羊の咆哮', kind: 'active', lv: 10, mp: 8, target: 'self', area: 'sq:3', desc: '周り3マスの敵の攻撃・防御を2ターン-15%、味方の攻撃を+15%' },
     { id: 'nozomin', name: 'ノゾミン「は」つよいよねーｗ', kind: 'passive', lv: 15, desc: '周り3マスの敵部隊が受ける強化が半分になる' },

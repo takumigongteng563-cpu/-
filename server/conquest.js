@@ -154,9 +154,7 @@ function doAction(game, f, a, by) {
     case 'alms': t.loyalty = Math.min(100, t.loyalty + 12); break;
     case 'train': res.training = Math.min(10, res.training + 1); break;
     case 'hire': {
-      const home = game.conquest.homes[f];
-      const at = game.territories[home].owner === f ? home : owned(game, f).sort((x, y) => y.garrison - x.garrison)[0]?.id;
-      if (at === undefined) return false;
+      const at = t.id;
       const g = hireRetainer(game, f, at);
       game.log.push(`${by}：新しい武将「${g.name}」が${TERRITORIES[at].name}に来た`);
       return true;
@@ -259,12 +257,15 @@ function aiInternal(game, f) {
     const low = mine.slice().sort((a, b) => a.loyalty - b.loyalty)[0];
     const weak = (front.length ? front : mine).slice().sort((a, b) => a.garrison - b.garrison)[0];
     let a;
-    if (saving && gold >= 300 && res.food >= 100 && !acts.some(x => x.type === 'hire')) a = { type: 'hire' };
+    if (saving && gold >= 200 && res.food >= 60 && !acts.some(x => x.type === 'hire')) {
+      const home = game.conquest.homes[f];
+      a = { type: 'hire', tid: game.territories[home].owner === f ? home : mine.slice().sort((x, y) => y.garrison - x.garrison)[0].id };
+    }
     else if (res.food < 400) a = { type: 'farm', tid: mine.slice().sort((x, y) => x.farm - y.farm)[0].id };
     else if (low.loyalty < 35) a = { type: 'alms', tid: low.id };
     else if (weak.garrison < 500 && weak.pop > 600 && i % 2 === 0) a = { type: 'conscript', tid: weak.id };
     else if (res.gold > 800 && res.training < 10 && i === 1) a = { type: 'train' };
-    else if (saving && gold < 360) continue;
+    else if (saving && gold < 260) continue;
     else a = { type: (game.day + i) % 2 ? 'commerce' : 'farm', tid: mine[(game.day * 3 + i) % mine.length].id };
     gold -= CONQUEST_ACTIONS[a.type].cost.gold || 0;
     acts.push(a);

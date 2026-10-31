@@ -217,9 +217,9 @@ function applyDamage(b, src, t, dmg, label) {
   b.log.push(src ? `${src.name}${label ? `の${label}` : ''} → ${t.name}：${dmg}` : `${t.name} は${label}で${dmg}減った`);
   if (t.hp <= 0) {
     if (t.charId === 'yagyu' && !t.revived) {
-      // 始祖の力：1合戦に1回、HP半分で立ち上がる
+      // 始祖の力：1合戦に1回、HP3割で立ち上がる
       t.revived = true;
-      t.hp = Math.round(t.max / 2);
+      t.hp = Math.round(t.max * 0.3);
       b.log.push('ヤギューが立ち上がった！（始祖の力）');
     } else {
       t.hp = 0;
@@ -460,7 +460,7 @@ function roundStart(b) {
   b.seeds = b.seeds.filter(x => x.round >= r);
 
   for (const u of b.units.filter(x => x.alive)) {
-    if (u.charId === 'yagyu') heal(b, u, u.max * 0.05, '始祖の力');
+    if (u.charId === 'yagyu') heal(b, u, u.max * 0.03, '始祖の力');
     if (u.poisonUntil != null && r <= u.poisonUntil) applyDamage(b, null, u, Math.max(1, Math.round(u.max * 0.06)), '毒');
     if (u.charId === 'oh' && lvOK(u, 20)) {
       for (const x of b.units) if (x.alive && x.side === u.side && cheb(x, u) <= 1) heal(b, x, x.max * 0.05, '自然の恵み');

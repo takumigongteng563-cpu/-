@@ -76,7 +76,7 @@ export function getStat(battle, u, stat) {
   if (physical) {
     const yagyu = findChar(battle, 'yagyu');
     // 始祖の力：同じ戦場の魔族部隊が全部少し強くなる
-    if (yagyu && u.side === yagyu.side) v *= 1.1;
+    if (yagyu && u.side === yagyu.side) v *= 1.05;
     // 顔なじみ（堀江）
     const horie = findChar(battle, 'horie');
     if (horie && horie !== u && horie.side === u.side && cheb(horie, u) <= 2 && stat !== 'mag' && stat !== 'mdef') {
@@ -96,7 +96,7 @@ export function getStat(battle, u, stat) {
     const n = battle.units.filter(x => x.alive && x !== u && x.side === u.side && cheb(x, u) <= r).length;
     if (n >= 2 && learned(u, 20)) v *= 1.4; else if (n >= 1) v *= 1.25;
   }
-  if (u.charId === 'yagyu' && stat === 'atk') v *= 1 + 0.5 * (1 - u.hp / u.max); // HPが減るほど攻撃が上がる
+  if (u.charId === 'yagyu' && stat === 'atk') v *= 1 + 0.3 * (1 - u.hp / u.max); // HPが減るほど攻撃が上がる
   if (u.charId === 'sumire' && stat === 'atk') v *= 1 + 0.05 * (u.cover || 0);   // 愛情魂でかばった回数
   if (u.charId === 'oh' && physical) {
     // 寄生：隣の味方のステータスの一部を上乗せ

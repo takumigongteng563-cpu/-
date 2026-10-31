@@ -1,6 +1,6 @@
 // ゲームの基本データ（地図・キャラ・兵種・地形）。サーバーとブラウザの両方で使う。
 
-export const MAJORITY = 18; // 「陣地の大半」= 30個中18個
+export const MAJORITY = 18; // 「陣地の大半」= 35個中18個
 
 // ---- 都市の大きさ ----
 export const SIZES = {
@@ -24,7 +24,7 @@ export const SPECIALTIES = {
   shrine:     { name: 'ほこら',   material: 'starStone' },
 };
 
-// ---- 陣地30個 ----
+// ---- 陣地35個 ----
 // x,y は地図上の位置（1000×660）。terrain は戦場の形のもと。
 export const TERRITORIES = [
   { id: 0,  name: '王都',         size: 'capital',    x: 70,  y: 330, owner: 'kingdom', terrain: 'capital' },
@@ -57,6 +57,12 @@ export const TERRITORIES = [
   { id: 27, name: '岩山の村',     size: 'village',    x: 910, y: 140, owner: 'demon',   terrain: 'mountain' },
   { id: 28, name: '魔王城',       size: 'castle',     x: 920, y: 330, owner: 'demon',   terrain: 'castle', home: 'yagyu' },
   { id: 29, name: '竜の巣',       size: 'village',    x: 910, y: 530, owner: 'demon',   terrain: 'mountain', specialty: 'dragonNest' },
+  // あとから増やした中立の町
+  { id: 30, name: '月見の町',     size: 'town',       x: 660, y: 335, owner: 'neutral', terrain: 'plain' },
+  { id: 31, name: '霧の町',       size: 'town',       x: 660, y: 600, owner: 'neutral', terrain: 'river' },
+  { id: 32, name: '北浜の町',     size: 'town',       x: 70,  y: 150, owner: 'neutral', terrain: 'plain' },
+  { id: 33, name: '南浜の町',     size: 'town',       x: 70,  y: 520, owner: 'neutral', terrain: 'river' },
+  { id: 34, name: '星見の城塞',   size: 'fortress',   x: 420, y: 310, owner: 'neutral', terrain: 'hill' },
 ];
 
 // ふつうの道
@@ -64,14 +70,14 @@ const ROADS = [
   [0, 2], [0, 3],
   [1, 2], [2, 3], [3, 4], [1, 5], [2, 6], [2, 7], [3, 7], [3, 8], [4, 8], [4, 9],
   [5, 6], [6, 7], [7, 8], [8, 9], [5, 10], [5, 11], [6, 11], [7, 12], [8, 12], [9, 13], [8, 13],
-  [10, 11], [11, 12], [12, 13], [10, 14], [11, 15], [11, 16], [12, 16], [12, 17], [13, 17], [13, 18],
+  [10, 11], [11, 34], [34, 12], [7, 34], [34, 16], [12, 13], [10, 14], [11, 15], [11, 16], [12, 16], [12, 17], [13, 17], [13, 18],
   [14, 15], [15, 16], [16, 17], [17, 18], [14, 19], [15, 20], [16, 20], [16, 21], [17, 21], [18, 21],
-  [19, 20], [20, 21], [19, 22], [20, 23], [20, 24], [21, 24], [21, 25], [21, 26],
+  [19, 20], [20, 30], [30, 21], [16, 30], [30, 24], [18, 31], [21, 31], [31, 26], [0, 32], [1, 32], [0, 33], [4, 33], [19, 22], [20, 23], [20, 24], [21, 24], [21, 25], [21, 26],
   [22, 23], [23, 24], [24, 25], [25, 26], [22, 27], [23, 27], [23, 28], [24, 28], [25, 28], [25, 29], [26, 29],
   [27, 28], [28, 29],
 ];
 // 魔族だけが通れる崖の山道（王国の裏に回り込める）
-const CLIFFS = [[22, 10], [10, 1], [26, 18], [18, 9]];
+const CLIFFS = [[22, 10], [10, 1], [18, 9]];
 
 export const EDGES = [
   ...ROADS.map(([a, b]) => ({ a, b, cliff: false })),
@@ -125,8 +131,8 @@ export const CHARACTERS = {
              base: { hp: 400, mp: 60, atk: 18, def: 22, mag: 30, mdef: 28, spd: 9,  move: 3, lead: 80, pol: 90 },
              grow: { hp: 12, mp: 3, atk: 0.5, def: 1, mag: 1.5, mdef: 1, spd: 0.3 } },
   yagyu:   { name: 'ヤギュー', title: '魔王',     side: 'demon',   label: '魔', units: 5, range: 'line8:1-2', dmg: 'phys', solo: true,
-             base: { hp: 700, mp: 60, atk: 52, def: 38, mag: 20, mdef: 30, spd: 12, move: 5, lead: 90, pol: 30 },
-             grow: { hp: 40,  mp: 4,  atk: 2.4, def: 2.2, mag: 0.6, mdef: 1.8, spd: 0.5 } },
+             base: { hp: 640, mp: 60, atk: 48, def: 35, mag: 20, mdef: 28, spd: 12, move: 5, lead: 90, pol: 30 },
+             grow: { hp: 35,  mp: 4,  atk: 2.1, def: 2.0, mag: 0.6, mdef: 1.8, spd: 0.5 } },
   car:     { name: 'CAR', title: '幹部',          side: 'demon',   label: 'C', units: 3, range: 'line8:1-3', dmg: 'mag',
              base: { hp: 300, mp: 35, atk: 14, def: 16, mag: 26, mdef: 18, spd: 10, move: 4, lead: 55, pol: 30 },
              grow: { hp: 7, mp: 2, atk: 0.4, def: 0.8, mag: 1.4, mdef: 0.9, spd: 0.4 } },
@@ -225,6 +231,7 @@ export const KINGDOM_ACTIONS = {
   gearArmor:  { name: '兵の防具づくり', cost: {}, desc: '王国の兵全体の防御+5%', workshop: true },
   craft:      { name: '勇者の装備づくり', cost: {}, desc: '勇者の武器・防具を作る', workshop: true },
   build:      { name: '作り変え', cost: {}, desc: 'いる陣地を、畑・市場・砦・兵舎・見張り台に作り変える', build: true },
+  hire:       { name: '武将を雇う', cost: { gold: 250, food: 60 }, desc: 'この陣地の兵300人をまとめる、新しい兵の武将が来る（陣地に兵が300人以上いるとき）' },
 };
 export const DEMON_ACTIONS = {
   farm:    { name: '開墾',         cost: { magic: 10 },  desc: '畑+4' },
@@ -237,6 +244,7 @@ export const DEMON_ACTIONS = {
   curse:       { name: '闇の儀式：勇者を呪う', cost: { magic: 40 }, desc: '勇者1人を3日のあいだ呪う（怪我と同じくステータスが下がる）', heroTarget: true },
   monsters:    { name: '魔物を送る',       cost: { magic: 30 }, desc: '王国の陣地に魔物（強さ250）を送りこむ', enemy: true },
   monstersBig: { name: '強い魔物を送る',   cost: { magic: 60 }, desc: '王国の陣地に強い魔物（強さ500）を送りこむ', enemy: true },
+  summon:      { name: '魔将を呼ぶ',       cost: { magic: 30 }, desc: 'この陣地の手下300をまとめる、新しい魔将が来る（陣地に手下が300以上いるとき）' },
 };
 
 
@@ -292,7 +300,7 @@ export const garrisonCap = (t) => SIZES[TERRITORIES[t.id].size].cap + (t.facilit
 export const ROYALE_CHARS = ['sumire', 'noguchi', 'nanase', 'nozomi', 'yagyu', 'car', 'oh', 'kkb', 'horie', 'yuki'];
 
 // ---- 群雄割拠（いろんな勢力の国取り） ----
-export const CONQUEST_WIN = 20; // 30陣地のうち20を取れば天下統一
+export const CONQUEST_WIN = 22; // 35陣地のうち22を取れば天下統一
 export const CONQUEST_ACTIONS = {
   farm:      { name: '開墾',       cost: { gold: 60 },            desc: '畑+4（食料が増える）' },
   commerce:  { name: '商業',       cost: { gold: 60 },            desc: '商業+4（お金が増える）' },
@@ -300,5 +308,5 @@ export const CONQUEST_ACTIONS = {
   fortify:   { name: '築城',       cost: { gold: 100 },           desc: '守り+10' },
   alms:      { name: '施し',       cost: { food: 60 },            desc: '民の忠誠+12（反乱を防ぐ）' },
   train:     { name: '訓練',       cost: { gold: 200 },           desc: '自分の兵みんなが少し強くなる', global: true },
-  hire:      { name: '武将を雇う', cost: { gold: 300, food: 100 }, desc: '新しい武将（兵2部隊）が本拠地に来る', global: true },
+  hire:      { name: '武将を雇う', cost: { gold: 200, food: 60 },  desc: 'この陣地に新しい武将（兵2部隊）が来る。何人でも雇える' },
 };
