@@ -627,7 +627,7 @@ function demonSection(g) {
   const mine = g.territories.filter(t => t.owner === 'demon');
   let h = `<div class="sec"><h3>魔族の内政（${used}/${max}回）</h3>`;
   h += acts.map(([k, a]) => `<div class="row"><span>${a.type === 'build' ? `作り変え（${FACILITIES[a.facility].name}）` : DEMON_ACTIONS[a.type].name}：${TERRITORIES[a.tid].name}</span><span style="flex:1"></span><button class="small" data-rmact="${k}">やめる</button></div>`).join('');
-  h += S.draft.globals.map((a, i) => `<div class="row"><span>${a.type === 'curse' ? `勇者を呪う：${CHARACTERS[a.charId].name}（魔力40）` : `レベル上げ：${CHARACTERS[a.charId].name}（今Lv${g.chars[a.charId].level}・魔力${levelUpCost(g.chars[a.charId].level)}）`}</span><span style="flex:1"></span><button class="small" data-rmglobal="${i}">やめる</button></div>`).join('');
+  h += S.draft.globals.map((a, i) => `<div class="row"><span>${a.type === 'curse' ? `勇者を呪う：${CHARACTERS[a.charId].name}（魔力40）` : `レベル上げ：${CHARACTERS[a.charId].name}（今Lv${g.chars[a.charId].level}・魔力${levelUpCost(g.chars[a.charId].level, a.charId)}）`}</span><span style="flex:1"></span><button class="small" data-rmglobal="${i}">やめる</button></div>`).join('');
   if (used < max) {
     const tsel = S.selTerr != null && g.territories[S.selTerr].owner === 'demon' ? S.selTerr : mine[0]?.id;
     h += `<div class="row" style="margin-top:6px">
@@ -665,7 +665,7 @@ function fillDemonTarget(g) {
     } else if (A.enemy) {
       tSel.innerHTML = g.territories.filter(t => t.owner === 'kingdom' && t.id !== 0).map(t => `<option value="${t.id}">${TERRITORIES[t.id].name}（王国・兵${t.garrison}）</option>`).join('');
     } else if (A.global) {
-      tSel.innerHTML = ['yagyu', 'car', 'oh', 'kkb'].map(c => `<option value="${c}">${CHARACTERS[c].name}（Lv${g.chars[c].level}・魔力${levelUpCost(g.chars[c].level)}）</option>`).join('');
+      tSel.innerHTML = ['yagyu', 'car', 'oh', 'kkb'].map(c => `<option value="${c}">${CHARACTERS[c].name}（Lv${g.chars[c].level}・魔力${levelUpCost(g.chars[c].level, c)}）</option>`).join('');
     } else {
       tSel.innerHTML = g.territories.filter(t => t.owner === 'demon').map(t => `<option value="${t.id}" ${t.id === S._demonDefault ? 'selected' : ''}>${TERRITORIES[t.id].name}（恐怖${t.fear}・兵${t.garrison}）</option>`).join('');
     }
@@ -1419,7 +1419,7 @@ function showStory(title, when, lines, onClose) {
 // 遊び方
 const HOWTO = [
   ['どんなゲーム？', '王国と魔族の戦争ゲーム。1日ずつ進み、地図の上で武将を動かして陣地を取りあう。敵とぶつかると合戦になる。'],
-  ['勝ち方', '王国：魔王ヤギューを倒して、陣地の大半（18個）を取る。<br>魔族：勇者3人を全員倒して陣地の大半を取る。または、王都の女王のぞちちを倒す（すぐ勝ち）。'],
+  ['勝ち方', '王国：魔王ヤギューを倒して、陣地の大半（20個）を取る。<br>魔族：勇者3人を全員倒して陣地の大半を取る。または、王都の女王のぞちちを倒す（すぐ勝ち）。'],
   ['ふだんの1日', '① 自分の武将（金色のふちのコマ）をクリック → 光っているとなりの陣地をクリックで移動。<br>② 右の「できごと」があれば対応を選ぶ。<br>③ 内政（勇者は兵の武将に、ヤギューは右の「魔族の内政」で）を決める。<br>④ 「準備完了」を押すと、その日の結果がまとめて出る。'],
   ['合戦', '速い部隊から順番に動く。自分の番は「移動（青いマス）＋攻撃か技を1回」。★の大将を倒せば勝ち。30ターンたつと守る側の勝ち。<br>三すくみ：槍兵・オーク → 騎兵・山羊騎兵 → 弓兵・ハーピー → 槍兵・オーク（矢印の先に強い）。<br>地形：森は守りが上がる、川は遅くて守りが下がる、高台から攻撃すると強い、崖は魔族だけ通れる。'],
   ['合戦のあと', '負けた側は退却する。しんがりを残すと、追ってくる敵を足止めできる。勝った側は追撃するか選べる。速さ比べで勝てば3ターンの追撃戦になり、逃げる大将を倒せばその武将は倒れる。'],

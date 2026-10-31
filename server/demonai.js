@@ -32,7 +32,7 @@ function demonInternal(game) {
   let n = 0;
   const add = (a) => {
     if (n >= max) return false;
-    const cost = a.type === 'levelup' ? levelUpCost(game.chars[a.charId].level) : (actionCost(game, 'demon', a.type, a.facility).magic || 0);
+    const cost = a.type === 'levelup' ? levelUpCost(game.chars[a.charId].level, a.charId) : (actionCost(game, 'demon', a.type, a.facility).magic || 0);
     if (cost > magic) return false;
     magic -= cost;
     if (a.type === 'levelup' || a.type === 'curse') globals.push(a); else acts['ai' + n] = a;
@@ -48,7 +48,7 @@ function demonInternal(game) {
   // 3. まずレベル上げ（ヤギューを優先、幹部は低い順）。手下づくりのぶんは少し残す
   const order = () => ['yagyu', ...['car', 'oh', 'kkb'].sort((x, y) => game.chars[x].level - game.chars[y].level)];
   for (let i = 0; i < 2; i++) {
-    const pick = order().find(c => game.chars[c].level < 30 && levelUpCost(game.chars[c].level) <= magic);
+    const pick = order().find(c => game.chars[c].level < 30 && levelUpCost(game.chars[c].level, c) <= magic);
     if (!pick || !add({ type: 'levelup', charId: pick })) break;
   }
   // 4. 前線の兵が少ない陣地に手下を生む
@@ -69,7 +69,7 @@ function demonInternal(game) {
     if (hero && hero !== 'noguchi') add({ type: 'curse', charId: hero });
   }
   // 7. 残りの魔力で、もう一度レベル上げ
-  const pick = order().find(c => game.chars[c].level < 30 && levelUpCost(game.chars[c].level) <= magic);
+  const pick = order().find(c => game.chars[c].level < 30 && levelUpCost(game.chars[c].level, c) <= magic);
   if (pick) add({ type: 'levelup', charId: pick });
   return { acts, globals };
 }

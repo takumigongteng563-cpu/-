@@ -1,6 +1,6 @@
 // ゲームの基本データ（地図・キャラ・兵種・地形）。サーバーとブラウザの両方で使う。
 
-export const MAJORITY = 18; // 「陣地の大半」= 35個中18個
+export const MAJORITY = 20; // 「陣地の大半」= 35個中20個
 
 // ---- 都市の大きさ ----
 export const SIZES = {
@@ -28,16 +28,16 @@ export const SPECIALTIES = {
 // x,y は地図上の位置（1000×660）。terrain は戦場の形のもと。
 export const TERRITORIES = [
   { id: 0,  name: '王都',         size: 'capital',    x: 70,  y: 330, owner: 'kingdom', terrain: 'capital' },
-  { id: 1,  name: '麦穂の村',     size: 'village',    x: 180, y: 120, owner: 'kingdom', terrain: 'plain' },
+  { id: 1,  name: '麦穂の村',     size: 'village',    x: 180, y: 120, owner: 'neutral', terrain: 'plain' },
   { id: 2,  name: '近衛の砦',     size: 'fortress',   x: 180, y: 250, owner: 'kingdom', terrain: 'plain' },
   { id: 3,  name: '白百合の城塞', size: 'fortress',   x: 180, y: 410, owner: 'kingdom', terrain: 'hill' },
-  { id: 4,  name: '港の村',       size: 'village',    x: 180, y: 545, owner: 'kingdom', terrain: 'river' },
+  { id: 4,  name: '港の村',       size: 'village',    x: 180, y: 545, owner: 'neutral', terrain: 'river' },
   { id: 5,  name: 'スミレの町',   size: 'town',       x: 300, y: 110, owner: 'kingdom', terrain: 'plain', home: 'sumire' },
   { id: 6,  name: '牧場の村',     size: 'village',    x: 300, y: 225, owner: 'kingdom', terrain: 'plain', specialty: 'ranch' },
   { id: 7,  name: '野口の町',     size: 'town',       x: 300, y: 340, owner: 'kingdom', terrain: 'forest', home: 'noguchi' },
   { id: 8,  name: '七星の町',     size: 'town',       x: 300, y: 465, owner: 'kingdom', terrain: 'hill', home: 'nanase' },
-  { id: 9,  name: '湖の村',       size: 'village',    x: 300, y: 590, owner: 'kingdom', terrain: 'river' },
-  { id: 10, name: '鉄床の村',     size: 'village',    x: 420, y: 60,  owner: 'kingdom', terrain: 'hill', specialty: 'mine' },
+  { id: 9,  name: '湖の村',       size: 'village',    x: 300, y: 590, owner: 'neutral', terrain: 'river' },
+  { id: 10, name: '鉄床の村',     size: 'village',    x: 420, y: 60,  owner: 'neutral', terrain: 'hill', specialty: 'mine' },
   { id: 11, name: '交易の町',     size: 'town',       x: 420, y: 200, owner: 'neutral', terrain: 'plain' },
   { id: 12, name: 'ゆきの町',     size: 'town',       x: 420, y: 420, owner: 'kingdom', terrain: 'forest', yuki: true },
   { id: 13, name: '大森林の村',   size: 'village',    x: 420, y: 560, owner: 'neutral', terrain: 'forest', specialty: 'forest' },
@@ -154,8 +154,10 @@ export const HERO_ROLES = ['sumire', 'noguchi', 'nanase'];
 export const ROLES = ['yagyu', 'sumire', 'noguchi', 'nanase'];
 
 // レベル上げ：魔族は魔力で、勇者たちは合戦の経験で
-export const levelUpCost = (lv) => 15 + 5 * lv;
-export const expToNext = (lv) => 40 + lv * 20;
+// 魔力でのレベル上げ。ヤギューは強いので1.5倍かかる
+export const levelUpCost = (lv, charId) => Math.round((15 + 5 * lv) * (charId === 'yagyu' ? 1.5 : 1));
+// 勇者が次のレベルまでに必要な経験
+export const expToNext = (lv) => 35 + lv * 18;
 
 // ---- 素材と装備（王国だけ。魔族は装備を作らない） ----
 export const MATERIALS = {

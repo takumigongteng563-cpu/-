@@ -37,7 +37,7 @@ export function actionCost(game, side, type, extra) {
     return c;
   }
   const c = { ...DEMON_ACTIONS[type].cost };
-  if (type === 'levelup') c.magic = levelUpCost(game.chars[extra]?.level || 1);
+  if (type === 'levelup') c.magic = levelUpCost(game.chars[extra]?.level || 1, extra);
   if (type === 'build') return { ...FACILITIES[extra]?.cost };
   return c;
 }
