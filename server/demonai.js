@@ -1,7 +1,7 @@
 // 魔族のAI（ヤギューを人が動かさないとき）。ヤギュー・幹部・魔将の移動と、魔族の内政を決める。
 // 返す形は、人がヤギューとして出す命令（orders.yagyu）と同じ。
 import {
-  HERO_ROLES, neighbors, canRemodel, garrisonCap, levelUpCost,
+  HERO_ROLES, neighbors, canRemodel, garrisonCap,
 } from '../shared/data.js';
 import { territoryStrength, stepToward, actionCost, demonActionCount } from './game.js';
 import { planMoves } from './ai.js';
@@ -32,10 +32,10 @@ function demonInternal(game) {
   let n = 0;
   const add = (a) => {
     if (n >= max) return false;
-    const cost = a.type === 'levelup' ? levelUpCost(game.chars[a.charId].level, a.charId) : (actionCost(game, 'demon', a.type, a.facility).magic || 0);
+    const cost = actionCost(game, 'demon', a.type, a.facility).magic || 0;
     if (cost > magic) return false;
     magic -= cost;
-    if (a.type === 'levelup' || a.type === 'curse') globals.push(a); else acts['ai' + n] = a;
+    if (a.type === 'curse') globals.push(a); else acts['ai' + n] = a;
     n++;
     return true;
   };
@@ -45,14 +45,11 @@ function demonInternal(game) {
   for (const t of mine.filter(x => x.fear < 30).sort((a, b) => a.fear - b.fear)) add({ type: 'terror', tid: t.id });
   // 2. 食料が少なければ開墾
   if (R.food < 300) { const t = mine.sort((a, b) => a.farm - b.farm)[0]; if (t) add({ type: 'farm', tid: t.id }); }
-  // 3. まずレベル上げ（ヤギューを優先、幹部は低い順）。手下づくりのぶんは少し残す
-  // AIは、勇者たちの平均レベルより10以上は上げない（ヤギューだけ強くなりすぎないように）
-  const heroAvg = HERO_ROLES.reduce((a, h) => a + game.chars[h].level, 0) / HERO_ROLES.length;
-  const order = () => ['yagyu', ...['car', 'oh', 'kkb'].sort((x, y) => game.chars[x].level - game.chars[y].level)].filter(c => game.chars[c].level < heroAvg + 10);
-  for (let i = 0; i < 2; i++) {
-    const pick = order().find(c => game.chars[c].level < 30 && levelUpCost(game.chars[c].level, c) <= magic);
-    if (!pick || !add({ type: 'levelup', charId: pick })) break;
-  }
+  // 3. 国を豊かにする：民が少ない陣地に民を増やし、畑の少ない陣地を開墾する
+  const poor = mine.filter(x => x.pop < 1500 && R.food >= 200).sort((a, b) => a.pop - b.pop)[0];
+  if (poor) add({ type: 'people', tid: poor.id });
+  const field = mine.slice().sort((a, b) => a.farm - b.farm)[0];
+  if (field && magic >= 40) add({ type: 'farm', tid: field.id });
   // 4. 前線の兵が少ない陣地に手下を生む
   const weak = mine.filter(x => (isFront(x) || x.id === 28) && x.garrison < garrisonCap(x) * 0.5).sort((a, c) => a.garrison - c.garrison);
   for (const t of weak.slice(0, magic >= 80 ? 3 : 1)) add({ type: 'spawn', tid: t.id });
@@ -70,9 +67,9 @@ function demonInternal(game) {
     const hero = HERO_ROLES.find(h => game.generals[h]?.status === 'active' && neighbors(game.generals[h].location, 'kingdom').some(m => game.territories[m].owner === 'demon'));
     if (hero && hero !== 'noguchi') add({ type: 'curse', charId: hero });
   }
-  // 7. 残りの魔力で、もう一度レベル上げ
-  const pick = order().find(c => game.chars[c].level < 30 && levelUpCost(game.chars[c].level, c) <= magic);
-  if (pick) add({ type: 'levelup', charId: pick });
+  // 7. 残りの魔力で、前線を固めて兵を増やす
+  for (const t of mine.filter(isFront).sort((a, b) => a.defense - b.defense)) if (magic >= 60 && t.defense < 60) add({ type: 'darkFortify', tid: t.id });
+  for (const t of mine.filter(x => x.garrison < garrisonCap(x) * 0.8).sort((a, b) => a.garrison - b.garrison)) if (magic >= 40) add({ type: 'spawn', tid: t.id });
   return { acts, globals };
 }
 

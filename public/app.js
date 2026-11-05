@@ -682,7 +682,7 @@ function demonSection(g) {
   const mine = g.territories.filter(t => t.owner === 'demon');
   let h = `<div class="sec"><h3>魔族の内政（${used}/${max}回）</h3>`;
   h += acts.map(([k, a]) => `<div class="row"><span>${a.type === 'build' ? `作り変え（${FACILITIES[a.facility].name}）` : DEMON_ACTIONS[a.type].name}：${TERRITORIES[a.tid].name}</span><span style="flex:1"></span><button class="small" data-rmact="${k}">やめる</button></div>`).join('');
-  h += S.draft.globals.map((a, i) => `<div class="row"><span>${a.type === 'curse' ? `勇者を呪う：${CHARACTERS[a.charId].name}（魔力40）` : `レベル上げ：${CHARACTERS[a.charId].name}（今Lv${g.chars[a.charId].level}・魔力${levelUpCost(g.chars[a.charId].level, a.charId)}）`}</span><span style="flex:1"></span><button class="small" data-rmglobal="${i}">やめる</button></div>`).join('');
+  h += S.draft.globals.map((a, i) => `<div class="row"><span>${a.type === 'curse' ? `勇者を呪う：${CHARACTERS[a.charId].name}（魔力40）` : ''}</span><span style="flex:1"></span><button class="small" data-rmglobal="${i}">やめる</button></div>`).join('');
   if (used < max) {
     const tsel = S.selTerr != null && g.territories[S.selTerr].owner === 'demon' ? S.selTerr : mine[0]?.id;
     h += `<div class="row" style="margin-top:6px">
@@ -719,8 +719,6 @@ function fillDemonTarget(g) {
       tSel.innerHTML = g.territories.filter(t => t.owner === 'demon' && canRemodel(t.id)).map(t => `<option value="${t.id}" ${t.id === S._demonDefault ? 'selected' : ''}>${TERRITORIES[t.id].name}（今：${t.facility ? FACILITIES[t.facility].name : 'なし'}）</option>`).join('');
     } else if (A.enemy) {
       tSel.innerHTML = g.territories.filter(t => t.owner === 'kingdom' && t.id !== 0).map(t => `<option value="${t.id}">${TERRITORIES[t.id].name}（王国・兵${t.garrison}）</option>`).join('');
-    } else if (A.global) {
-      tSel.innerHTML = ['yagyu', 'car', 'oh', 'kkb'].map(c => `<option value="${c}">${CHARACTERS[c].name}（Lv${g.chars[c].level}・魔力${levelUpCost(g.chars[c].level, c)}）</option>`).join('');
     } else {
       tSel.innerHTML = g.territories.filter(t => t.owner === 'demon').map(t => `<option value="${t.id}" ${t.id === S._demonDefault ? 'selected' : ''}>${TERRITORIES[t.id].name}（恐怖${t.fear}・兵${t.garrison}）</option>`).join('');
     }
@@ -1531,7 +1529,7 @@ const HOWTO = [
   ['合戦のあと', '負けた側は退却する。しんがりを残すと、追ってくる敵を足止めできる。勝った側は追撃するか選べる。速さ比べで勝てば3ターンの追撃戦になり、逃げる大将を倒せばその武将は倒れる。'],
   ['戦争にはお金と食料がいる', '兵は毎日食料を食べる（陣地にいる兵は100人で1、出陣している兵は50人で1）。部隊に兵を補充するとお金がかかる（槍兵1人0.1・弓兵0.15・騎兵0.25。魔族は食料）。食料が尽きると兵が逃げる。王都（魔王城）から自分の陣地だけでつながっていない所は補給が届かず、兵が減っていく。'],
   ['戦争は民の暮らしを壊す', '合戦があった陣地は、民が減って畑が荒れ、しばらく収穫が半分になる。勝っても負けても同じ。'],
-  ['強くなるには', '勇者：合戦で経験を積んでレベルが上がる。工房で素材から装備を作る。特産のある陣地を取ると素材が手に入る。<br>魔族：魔力でレベルを上げる。恐怖から魔力が生まれる（恐怖が下がりすぎると反乱）。'],
+  ['強くなるには', '勇者：合戦で経験を積んでレベルが上がる。工房で素材から装備を作る。特産のある陣地を取ると素材が手に入る。<br>魔族：ヤギューも幹部も、合戦の経験でレベルが上がる（魔力でのレベル上げはない）。魔力は国づくり（開墾・民・手下・闇の儀式）に使う。恐怖から魔力が生まれる（恐怖が下がりすぎると反乱）。'],
   ['技', '合戦で自分のキャラの番に、右のボタンから使う。レベル5ごとに増える。地図でキャラを選ぶと「技・スキル」で一覧が見られる。'],
   ['バトルロワイヤル（群雄割拠）', '2〜8の勢力が同じ地図で天下を争う。最初は本拠地1つと、当主＋武将2人だけ。まわりはぜんぶ中立。<br>毎日：武将を動かす・内政（陣地が4つ増えるごとに1回ふえる）・外交（同盟を申し込む／受ける／切る）を決めて「準備完了」。<br>同盟した相手とは戦わない。切ると次の日から攻められる。陣地がなくなった勢力は滅びる。22陣地を取るか、最後の1勢力になれば勝ち。'],
   ['乱戦', '1回の大きな合戦に全員が入る。全員が敵どうしで、最後まで残った人の勝ち。だんだん嵐がせまってくる。'],

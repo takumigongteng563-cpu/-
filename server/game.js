@@ -37,7 +37,6 @@ export function actionCost(game, side, type, extra) {
     return c;
   }
   const c = { ...DEMON_ACTIONS[type].cost };
-  if (type === 'levelup') c.magic = levelUpCost(game.chars[extra]?.level || 1, extra);
   if (type === 'build') return { ...FACILITIES[extra]?.cost };
   return c;
 }
@@ -333,7 +332,6 @@ export function setOrders(game, role, orders) {
     }
     for (const a of orders.globals || []) {
       if (n >= max) continue;
-      if (a.type === 'levelup' && CHARACTERS[a.charId]?.side === 'demon') { clean.globals.push({ type: 'levelup', charId: a.charId }); n++; }
       if (a.type === 'curse' && HERO_ROLES.includes(a.charId)) { clean.globals.push({ type: 'curse', charId: a.charId }); n++; }
     }
   } else {
@@ -685,11 +683,6 @@ function resolveDay(game) {
           game.log.push(`ヤギューの呪いが${CHARACTERS[a.charId].name}にかかった（3日）${a.charId === 'noguchi' && game.chars.noguchi.level >= 10 ? '…が、野口は何も感じていない（無感情）' : ''}`);
           continue;
         }
-        const cost = actionCost(game, 'demon', 'levelup', a.charId);
-        if (game.chars[a.charId].level >= 30) continue;
-        if (payCost(game.resources.demon, cost)) {
-          levelUp(game, a.charId);
-        } else game.log.push(`魔力が足りず、${CHARACTERS[a.charId].name}のレベルを上げられない`);
       }
     } else {
       for (const [gid, a] of Object.entries(o.acts)) kActs.push({ gid, ...a });
@@ -1022,7 +1015,8 @@ function levelUp(game, charId) {
 }
 
 export function gainExp(game, charId, exp) {
-  if (!isConquest(game) && !HERO_ROLES.includes(charId) && !EXTRA_CHARS.includes(charId)) return;
+  // 勇者・魔族の幹部とヤギュー・追加武将は、合戦の経験でレベルが上がる
+  if (!isConquest(game) && !HERO_ROLES.includes(charId) && !EXTRA_CHARS.includes(charId) && !['yagyu', 'car', 'oh', 'kkb'].includes(charId)) return;
   const c = game.chars[charId];
   c.exp += Math.round(exp);
   while (c.level < 30 && c.exp >= expToNext(c.level)) { c.exp -= expToNext(c.level); levelUp(game, charId); }
@@ -1220,7 +1214,8 @@ function endOfDay(game) {
     // 収入（お金・食料・魔力）
     income[t.owner].food += t.farm * 0.35 * mult * (f === 'farm' ? 1.5 : 1);
     if (t.owner === 'kingdom') income.kingdom.gold += t.commerce * 0.7 * mult * (0.6 + t.loyalty / 150) * (f === 'market' ? 1.5 : 1);
-    else income.demon.magic += (t.fear * t.pop / 1000 * 0.1 * mult + (t.id === 28 ? 35 : 0)) * (f === 'fear' ? 1.3 : 1);
+    // 魔族はレベル上げに魔力を使わなくなったぶん、国が豊か（魔力1.3倍・食料1.2倍）
+    else { income.demon.magic += (t.fear * t.pop / 1000 * 0.13 * mult + (t.id === 28 ? 45 : 0)) * (f === 'fear' ? 1.3 : 1); income.demon.food += t.farm * 0.07 * mult; }
     // 恐怖の塔・魔物の巣
     if (f === 'fear') {
       t.fear = Math.min(100, t.fear + 3);
