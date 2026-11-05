@@ -8,7 +8,7 @@ import { reachTiles, unitAt, isTargetable, getRange, inBounds, DIR4 } from './ba
 // once: 1合戦に1回
 export const SKILLS = {
   sumire: [
-    { id: 'yuga', name: '愛情魂（YUGA）', kind: 'personal', lv: 1, desc: '隣の味方部隊が攻撃されたら、必ずスミレがかばう。かばうたびに攻撃+5%（最大+30%）' },
+    { id: 'yuga', name: '愛情魂（YUGA）', kind: 'personal', lv: 1, desc: '隣の味方部隊が攻撃されたら、スミレがかばう（1ターンに1回）。かばうたびに攻撃+5%（最大+30%）。ただし兵とHPが半分（大将のときは7割）を切ったら、もうかばわない' },
     { id: 'kirisute', name: '切り捨て', kind: 'active', lv: 5, mp: 6, target: 'enemy', reach: 'normal', desc: '威力1.3倍の斬撃。相手の兵が3割以下なら一撃で倒す' },
     { id: 'iai', name: '居合い切り', kind: 'passive', lv: 10, desc: '隣の敵に攻撃されたら、先に斬り返す（1ターンに1回・通常攻撃の半分）' },
     { id: 'tehodoki', name: '手ほどき', kind: 'active', lv: 15, mp: 5, target: 'ally', reach: 'adj8', desc: '隣の味方部隊1つの攻撃を3ターン+20%' },
@@ -21,7 +21,7 @@ export const SKILLS = {
     { id: 'iyashi', name: 'いやしの魔法', kind: 'active', lv: 5, mp: 5, target: 'ally', reach: 'sq:2', self: true, desc: '2マス以内の味方部隊1つを回復（魔力×4）' },
     { id: 'mukanjo', name: '無感情', kind: 'passive', lv: 10, desc: '毒・眠り・呪いを受けない' },
     { id: 'gunyu', name: 'のぐ乳', kind: 'active', lv: 15, mp: 8, target: 'self', area: 'sq:2', desc: '周り2マスの味方部隊の攻撃・防御を2ターン+15%' },
-    { id: 'ame', name: 'ノ具血之雨', kind: 'active', lv: 20, mp: 10, target: 'tile', reach: 'sq:4', area: 'cross', desc: '指定したマスを中心に、十字5マスの敵に魔法の雨（威力0.9倍）' },
+    { id: 'ame', name: 'ノ具血之雨', kind: 'active', lv: 20, mp: 12, target: 'tile', reach: 'sq:4', area: 'cross', desc: '指定したマスを中心に、十字5マスの敵に魔法の雨（威力0.9倍）' },
     { id: 'heel', name: '野口ハイヒール', kind: 'active', lv: 25, mp: 14, target: 'self', area: 'sq:2', desc: '周り2マスの味方部隊を全部大きく回復（魔力×6）し、状態異常も治す' },
     { id: 'saiseiki', name: '野口の最盛期', kind: 'active', lv: 30, mp: 15, once: true, target: 'self', desc: '3ターン魔力+50%・毎ターン2回行動。終わったあと1ターン動けない' },
   ],
@@ -31,9 +31,9 @@ export const SKILLS = {
     { id: 'star2', name: 'Ⅱ星', kind: 'active', lv: 5, mp: 6, target: 'enemy2', reach: 'sq:3', desc: '3マス以内の敵2部隊を選んで星を落とす（威力0.8倍）' },
     { id: 'star3', name: 'Ⅲ星', kind: 'passive', lv: 10, desc: '洛星の星が強くなり、当たった敵は1ターン移動力-1' },
     { id: 'star4', name: 'Ⅳ星', kind: 'active', lv: 15, mp: 9, target: 'tile', reach: 'sq:4', area: '2x2', desc: '指定した2×2の4マスに星を落とす（威力0.9倍）' },
-    { id: 'star5', name: 'Ⅴ星', kind: 'active', lv: 20, mp: 10, target: 'tile', reach: 'sq:4', area: 'cross', desc: '十字5マスに星を落とす（威力1.0倍）' },
+    { id: 'star5', name: 'Ⅴ星', kind: 'active', lv: 20, mp: 12, target: 'tile', reach: 'sq:4', area: 'cross', desc: '十字5マスに星を落とす（威力1.0倍）' },
     { id: 'star6', name: 'Ⅵ星', kind: 'passive', lv: 25, desc: '洛星の星が2つになる（別々の敵に落ちる）' },
-    { id: 'star7', name: 'Ⅶ星', kind: 'active', lv: 30, mp: 15, once: true, target: 'self', desc: '戦場のどこでも。弱っている順に敵部隊7つへ星を落とす（威力1.2倍）' },
+    { id: 'star7', name: 'Ⅶ星', kind: 'active', lv: 30, mp: 18, once: true, target: 'self', desc: '戦場のどこでも。弱っている順に敵部隊7つへ星を落とす（威力0.8倍）' },
   ],
   yagyu: [
     { id: 'shiso', name: '始祖の力', kind: 'personal', lv: 1, desc: '魔族部隊が全部+5%。1合戦に1回HP3割で立ち上がる。毎ターンHP3%回復、HPが減るほど攻撃が少し上がる' },
@@ -66,7 +66,7 @@ export const SKILLS = {
   ],
   takumi: [
     { id: 'zouryou', name: '増量', kind: 'personal', lv: 1, desc: '毎日、兵100人分の食料を余分に食べる。足りれば攻撃+10%・防御+20%、足りなければ-20%' },
-    { id: 'manpuku', name: '満腹ドーン', kind: 'charge', lv: 1, mp: 8, target: 'self', area: 'sq:1', desc: '溜め技。次の番に、周り8マスの敵全部を攻撃。溜め中は防御+30%、攻撃されても溜めは消えない' },
+    { id: 'manpuku', name: '満腹ドーン', kind: 'charge', lv: 1, mp: 10, target: 'self', area: 'sq:1', desc: '溜め技。次の番に、周り8マスの敵全部を攻撃。溜め中は防御+30%、攻撃されても溜めは消えない' },
   ],
   sakuya: [
     { id: 'tomoshibi', name: 'ともしび', kind: 'personal', lv: 1, desc: '毎ターンどちらか：照らす＝2マス以内の敵の防御-15%（隠れた敵も狙える）／はげさす＝2マス以内の味方の攻撃+15%。近くに敵がいれば照らす' },
@@ -104,7 +104,7 @@ export const SKILLS = {
   nozomi: [
     { id: 'iko', name: '女王の威光', kind: 'personal', lv: 1, desc: '周り2マスの味方部隊の攻撃・防御+15%' },
     { id: 'doku', name: '毒の薬', kind: 'active', lv: 1, mp: 6, target: 'enemy', reach: 'sq:3', desc: '3ターン毒。毎ターンのはじめに6%ずつ減る' },
-    { id: 'bakuhatsu', name: '爆発の薬', kind: 'active', lv: 1, mp: 8, target: 'tile', reach: 'sq:3', area: '3x3', desc: '3×3の敵にダメージ（威力0.8倍）' },
+    { id: 'bakuhatsu', name: '爆発の薬', kind: 'active', lv: 1, mp: 10, target: 'tile', reach: 'sq:3', area: '3x3', desc: '3×3の敵にダメージ（威力0.8倍）' },
     { id: 'nemuri', name: '眠りの薬', kind: 'active', lv: 1, mp: 8, target: 'enemy', reach: 'sq:3', desc: '敵1つを1ターン眠らせる（行動できない）' },
   ],
 };

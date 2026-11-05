@@ -269,7 +269,9 @@ function pushBack(b, t, dx, dy) {
 function strike(b, att, def, opts = {}) {
   if (!opts.noCover) {
     const s = findChar(b, 'sumire');
-    if (s && s !== def && s.side === def.side && cheb(s, def) <= 1 && !asleep(b, s) && !stunned(b, s) && s.onceRound.cover !== b.round) {
+    // 愛情魂：兵とHPが半分（大将のときは7割）を切ったら、もうかばわない（大将のままかばい続けて倒れるのを防ぐ）
+    const coverOk = s && s.hp >= s.max * (s.isCommander ? 0.7 : 0.5);
+    if (s && coverOk && s !== def && s.side === def.side && cheb(s, def) <= 1 && !asleep(b, s) && !stunned(b, s) && s.onceRound.cover !== b.round) {
       s.onceRound.cover = b.round;
       s.cover = Math.min(6, (s.cover || 0) + 1);
       b.log.push(`スミレが${def.name}をかばった！（愛情魂）`);
@@ -344,7 +346,7 @@ function fireCharge(b, u) {
     areaDamage(b, u, lineTiles(u, dir, 3), { mult: 1.5, label: '衝撃波' });
   } else if (id === 'manpuku') {
     b.log.push(`${u.name} の満腹ドーン！`);
-    areaDamage(b, u, areaTiles('sq:1', u.x, u.y), { mult: 1.3, label: '満腹ドーン' });
+    areaDamage(b, u, areaTiles('sq:1', u.x, u.y), { mult: 1.0, label: '満腹ドーン' });
   } else if (id === 'totsugeki') {
     b.log.push(`${u.name} の突撃！`);
     dash(b, u, dir, 4, { mult: 2.2, label: '突撃' });
@@ -391,7 +393,7 @@ function useSkill(b, u, s, tgt) {
     case 'star5': areaDamage(b, u, areaTiles('cross', tgt.x, tgt.y), { mult: 1.0, label: 'Ⅴ星' }); break;
     case 'star7': {
       const list = enemiesOf(b, u).sort((a, c) => a.hp / a.max - c.hp / c.max).slice(0, 7);
-      for (const x of list) applyDamage(b, u, x, damage(b, u, x, { mult: 1.2 }), 'Ⅶ星');
+      for (const x of list) applyDamage(b, u, x, damage(b, u, x, { mult: 0.8 }), 'Ⅶ星');
       break;
     }
     // ヤギュー
@@ -792,8 +794,8 @@ function bestSkillUse(b, u, s) {
     }
     case 'mayagi': consider(areaScore(areaTiles('sq:1', u.x, u.y), {}) - cost, {}); break;
     case 'trashbox': consider(areaScore(areaTiles('sq:3', u.x, u.y), { mult: 0.6 + 0.15 * (b.fallen[u.side] || 0) }) - cost, {}); break;
-    case 'star7': consider(enemies.sort((a, c) => a.hp / a.max - c.hp / c.max).slice(0, 7).reduce((a, t) => a + dmgScore(t, { mult: 1.2 }), 0) - cost, {}); break;
-    case 'manpuku': consider(areaScore(areaTiles('sq:1', u.x, u.y), { mult: 1.3 }) * 0.6 - cost, {}); break;
+    case 'star7': consider(enemies.sort((a, c) => a.hp / a.max - c.hp / c.max).slice(0, 7).reduce((a, t) => a + dmgScore(t, { mult: 0.8 }), 0) - cost, {}); break;
+    case 'manpuku': consider(areaScore(areaTiles('sq:1', u.x, u.y), { mult: 1.0 }) * 0.6 - cost, {}); break;
     case 'tosshin': case 'totsugeki': case 'suigyu': case 'shogeki': {
       for (const [x, y] of cells) {
         const dir = [x - u.x, y - u.y];

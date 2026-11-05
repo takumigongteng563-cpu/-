@@ -3,7 +3,7 @@
 export const randomHex = (bytes) => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(bytes)), b => b.toString(16).padStart(2, '0')).join('');
 export const randomCode = () => String(globalThis.crypto.getRandomValues(new Uint32Array(1))[0] % 10000).padStart(4, '0');
 import {
-  TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, UNIT_MAX, MAJORITY, troopCap, guardCap, genLead, unitCap, castleOf, EXTRA_CHARS, UNIT_TYPES,
+  TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, UNIT_MAX, MAJORITY, troopCap, guardCap, genLead, unitCap, castleOf, EXTRA_CHARS, UNIT_TYPES, REFILL_COST, FOOD_PER,
   neighbors, gameStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
   MATERIALS, RECIPES, GEAR_MAX, SPECIALTIES, emptyMaterials, troopGearCost, recipeName, FACILITIES, canRemodel, garrisonCap, ROYALE_CHARS,
 } from '../shared/data.js';
@@ -550,9 +550,13 @@ function queenInternal(game) {
   const res = game.resources.kingdom;
   const mine = game.territories.filter(t => t.owner === 'kingdom');
   const front = mine.filter(t => neighbors(t.id, 'demon').some(m => game.territories[m].owner === 'demon'));
+  // 兵が足りない勇者のいる陣地（補充のもとになる兵を集める）
+  const needy = HERO_ROLES.map(h => game.generals[h]).filter(h => h && h.status === 'active' && game.territories[h.location]?.owner === 'kingdom'
+    && h.troops.reduce((a, t) => a + t.hp, 0) < h.troops.reduce((a, t) => a + t.max, 0) * 0.8 && game.territories[h.location].garrison < 400 && game.territories[h.location].pop > 800);
   for (let i = 0; i < n; i++) {
     let type, tid;
     const low = mine.slice().sort((a, b) => a.loyalty - b.loyalty)[0];
+    if (needy[i] && res.gold > 150 && res.food >= 300) { doInternal(game, 'kingdom', 'conscript', needy[i].location, 'のぞちち'); continue; }
     const weakFront = front.slice().sort((a, b) => a.garrison / SIZES[TERRITORIES[a.id].size].cap - b.garrison / SIZES[TERRITORIES[b.id].size].cap)[0];
     if (res.food < 500) { type = 'farm'; tid = mine.slice().sort((a, b) => a.farm - b.farm)[0]?.id; }
     else if (low && low.loyalty < 35) { type = 'alms'; tid = low.id; }
@@ -1183,10 +1187,10 @@ function endOfDay(game) {
   }
   // 兵は食料を食べる
   for (const side of ['kingdom', 'demon']) {
-    let soldiers = 0;
-    for (const t of game.territories) if (t.owner === side) soldiers += t.garrison;
-    for (const g of Object.values(game.generals)) if (g.side === side && g.status === 'active') soldiers += g.troops.reduce((a, x) => a + x.hp, 0);
-    const eat = Math.ceil(soldiers / 100);
+    let home = 0, field = 0;
+    for (const t of game.territories) if (t.owner === side) home += t.garrison;
+    for (const g of Object.values(game.generals)) if (g.side === side && g.status === 'active') field += g.troops.reduce((a, x) => a + x.hp, 0) + (g.guard || 0);
+    const eat = Math.ceil(home / FOOD_PER.garrison + field / FOOD_PER.field);
     R[side].food -= eat;
     if (R[side].food < 0) {
       R[side].food = 0;
@@ -1214,15 +1218,20 @@ function endOfDay(game) {
     fitTroops(game, g);
     const keep = (g.location === 0 && t.owner === 'kingdom') ? 2000 : 50;
     let room = t.facility === 'barracks' ? 300 : 150;
-    const fill = (have, cap) => {
-      const n = Math.max(0, Math.min(room, cap - have, t.garrison - keep));
+    // 補充にはお金（魔族は食料）がかかる。足りないぶんは補充できない
+    const pay = g.side === 'demon' ? 'food' : 'gold';
+    const fill = (have, cap, type) => {
+      const per = REFILL_COST[type] || 0.15;
+      let n = Math.max(0, Math.min(room, cap - have, t.garrison - keep));
+      n = Math.min(n, Math.floor((R[g.side][pay] || 0) / per));
+      R[g.side][pay] -= Math.ceil(n * per);
       room -= n; t.garrison -= n;
       return n;
     };
-    if (g.charId) g.guard = (g.guard || 0) + fill(g.guard || 0, guardCap(game, g));
+    if (g.charId) g.guard = (g.guard || 0) + fill(g.guard || 0, guardCap(game, g), 'guard');
     for (const x of g.troops) {
       if (UNIT_TYPES[x.type].special && g.location !== 16) continue; // たけるの兵種は大都市でしか補充できない
-      const n = fill(x.hp, x.max);
+      const n = fill(x.hp, x.max, x.type);
       if (n > 0) { x.hp += n; x.raw = (x.raw || 0) + n; }
     }
   }

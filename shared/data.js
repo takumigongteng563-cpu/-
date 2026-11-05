@@ -135,6 +135,10 @@ export const UNIT_TYPES = {
   gunner:   { name: '銃兵',     label: '銃', side: 'neutral', tri: 'ranged', atk: 15, def: 9,  mag: 0, mdef: 6, spd: 10, move: 3, range: 'line8:2-3', dmg: 'phys', special: true },
 };
 export const TRI_ADV = { heavy: 'fast', fast: 'ranged', ranged: 'heavy' };
+// 兵を部隊に補充するときのコスト（1人あたり）。王国はお金、魔族は食料。馬や翼のある兵ほど高い
+export const REFILL_COST = { spear: 0.1, archer: 0.15, cavalry: 0.25, orc: 0.1, harpy: 0.15, goat: 0.2, gunner: 0.4, tank: 0.4, fighter: 0.4, guard: 0.15 };
+// 兵が1日に食べる量：陣地にいる兵は100人で1、出陣している（武将が率いる）兵は50人で1
+export const FOOD_PER = { garrison: 100, field: 50 };
 
 // 部隊の質（数の王国、質の魔族）：幹部の部隊とヤギューの親衛は×1.3
 export const QUALITY = { kingdom: 1.0, zako: 1.0, officer: 1.3, guard: 1.3 };

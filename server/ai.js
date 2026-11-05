@@ -24,7 +24,7 @@ const TO_CASTLE = distanceFrom(28);
 const needsRest = (game, g) => {
   const max = g.troops.reduce((a, t) => a + t.max, 0);
   const full = max ? g.troops.reduce((a, t) => a + t.hp, 0) / max : 1;
-  return full < 0.35 || (g.charId && g.hp < gameStats(game, g.charId).hp * 0.4);
+  return full < 0.5 || (g.charId && g.hp < gameStats(game, g.charId).hp * 0.4);
 };
 
 // opts（群雄割拠用）：hostile(勢力) 敵かどうか、canEnter(陣地) 入れるか、homes 本拠地、goal 目標までの距離
