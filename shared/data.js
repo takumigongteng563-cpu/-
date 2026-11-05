@@ -136,7 +136,7 @@ export const UNIT_TYPES = {
 };
 export const TRI_ADV = { heavy: 'fast', fast: 'ranged', ranged: 'heavy' };
 // 兵を部隊に補充するときのコスト（1人あたり）。王国はお金、魔族は食料。馬や翼のある兵ほど高い
-export const REFILL_COST = { spear: 0.1, archer: 0.15, cavalry: 0.25, orc: 0.1, harpy: 0.15, goat: 0.2, gunner: 0.4, tank: 0.4, fighter: 0.4, guard: 0.15 };
+export const REFILL_COST = { spear: 0.06, archer: 0.1, cavalry: 0.15, orc: 0.06, harpy: 0.1, goat: 0.12, gunner: 0.25, tank: 0.25, fighter: 0.25, guard: 0.1 };
 // 兵が1日に食べる量：陣地にいる兵は100人で1、出陣している（武将が率いる）兵は50人で1
 export const FOOD_PER = { garrison: 100, field: 50 };
 
@@ -276,11 +276,11 @@ export const MAX_ROUNDS = 30; // これを超えたら守る側の勝ち
 
 // ---- 内政コマンド ----
 export const KINGDOM_ACTIONS = {
-  farm:      { name: '開墾',       cost: { gold: 80 },             desc: '畑+4（食料が増える）' },
-  commerce:  { name: '商業',       cost: { gold: 80 },             desc: '商業+4（お金が増える）' },
-  people:    { name: '民を増やす', cost: { gold: 60, food: 40 },   desc: '民+200' },
+  farm:      { name: '開墾',       cost: { gold: 50 },             desc: '畑+6（食料が増える）' },
+  commerce:  { name: '商業',       cost: { gold: 50 },             desc: '商業+6（お金が増える）' },
+  people:    { name: '民を増やす', cost: { gold: 40, food: 30 },   desc: '民+300' },
   conscript: { name: '徴兵',       cost: { gold: 40, food: 30 },   desc: '民150人を兵にする（兵が強いほど高い）' },
-  fortify:   { name: '築城',       cost: { gold: 120 },            desc: '守り+10' },
+  fortify:   { name: '築城',       cost: { gold: 90 },             desc: '守り+10' },
   alms:      { name: '施し',       cost: { food: 60 },             desc: '民の忠誠+12' },
   train:     { name: '訓練',       cost: { gold: 200 },            desc: '王国の兵全体が強くなる（女王のみ）', queenOnly: true },
   gearWeapon: { name: '兵の武器づくり', cost: {}, desc: '王国の兵全体の攻撃+5%', workshop: true },
@@ -290,10 +290,10 @@ export const KINGDOM_ACTIONS = {
   hire:       { name: '武将を雇う', cost: { gold: 250, food: 60 }, desc: 'この陣地の兵300人をまとめる、新しい兵の武将が来る（陣地に兵が300人以上いるとき）' },
 };
 export const DEMON_ACTIONS = {
-  farm:    { name: '開墾',         cost: { magic: 10 },  desc: '畑+4' },
-  people:  { name: '民を増やす',   cost: { food: 40 },   desc: '民+200' },
+  farm:    { name: '開墾',         cost: { magic: 6 },   desc: '畑+6' },
+  people:  { name: '民を増やす',   cost: { food: 30 },   desc: '民+300' },
   terror:  { name: '恐怖を与える', cost: {},             desc: '恐怖+15（民が少し減る）' },
-  spawn:   { name: '手下を生む',   cost: { magic: 20 },  desc: '陣地の兵+200' },
+  spawn:   { name: '手下を生む',   cost: { magic: 15 },  desc: '陣地の兵+200' },
   levelup: { name: 'レベル上げ',   cost: { magic: 0 },   desc: '魔力でキャラのレベルを上げる', global: true },
   build:       { name: '作り変え',         cost: {},            desc: '魔族の陣地を、恐怖の塔・魔物の巣・岩の砦に作り変える', build: true },
   darkFortify: { name: '闇の儀式：陣地の強化', cost: { magic: 20 }, desc: '陣地の守り+15' },
@@ -377,8 +377,8 @@ export const ROYALE_CHARS = ['sumire', 'noguchi', 'nanase', 'nozomi', 'yagyu', '
 // ---- 群雄割拠（いろんな勢力の国取り） ----
 export const CONQUEST_WIN = 22; // 35陣地のうち22を取れば天下統一
 export const CONQUEST_ACTIONS = {
-  farm:      { name: '開墾',       cost: { gold: 60 },            desc: '畑+4（食料が増える）' },
-  commerce:  { name: '商業',       cost: { gold: 60 },            desc: '商業+4（お金が増える）' },
+  farm:      { name: '開墾',       cost: { gold: 40 },            desc: '畑+6（食料が増える）' },
+  commerce:  { name: '商業',       cost: { gold: 40 },            desc: '商業+6（お金が増える）' },
   conscript: { name: '徴兵',       cost: { gold: 50, food: 30 },  desc: '民150人を兵にする' },
   fortify:   { name: '築城',       cost: { gold: 100 },           desc: '守り+10' },
   alms:      { name: '施し',       cost: { food: 60 },            desc: '民の忠誠+12（反乱を防ぐ）' },

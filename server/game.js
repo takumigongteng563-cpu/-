@@ -340,7 +340,7 @@ export function setOrders(game, role, orders) {
     // 勇者は自分の兵の武将に内政をさせられる（その日は動かない）
     for (const [gid, a] of Object.entries(orders.acts || {})) {
       const g = game.generals[gid];
-      if (!g || g.kind !== 'soldier' || g.controller !== role || g.status !== 'active') continue;
+      if (!g || (g.kind !== 'soldier' && g.kind !== 'hero') || g.controller !== role || g.status !== 'active') continue;
       if (!KINGDOM_ACTIONS[a.type] || KINGDOM_ACTIONS[a.type].queenOnly) continue;
       if (clean.moves[gid] !== undefined) continue;
       if (a.type === 'craft' && !RECIPES[a.recipe]) continue;
@@ -426,9 +426,9 @@ function doInternal(game, side, type, tid, by, extra) {
       game.log.push(`${by}：${CHARACTERS[extra.hero].name}の「${recipeName(extra.recipe, extra.hero)}」ができた`);
       break;
     }
-    case 'farm': t.farm = Math.min(S.farm * 2, t.farm + 4); break;
-    case 'commerce': t.commerce = Math.min(Math.max(S.commerce, 20) * 2, t.commerce + 4); break;
-    case 'people': t.pop = Math.min(Math.round(S.pop * 1.5), t.pop + 200); break;
+    case 'farm': t.farm = Math.min(S.farm * 2, t.farm + 6); break;
+    case 'commerce': t.commerce = Math.min(Math.max(S.commerce, 20) * 2, t.commerce + 6); break;
+    case 'people': t.pop = Math.min(Math.round(S.pop * 1.5), t.pop + 300); break;
     case 'conscript': {
       // 徴兵：1日に1つの陣地で、民の5%まで（兵舎があれば1.5倍）
       const n = Math.min(Math.round(t.pop * 0.05 * (t.facility === 'barracks' ? 1.5 : 1)), t.pop - 200, garrisonCap(t) - t.garrison);
@@ -479,7 +479,7 @@ function aiOrders(game) {
   const fighters = aiGens.filter(x => x.kind !== 'soldier' || atFront(x));
   // 魔族の陣地が3つ以下になったら、魔王城へ総攻撃
   const siege = game.territories.filter(t => t.owner === 'demon').length <= 3;
-  const moves = planMoves(game, 'kingdom', fighters, siege ? 0.9 : 1.3);
+  const moves = planMoves(game, 'kingdom', siege ? aiGens.filter(x => x.kind !== 'soldier' || atFront(x) || x.troops.some(t => t.hp > 0)) : fighters, siege ? 0.75 : 1.3, { siege });
   for (const g of aiGens.filter(x => x.kind === 'soldier' && moves[x.id] === undefined)) {
     const t = game.territories[g.location];
     const S = SIZES[TERRITORIES[g.location].size];
@@ -540,9 +540,27 @@ function queenBuild(game) {
   doInternal(game, 'kingdom', 'build', t.id, 'のぞちち', { facility });
 }
 
+// のぞちち：お金が余っていたら、ためこまずに兵の強さと数に変える
+function queenSpendSurplus(game) {
+  const res = game.resources.kingdom;
+  let guard = 12;
+  while (res.gold > 1200 && guard--) {
+    const before = res.gold;
+    if (res.training < 10) doInternal(game, 'kingdom', 'train', 0, 'のぞちち');
+    else if (res.gearWeapon < GEAR_MAX || res.gearArmor < GEAR_MAX) queenWorkshop(game);
+    const soldiers = Object.values(game.generals).filter(g => g.side === 'kingdom' && g.kind === 'soldier').length;
+    const big = game.territories.filter(t => t.owner === 'kingdom' && t.id !== 0 && t.garrison >= 500).sort((a, b) => b.garrison - a.garrison)[0];
+    if (soldiers < 10 && big && res.gold > 1200) doInternal(game, 'kingdom', 'hire', big.id, 'のぞちち');
+    const low = game.territories.filter(t => t.owner === 'kingdom' && t.garrison < garrisonCap(t) * 0.4 && t.pop > 1000).sort((a, b) => a.garrison - b.garrison)[0];
+    if (low && res.gold > 1200 && res.food > 400) doInternal(game, 'kingdom', 'conscript', low.id, 'のぞちち');
+    if (res.gold === before) break;
+  }
+}
+
 function queenInternal(game) {
   queenWorkshop(game);
   queenBuild(game);
+  queenSpendSurplus(game);
   // お金に余裕があれば、王都で兵の武将を雇う
   const soldiers = Object.values(game.generals).filter(g => g.side === 'kingdom' && g.kind === 'soldier').length;
   if (game.resources.kingdom.gold > 400 && soldiers < 8 && game.territories[0].owner === 'kingdom' && game.territories[0].garrison >= 600) doInternal(game, 'kingdom', 'hire', 0, 'のぞちち');
@@ -605,7 +623,7 @@ function resolveDay(game) {
   }
   for (const a of kActs) {
     const g = game.generals[a.gid];
-    if (g && g.status === 'active' && game.territories[g.location].owner === 'kingdom') doInternal(game, 'kingdom', a.type, g.location, g.name, { recipe: a.recipe, hero: g.owner, facility: a.facility });
+    if (g && g.status === 'active' && game.territories[g.location].owner === 'kingdom') doInternal(game, 'kingdom', a.type, g.location, g.name, { recipe: a.recipe, hero: g.owner || (g.kind === 'hero' ? g.charId : undefined), facility: a.facility });
   }
   queenInternal(game);
 
@@ -1125,9 +1143,10 @@ function endOfDay(game) {
     if (t.owner !== 'kingdom' && t.owner !== 'demon') { if (t.damaged > 0) t.damaged--; continue; }
     const mult = t.damaged > 0 ? 0.5 : 1;
     const f = t.facility;
-    income[t.owner].food += t.farm * 0.25 * mult * (f === 'farm' ? 1.5 : 1);
-    if (t.owner === 'kingdom') income.kingdom.gold += t.commerce * 0.5 * mult * (0.6 + t.loyalty / 150) * (f === 'market' ? 1.5 : 1);
-    else income.demon.magic += (t.fear * t.pop / 1000 * 0.07 * mult + (t.id === 28 ? 25 : 0)) * (f === 'fear' ? 1.3 : 1);
+    // 収入（お金・食料・魔力）
+    income[t.owner].food += t.farm * 0.35 * mult * (f === 'farm' ? 1.5 : 1);
+    if (t.owner === 'kingdom') income.kingdom.gold += t.commerce * 0.7 * mult * (0.6 + t.loyalty / 150) * (f === 'market' ? 1.5 : 1);
+    else income.demon.magic += (t.fear * t.pop / 1000 * 0.1 * mult + (t.id === 28 ? 35 : 0)) * (f === 'fear' ? 1.3 : 1);
     // 恐怖の塔・魔物の巣
     if (f === 'fear') {
       t.fear = Math.min(100, t.fear + 3);

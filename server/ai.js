@@ -92,7 +92,8 @@ export function planMoves(game, side, gens, ratio = 1.3, opts = {}) {
     }
   }
   // 攻め先がない武将は、敵に近い前線へ出る
-  const isFront = (n) => game.territories[n].owner === side && neighbors(n, side, game.closed).some(m => game.territories[m].owner !== side && canEnter(m));
+  // 総攻撃のときは、敵の陣地のとなりだけを前線とみなす（中立の大都市の前で止まらない）
+  const isFront = (n) => game.territories[n].owner === side && neighbors(n, side, game.closed).some(m => game.territories[m].owner !== side && canEnter(m) && (!opts.siege || isEnemy(game.territories[m].owner)));
   for (const g of available) {
     if (isFront(g.location)) continue;
     const step = stepToward(game, g, isFront);

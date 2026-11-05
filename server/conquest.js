@@ -147,8 +147,8 @@ function doAction(game, f, a, by) {
   if (!payCost(res, A.cost)) return false;
   const S = t && SIZES[TERRITORIES[t.id].size];
   switch (a.type) {
-    case 'farm': t.farm = Math.min(Math.max(S.farm, 60) * 2, t.farm + 4); break;
-    case 'commerce': t.commerce = Math.min(Math.max(S.commerce, 40) * 2, t.commerce + 4); break;
+    case 'farm': t.farm = Math.min(Math.max(S.farm, 60) * 2, t.farm + 6); break;
+    case 'commerce': t.commerce = Math.min(Math.max(S.commerce, 40) * 2, t.commerce + 6); break;
     case 'conscript': {
       const n = Math.min(Math.round(t.pop * 0.05), t.pop - 200, garrisonCap(t) - t.garrison);
       if (n <= 0) return false;
@@ -445,8 +445,8 @@ export function conquestEndOfDay(game) {
   const aiBonus = { easy: 1, normal: 1.2, hard: 1.5 }[game.difficulty || 'normal'];
   for (const f of factions) {
     const m = game.players[leaderOf(f)] ? 1 : aiBonus;
-    R[f].gold += Math.round(income[f].gold * m) + 20;
-    R[f].food += Math.round(income[f].food * m);
+    R[f].gold += Math.round(income[f].gold * m * 1.3) + 30;
+    R[f].food += Math.round(income[f].food * m * 1.3);
     // 兵は食料を食べる
     let soldiers = 0;
     for (const t of game.territories) if (t.owner === f) soldiers += t.garrison;
