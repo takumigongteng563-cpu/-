@@ -3,14 +3,35 @@
 export const MAJORITY = 20; // 「陣地の大半」= 35個中20個
 
 // ---- 都市の大きさ ----
+// 11/5の表：民・置ける兵の上限（cap）・中立のときの守備兵（garrison）
 export const SIZES = {
-  village:    { name: '村',       pop: 1000,  farm: 30,  commerce: 20,  garrison: 300,  defense: 0,  cap: 1500 },
-  town:       { name: '町',       pop: 3000,  farm: 50,  commerce: 50,  garrison: 600,  defense: 10, cap: 3000 },
-  fortress:   { name: '城塞都市', pop: 5000,  farm: 60,  commerce: 70,  garrison: 1200, defense: 40, cap: 5000 },
-  metropolis: { name: '大都市',   pop: 10000, farm: 100, commerce: 150, garrison: 1500, defense: 30, cap: 8000 },
-  capital:    { name: '王都',     pop: 8000,  farm: 80,  commerce: 120, garrison: 2000, defense: 60, cap: 8000 },
-  castle:     { name: '魔王城',   pop: 3000,  farm: 50,  commerce: 0,   garrison: 1500, defense: 60, cap: 8000 },
+  village:    { name: '村',       pop: 1000,  farm: 30,  commerce: 20,  garrison: 150,  defense: 0,  cap: 400 },
+  town:       { name: '町',       pop: 3000,  farm: 50,  commerce: 50,  garrison: 400,  defense: 10, cap: 1000 },
+  fortress:   { name: '城塞都市', pop: 6000,  farm: 60,  commerce: 70,  garrison: 900,  defense: 30, cap: 2000 },
+  metropolis: { name: '大都市',   pop: 10000, farm: 100, commerce: 150, garrison: 0,    defense: 30, cap: 3000 },
+  capital:    { name: '王都',     pop: 12000, farm: 80,  commerce: 120, garrison: 2000, defense: 50, cap: 4000 },
+  castle:     { name: '魔王城',   pop: 2000,  farm: 50,  commerce: 0,   garrison: 0,    defense: 50, cap: 3000 },
 };
+
+// 城と守り（11/5）：take＝守り側が受けるダメージ、deal＝守り側の攻撃、towers＝櫓の数、gate＝門の耐久（城壁はその2倍）
+export const CASTLES = {
+  village:    { name: '木の柵',               take: 0.75, deal: 1.0, towers: 0, gate: 0 },
+  town:       { name: '土塁と堀',             take: 0.65, deal: 1.1, towers: 0, gate: 0 },
+  fortress:   { name: '石の城壁と門',         take: 0.55, deal: 1.2, towers: 2, gate: 600 },
+  metropolis: { name: '二重の城壁と門',       take: 0.45, deal: 1.2, towers: 4, gate: 1000 },
+  capital:    { name: '三重の城壁と聖なる石畳', take: 0.4, deal: 1.2, towers: 6, gate: 1500 },
+  castle:     { name: '岩の城と崖',           take: 0.5,  deal: 1.3, towers: 4, gate: 1500 },
+};
+const TIER = ['village', 'town', 'fortress', 'metropolis', 'capital'];
+// 陣地の守りの設備。築城で守りが60以上になるか、砦・岩の砦に作り変えると1段上がる
+export function castleOf(game, tid) {
+  const size = TERRITORIES[tid].size;
+  const t = game.territories[tid];
+  if (size === 'castle' || size === 'capital') return { size, ...CASTLES[size] };
+  const up = (t.facility === 'fort' || t.facility === 'rock' ? 1 : 0) + (t.defense >= 60 ? 1 : 0);
+  const s2 = TIER[Math.min(TIER.length - 1, TIER.indexOf(size) + Math.min(1, up))];
+  return { size: s2, ...CASTLES[s2] };
+}
 
 // ---- 特産 ----
 export const SPECIALTIES = {
@@ -101,54 +122,81 @@ export function neighbors(tid, side, closed) {
 // ---- 兵種 ----
 // tri: heavy → fast → ranged → heavy（矢印の先に強い）
 export const UNIT_TYPES = {
-  spear:    { name: '槍兵',     label: '槍', side: 'kingdom', tri: 'heavy',  atk: 22, def: 18, mag: 4, mdef: 10, spd: 5, move: 4, range: 'adj8',    dmg: 'phys' },
-  cavalry:  { name: '騎兵',     label: '騎', side: 'kingdom', tri: 'fast',   atk: 20, def: 12, mag: 4, mdef: 8,  spd: 9, move: 6, range: 'adj8',    dmg: 'phys' },
-  archer:   { name: '弓兵',     label: '弓', side: 'kingdom', tri: 'ranged', atk: 19, def: 10, mag: 4, mdef: 10, spd: 6, move: 4, range: 'line8:2-2', dmg: 'phys' },
-  orc:      { name: 'オーク',   label: 'オ', side: 'demon',   tri: 'heavy',  atk: 21, def: 17, mag: 4, mdef: 8,  spd: 4, move: 4, range: 'adj8',    dmg: 'phys' },
-  goat:     { name: '山羊騎兵', label: '山', side: 'demon',   tri: 'fast',   atk: 18, def: 11, mag: 4, mdef: 8,  spd: 9, move: 6, range: 'adj8',    dmg: 'phys', climber: true },
-  harpy:    { name: 'ハーピー', label: 'ハ', side: 'demon',   tri: 'ranged', atk: 16, def: 9,  mag: 8, mdef: 12, spd: 7, move: 5, range: 'line8:1-2', dmg: 'phys', flyer: true },
+  // 11/5の表。range: 槍・騎・オークは隣、弓は2〜3マス、ハーピーは1〜2マス
+  spear:    { name: '槍兵',     label: '槍', side: 'kingdom', tri: 'heavy',  atk: 10, def: 12, mag: 0, mdef: 5, spd: 8,  move: 3, range: 'adj8',      dmg: 'phys' },
+  cavalry:  { name: '騎兵',     label: '騎', side: 'kingdom', tri: 'fast',   atk: 12, def: 9,  mag: 0, mdef: 5, spd: 14, move: 5, range: 'adj8',      dmg: 'phys' },
+  archer:   { name: '弓兵',     label: '弓', side: 'kingdom', tri: 'ranged', atk: 11, def: 7,  mag: 0, mdef: 8, spd: 10, move: 3, range: 'line8:2-3', dmg: 'phys' },
+  orc:      { name: 'オーク',   label: 'オ', side: 'demon',   tri: 'heavy',  atk: 9,  def: 11, mag: 0, mdef: 4, spd: 7,  move: 3, range: 'adj8',      dmg: 'phys' },
+  goat:     { name: '山羊騎兵', label: '山', side: 'demon',   tri: 'fast',   atk: 11, def: 8,  mag: 0, mdef: 4, spd: 13, move: 5, range: 'adj8',      dmg: 'phys', climber: true },
+  harpy:    { name: 'ハーピー', label: 'ハ', side: 'demon',   tri: 'ranged', atk: 10, def: 6,  mag: 0, mdef: 7, spd: 12, move: 4, range: 'line8:1-2', dmg: 'phys', flyer: true },
+  // たけるだけの兵種（大都市でしか補充できない）
+  tank:     { name: '戦車',     label: '戦', side: 'neutral', tri: 'heavy',  atk: 15, def: 18, mag: 0, mdef: 8, spd: 8,  move: 4, range: 'line8:1-2', dmg: 'phys', special: true },
+  fighter:  { name: '戦闘機',   label: '機', side: 'neutral', tri: 'fast',   atk: 15, def: 10, mag: 0, mdef: 8, spd: 16, move: 6, range: 'line8:1-2', dmg: 'phys', flyer: true, special: true },
+  gunner:   { name: '銃兵',     label: '銃', side: 'neutral', tri: 'ranged', atk: 15, def: 9,  mag: 0, mdef: 6, spd: 10, move: 3, range: 'line8:2-3', dmg: 'phys', special: true },
 };
 export const TRI_ADV = { heavy: 'fast', fast: 'ranged', ranged: 'heavy' };
 
-// 部隊の質（数の王国、質の魔族）
-export const QUALITY = { kingdom: 1.0, zako: 0.9, officer: 1.25, guard: 1.25 };
+// 部隊の質（数の王国、質の魔族）：幹部の部隊とヤギューの親衛は×1.3
+export const QUALITY = { kingdom: 1.0, zako: 1.0, officer: 1.3, guard: 1.3 };
 
-export const UNIT_MAX = 300; // 1部隊の最大兵数
+// 1部隊の兵の上限：王国は統率×5人、魔族は統率×3.5人（兵1人＝HP1）
+export const unitCap = (side, lead) => Math.round(lead * (side === 'demon' ? 3.5 : 5));
+export const UNIT_MAX = 350; // 武将のいない部隊（守備隊など）の目安
+// 一般の武将・魔将の統率（下級・中級・上級）
+export const GRADE_LEAD = { low: 40, mid: 55, high: 65 };
 
 // ---- キャラクター ----
-// base: Lv1の値。grow: 1レベルごとに増える量。hp は本隊の兵数（ヤギューは本人のHP）
-export const CHARACTERS = {
-  sumire:  { name: 'スミレ', title: '勇者',       side: 'kingdom', label: '菫', units: 5, range: 'adj8',      dmg: 'phys',
-             base: { hp: 320, mp: 30, atk: 28, def: 20, mag: 8,  mdef: 14, spd: 11, move: 5, lead: 70, pol: 40 },
-             grow: { hp: 12,  mp: 2,  atk: 1.5, def: 1, mag: 0.3, mdef: 0.6, spd: 0.4 } },
-  noguchi: { name: '野口',   title: '賢者',       side: 'kingdom', label: '野', units: 5, range: 'line8:2-2', dmg: 'mag',
-             base: { hp: 280, mp: 50, atk: 10, def: 14, mag: 28, mdef: 22, spd: 8,  move: 4, lead: 60, pol: 75 },
-             grow: { hp: 10,  mp: 3,  atk: 0.3, def: 0.7, mag: 1.5, mdef: 1, spd: 0.3 } },
-  nanase:  { name: '七星',   title: '魔法使い',   side: 'kingdom', label: '七', units: 5, range: 'line8:1-3', dmg: 'mag',
-             base: { hp: 270, mp: 45, atk: 8,  def: 12, mag: 30, mdef: 20, spd: 9,  move: 4, lead: 55, pol: 50 },
-             grow: { hp: 10,  mp: 3,  atk: 0.3, def: 0.6, mag: 1.6, mdef: 0.9, spd: 0.35 } },
-  nozomi:  { name: 'のぞちち', title: '絶対女王', side: 'kingdom', label: '女', units: 1, range: 'line8:1-3', dmg: 'mag',
-             base: { hp: 400, mp: 60, atk: 18, def: 22, mag: 30, mdef: 28, spd: 9,  move: 3, lead: 80, pol: 90 },
-             grow: { hp: 12, mp: 3, atk: 0.5, def: 1, mag: 1.5, mdef: 1, spd: 0.3 } },
-  yagyu:   { name: 'ヤギュー', title: '魔王',     side: 'demon',   label: '魔', units: 5, range: 'line8:1-2', dmg: 'phys', solo: true,
-             base: { hp: 640, mp: 60, atk: 48, def: 35, mag: 20, mdef: 28, spd: 12, move: 5, lead: 90, pol: 30 },
-             grow: { hp: 35,  mp: 4,  atk: 2.1, def: 2.0, mag: 0.6, mdef: 1.8, spd: 0.5 } },
-  car:     { name: 'CAR', title: '幹部',          side: 'demon',   label: 'C', units: 3, range: 'line8:1-3', dmg: 'mag',
-             base: { hp: 300, mp: 35, atk: 14, def: 16, mag: 26, mdef: 18, spd: 10, move: 4, lead: 55, pol: 30 },
-             grow: { hp: 7, mp: 2, atk: 0.4, def: 0.8, mag: 1.4, mdef: 0.9, spd: 0.4 } },
-  oh:      { name: 'OH', title: '幹部',           side: 'demon',   label: 'O', units: 3, range: 'orth:1-2',  dmg: 'best',
-             base: { hp: 320, mp: 35, atk: 24, def: 20, mag: 22, mdef: 20, spd: 9,  move: 4, lead: 65, pol: 60 },
-             grow: { hp: 8, mp: 2, atk: 1, def: 1, mag: 1, mdef: 1, spd: 0.3 } },
-  kkb:     { name: 'KKB', title: '幹部',          side: 'demon',   label: 'K', units: 3, range: 'orth:1-1',  dmg: 'phys',
-             base: { hp: 360, mp: 30, atk: 32, def: 26, mag: 6,  mdef: 12, spd: 6,  move: 4, lead: 75, pol: 70 },
-             grow: { hp: 10, mp: 2, atk: 1.6, def: 1.3, mag: 0.2, mdef: 0.5, spd: 0.2 } },
-  horie:   { name: '堀江', title: '武将',         side: 'neutral', label: '堀', units: 5, range: 'line8:1-2', dmg: 'best',
-             base: { hp: 320, mp: 40, atk: 24, def: 20, mag: 24, mdef: 20, spd: 10, move: 5, lead: 70, pol: 70 },
-             grow: { hp: 7, mp: 2, atk: 1, def: 0.9, mag: 1, mdef: 0.9, spd: 0.35 } },
-  yuki:    { name: 'ゆきちゃん', title: '町の娘', side: 'kingdom', label: 'ゆ', units: 1, range: 'adj8',      dmg: 'phys',
-             base: { hp: 220, mp: 10, atk: 18, def: 14, mag: 10, mdef: 14, spd: 8,  move: 4, lead: 30, pol: 30 },
-             grow: { hp: 0, mp: 0, atk: 0, def: 0, mag: 0, mdef: 0, spd: 0 } },
+// 11/5の表：Lv1 → Lv30 の値。そのあいだはまっすぐ増える。
+// hp は本人のHP。本隊（勇者や幹部本人がいる部隊）は、先に護衛の兵が減り、兵が0になったら本人のHPが減る。ヤギューは単騎
+const T = (hp, mp, atk, def, mag, mdef, spd, lead, pol) => ({ hp, mp, atk, def, mag, mdef, spd, lead, pol });
+const CHAR_TABLE = {
+  //          Lv1                                   Lv30
+  yagyu:   [T(440, 40, 30, 26, 14, 20, 30, 80, 30), T(1400, 100, 132, 113, 58, 78, 87, 95, 45)],
+  sumire:  [T(220, 20, 15, 15, 6, 10, 14, 70, 40),  T(540, 50, 53, 50, 15, 27, 31, 85, 50)],
+  noguchi: [T(170, 35, 5, 9, 16, 15, 15, 45, 80),   T(400, 95, 14, 26, 54, 47, 35, 60, 95)],
+  nanase:  [T(160, 30, 5, 7, 19, 13, 16, 55, 50),   T(390, 90, 14, 22, 65, 39, 36, 70, 60)],
+  nozomi:  [T(200, 40, 6, 12, 18, 14, 10, 60, 95),  T(490, 100, 20, 35, 55, 40, 26, 75, 99)],
+  horie:   [T(200, 25, 12, 12, 12, 12, 12, 70, 70), T(490, 80, 35, 35, 35, 35, 36, 85, 80)],
+  kkb:     [T(200, 20, 16, 13, 3, 8, 8, 75, 45),    T(430, 60, 54, 42, 6, 22, 17, 90, 55)],
+  oh:      [T(180, 25, 11, 10, 10, 9, 8, 65, 55),   T(410, 70, 31, 30, 30, 26, 23, 80, 65)],
+  car:     [T(150, 25, 6, 7, 15, 10, 10, 60, 30),   T(380, 70, 12, 19, 56, 27, 27, 75, 40)],
+  yuki:    [T(120, 15, 9, 8, 5, 6, 8, 40, 35),      T(300, 40, 25, 22, 15, 18, 26, 55, 45)],
+  // 追加武将（11/5）。上級：合計50→140・HP160→380、中級：合計40→120・HP130→320
+  takeru:  [T(160, 25, 14, 11, 6, 9, 10, 65, 40),   T(380, 70, 40, 31, 17, 25, 27, 75, 50)],
+  jack:    [T(150, 20, 13, 8, 4, 7, 18, 50, 35),    T(360, 60, 37, 22, 12, 20, 49, 60, 45)],
+  kotaro:  [T(130, 15, 8, 6, 3, 5, 18, 50, 40),     T(320, 40, 24, 18, 9, 15, 54, 60, 50)],
+  takumi:  [T(130, 20, 8, 14, 2, 10, 6, 50, 30),    T(320, 50, 24, 42, 6, 30, 18, 60, 40)],
+  sakuya:  [T(130, 30, 5, 7, 12, 10, 6, 50, 50),    T(320, 80, 15, 21, 36, 30, 18, 60, 60)],
+  kotone:  [T(160, 25, 12, 11, 10, 9, 8, 60, 55),   T(380, 70, 34, 31, 28, 25, 22, 70, 65)],
 };
+const MOVE = { yagyu: 5, nozomi: 3, kotaro: 5, jack: 5 };
+function fromTable(id) {
+  const [a, b] = CHAR_TABLE[id];
+  const base = { ...a, move: MOVE[id] ?? 4 };
+  const grow = {};
+  for (const k of Object.keys(a)) grow[k] = (b[k] - a[k]) / 29;
+  return { base, grow };
+}
+export const CHARACTERS = {
+  sumire:  { name: 'スミレ', title: '勇者',       side: 'kingdom', label: '菫', units: 5, range: 'adj8',      dmg: 'phys', ...fromTable('sumire') },
+  noguchi: { name: '野口',   title: '賢者',       side: 'kingdom', label: '野', units: 5, range: 'line8:2-2', dmg: 'mag',  ...fromTable('noguchi') },
+  nanase:  { name: '七星',   title: '魔法使い',   side: 'kingdom', label: '七', units: 5, range: 'line8:1-3', dmg: 'mag',  ...fromTable('nanase') },
+  nozomi:  { name: 'のぞちち', title: '絶対女王', side: 'kingdom', label: '女', units: 1, range: 'line8:1-3', dmg: 'mag',  ...fromTable('nozomi') },
+  yagyu:   { name: 'ヤギュー', title: '魔王',     side: 'demon',   label: '魔', units: 5, range: 'line8:1-2', dmg: 'phys', solo: true, ...fromTable('yagyu') },
+  car:     { name: 'CAR', title: '幹部',          side: 'demon',   label: 'C', units: 3, range: 'line8:1-3', dmg: 'mag',  ...fromTable('car') },
+  oh:      { name: 'OH', title: '幹部',           side: 'demon',   label: 'O', units: 3, range: 'orth:1-2',  dmg: 'best', ...fromTable('oh') },
+  kkb:     { name: 'KKB', title: '幹部',          side: 'demon',   label: 'K', units: 3, range: 'orth:1-1',  dmg: 'phys', ...fromTable('kkb') },
+  horie:   { name: '堀江', title: '武将',         side: 'neutral', label: '堀', units: 5, range: 'line8:1-2', dmg: 'best', ...fromTable('horie') },
+  yuki:    { name: 'ゆきちゃん', title: '町の娘', side: 'kingdom', label: 'ゆ', units: 1, range: 'adj8',      dmg: 'phys', ...fromTable('yuki') },
+  takeru:  { name: 'たける', title: '進軍の将',   side: 'neutral', label: '武', units: 4, range: 'line8:1-3', dmg: 'phys', extra: true, quote: '他の国を陛下の物とし、我々は進軍し続ける！', ...fromTable('takeru') },
+  jack:    { name: 'ジャックナイフ', title: '自撮りの剣士', side: 'neutral', label: 'J', units: 1, range: 'adj8', dmg: 'phys', extra: true, quote: '自撮り？ スーパーで撮ってるよ？', ...fromTable('jack') },
+  kotaro:  { name: 'こうたろ', title: '従者',     side: 'neutral', label: 'こ', units: 2, range: 'adj8',      dmg: 'phys', extra: true, quote: '全ては主の思うままに', ...fromTable('kotaro') },
+  takumi:  { name: 'たくみ', title: '屋台の主',   side: 'neutral', label: 'た', units: 2, range: 'adj8',      dmg: 'phys', extra: true, quote: 'うほっ、もっと食べるでぶー', ...fromTable('takumi') },
+  sakuya:  { name: 'さくや', title: '流れ者',     side: 'neutral', label: 'さ', units: 2, range: 'line8:1-2', dmg: 'mag',  extra: true, quote: '照らすよ？ はげさすよ？', ...fromTable('sakuya') },
+  kotone:  { name: 'ことね', title: '流れ者',     side: 'neutral', label: '琴', units: 3, range: 'line8:1-2', dmg: 'best', extra: true, quote: 'えー、みんなすごーい', ...fromTable('kotone') },
+};
+// 追加武将（一般の武将なので個人スキルだけ。たくみだけ技も1つ）
+export const EXTRA_CHARS = ['takeru', 'jack', 'kotaro', 'takumi', 'sakuya', 'kotone'];
 
 export const HERO_ROLES = ['sumire', 'noguchi', 'nanase'];
 export const ROLES = ['yagyu', 'sumire', 'noguchi', 'nanase'];
@@ -200,7 +248,7 @@ export function charStats(charId, level) {
   const c = CHARACTERS[charId];
   const s = {};
   for (const k of Object.keys(c.base)) {
-    s[k] = Math.floor(c.base[k] + (c.grow[k] || 0) * (level - 1));
+    s[k] = Math.round(c.base[k] + (c.grow[k] || 0) * (level - 1));
   }
   return s;
 }
@@ -208,11 +256,13 @@ export function charStats(charId, level) {
 // ---- 戦場の地形 ----
 export const TERRAIN = {
   '.': { name: '平地' },
-  F:   { name: '森',     defMod: 1.2 },
-  R:   { name: '川',     defMod: 0.8 },
+  F:   { name: '森',     defMod: 1.25 },
+  R:   { name: '川',     defMod: 0.83 },
   C:   { name: '崖・岩場' },
   H:   { name: '高台',   atkMod: 1.2 },
-  W:   { name: '城壁',   defMod: 1.5 },
+  W:   { name: '城壁' },
+  G:   { name: '門' },
+  T:   { name: '櫓' },
   S:   { name: '聖なる石畳' },
 };
 
@@ -254,15 +304,34 @@ export const DEMON_ACTIONS = {
 // 同じレベルなら、だれでも基本の強さは同じ（ちがいは技）。バトルロワイヤル・群雄割拠で使う
 export function evenStats(charId, level) {
   const st = charStats(charId, level);
+  const L = level - 1;
   const main = Math.max(st.atk, st.mag);
-  const f = (28 + 1.4 * (level - 1)) / main;
-  const g = (18 + 0.9 * (level - 1)) / ((st.def + st.mdef) / 2);
+  const f = (16 + 1.38 * L) / main;
+  const g = (12 + 0.9 * L) / ((st.def + st.mdef) / 2);
   return {
     ...st,
-    hp: Math.round(520 + 16 * (level - 1)),
+    // 単騎のヤギューは護衛の兵がいないぶん、HPを多めに
+    hp: Math.round((210 + 11 * L) * (CHARACTERS[charId].solo ? 1.4 : 1)),
     atk: Math.round(st.atk * f), mag: Math.round(st.mag * f), def: Math.round(st.def * g), mdef: Math.round(st.mdef * g),
-    spd: Math.min(14 + Math.floor(level / 6), st.spd), move: Math.max(4, st.move),
+    spd: Math.min(st.spd, Math.round(14 + 0.6 * L)), move: 4, lead: 70,
   };
+}
+
+// 武将の統率（キャラはステータスから、一般の武将は格から）
+export function genLead(game, gen) {
+  if (gen.charId) return gameStats(game, gen.charId).lead;
+  return gen.lead || GRADE_LEAD[gen.grade || 'low'];
+}
+// その部隊に入れられる兵の上限（魔族の兵種は統率×3.5、それ以外は×5）
+export function troopCap(game, gen, type) {
+  if (UNIT_TYPES[type]?.special) return 150; // たけるの兵種は各150人まで
+  return unitCap(UNIT_TYPES[type]?.side === 'demon' ? 'demon' : 'kingdom', genLead(game, gen));
+}
+// 本隊の護衛の兵の上限（ヤギューは単騎なので0）
+export function guardCap(game, gen) {
+  if (!gen.charId || CHARACTERS[gen.charId].solo) return 0;
+  const demonish = CHARACTERS[gen.charId].side === 'demon';
+  return unitCap(demonish ? 'demon' : 'kingdom', genLead(game, gen));
 }
 
 export function gameStats(game, charId) {

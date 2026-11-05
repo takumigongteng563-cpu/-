@@ -3,7 +3,7 @@
 export const randomHex = (bytes) => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(bytes)), b => b.toString(16).padStart(2, '0')).join('');
 export const randomCode = () => String(globalThis.crypto.getRandomValues(new Uint32Array(1))[0] % 10000).padStart(4, '0');
 import {
-  TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, UNIT_MAX, MAJORITY,
+  TERRITORIES, SIZES, CHARACTERS, HERO_ROLES, ROLES, UNIT_MAX, MAJORITY, troopCap, guardCap, genLead, unitCap, castleOf, EXTRA_CHARS, UNIT_TYPES,
   neighbors, gameStats, KINGDOM_ACTIONS, DEMON_ACTIONS, levelUpCost, expToNext,
   MATERIALS, RECIPES, GEAR_MAX, SPECIALTIES, emptyMaterials, troopGearCost, recipeName, FACILITIES, canRemodel, garrisonCap, ROYALE_CHARS,
 } from '../shared/data.js';
@@ -95,6 +95,8 @@ export function createGame(name, opts = {}) {
   }
   if (opts.mode === 'conquest') initConquest(game, opts, name);
   for (const c of Object.keys(CHARACTERS)) game.chars[c] = { level: startLv, exp: 0 };
+  // 堀江はLv30固定。たける・ジャックナイフはLv15から。ほかの追加武将も少し育った状態から
+  if (!opts.trial) Object.assign(game.chars, { horie: { level: 30, exp: 0 }, takeru: { level: 15, exp: 0 }, jack: { level: 15, exp: 0 }, kotaro: { level: 10, exp: 0 }, takumi: { level: 10, exp: 0 }, sakuya: { level: 10, exp: 0 }, kotone: { level: 12, exp: 0 } });
   if (opts.trial) {
     // お試しモード：装備づくりもすぐ試せるように、素材とお金を多めに
     for (const k of Object.keys(game.resources.kingdom.materials)) game.resources.kingdom.materials[k] = 20;
@@ -103,37 +105,96 @@ export function createGame(name, opts = {}) {
   return game;
 }
 
-export function newTroop(game, type, q, hp = UNIT_MAX) {
-  return { uid: 't' + (++game.troopCount), type, q, hp, max: UNIT_MAX };
+// 部隊。hp は兵の数（兵1人＝HP1）。max は率いる武将の統率で決まる（fitTroops でそろえる）。hp を省くと満タン
+export function newTroop(game, type, q, hp = null) {
+  return { uid: 't' + (++game.troopCount), type, q, hp, max: hp ?? UNIT_MAX };
+}
+
+// 武将の部隊の上限を、今の統率に合わせる（hp が null の部隊は満タンにする）
+export function fitTroops(game, gen) {
+  for (const t of gen.troops) {
+    const pool = gen.kind === 'garrison';
+    t.max = pool ? Math.max(t.max, t.hp || 0) : troopCap(game, gen, t.type);
+    if (t.hp == null) t.hp = t.max;
+    t.hp = Math.min(t.hp, Math.max(t.max, pool ? t.hp : 0));
+  }
+  if (gen.charId) {
+    const cap = guardCap(game, gen);
+    if (gen.guard == null) gen.guard = 0;
+    gen.guard = Math.min(gen.guard, cap);
+  }
 }
 
 export function addGeneral(game, g) {
-  const id = g.charId || ('g' + (++game.genCount));
+  const id = g.id || g.charId || ('g' + (++game.genCount));
   const gen = { id, status: 'active', controller: 'ai', troops: [], ...g };
   if (gen.charId) {
     gen.name = CHARACTERS[gen.charId].name;
     gen.hp = gameStats(game, gen.charId).hp;
   }
   game.generals[id] = gen;
+  fitTroops(game, gen);
   return gen;
 }
 
+// 最初の兵（11/5）：勇者はそれぞれ300人（槍150・弓100・騎50）。魔王城は500人（オーク300・山羊騎兵100・ハーピー100）＋ヤギュー
+// 追加武将：まだどこにも仕えていない（地図に灰色で出る）。その陣地を取って武将を置くと仲間になる
+function placeFreeGenerals(game) {
+  const free = (charId, location, status = 'free') => addGeneral(game, { charId, side: 'free', kind: 'extra', status, location, troops: [], guard: 0 });
+  free('kotaro', 30);            // 中立の町（月見の町）
+  free('takumi', 34);            // 中立の城塞都市（星見の城塞）の屋台
+  free('sakuya', null, 'hidden'); // 合戦があったばかりの村・町に現れる
+  free('kotone', null, 'hidden'); // 流れ者（5日目から、あちこちを旅する）
+}
+
+// 仲間になったときの部隊（王国の兵種か、魔族の兵種か）
+const EXTRA_TROOPS = {
+  kotaro: [['cavalry'], ['goat']], takumi: [['spear'], ['orc']], sakuya: [['archer'], ['harpy']],
+  kotone: [['spear', 'archer'], ['orc', 'harpy']], jack: [[], []], takeru: [['gunner', 'tank', 'fighter'], ['gunner', 'tank', 'fighter']],
+};
+export function recruitExtra(game, g, side, by) {
+  g.side = side;
+  g.status = 'active';
+  g.kind = 'extra';
+  g.master = g.charId === 'kotaro' ? (side === 'kingdom' ? 'sumire' : 'yagyu') : undefined;
+  g.owner = side === 'kingdom' ? (g.master || (HERO_ROLES.includes(by?.charId) ? by.charId : by?.owner) || 'sumire') : undefined;
+  g.troops = EXTRA_TROOPS[g.charId][side === 'demon' ? 1 : 0].map(t => newTroop(game, t, UNIT_TYPES[t].special ? 'kingdom' : side === 'demon' ? 'zako' : 'kingdom'));
+  g.guard = 99999;
+  g.hp = gameStats(game, g.charId).hp;
+  fitTroops(game, g);
+  g.controller = controllerFor(game, g);
+  const c = CHARACTERS[g.charId];
+  game.log.push(`★ ${c.name}（${c.title}）が${side === 'kingdom' ? '王国' : '魔族'}の仲間になった「${c.quote}」`);
+}
+
+// 大都市を守る堀江たち（毎回の合戦で全員満タン。負けても捕虜にならず、いったん退く）
+function metroArmy(game) {
+  const mk = (id, charId, troops) => addGeneral(game, { id, charId, side: 'neutral', kind: 'metro', temp: true, location: 16, guard: 99999, troops: troops.map(t => newTroop(game, t, 'kingdom')) });
+  return [
+    mk('m_horie', 'horie', ['spear', 'cavalry', 'archer', 'spear']),
+    mk('m_takeru', 'takeru', ['gunner', 'tank', 'fighter']),
+    mk('m_jack', 'jack', []),
+  ];
+}
+const metroGuarded = (game, tid) => tid === 16 && game.territories[16].owner === 'neutral' && !game.flags.horieSide && !isConquest(game);
+
 function setupGenerals(game) {
   const K = 'kingdom', D = 'demon';
-  const heroTroops = [['spear', 'cavalry', 'archer', 'spear'], ['spear', 'archer', 'spear', 'cavalry'], ['spear', 'archer', 'cavalry', 'archer']];
+  const T = (type, q, hp) => newTroop(game, type, q, hp);
   const homes = { sumire: 5, noguchi: 7, nanase: 8 };
-  HERO_ROLES.forEach((r, i) => {
-    addGeneral(game, { charId: r, side: K, kind: 'hero', location: homes[r], troops: heroTroops[i].map(t => newTroop(game, t, 'kingdom')) });
-    addGeneral(game, { name: `${CHARACTERS[r].name}の兵`, side: K, kind: 'soldier', owner: r, location: homes[r], troops: [newTroop(game, 'spear', 'kingdom')] });
-  });
-  addGeneral(game, { charId: 'nozomi', side: K, kind: 'queen', location: 0, troops: [] });
+  for (const r of HERO_ROLES) {
+    addGeneral(game, { charId: r, side: K, kind: 'hero', location: homes[r], guard: 0,
+      troops: [T('spear', 'kingdom', 150), T('archer', 'kingdom', 100), T('cavalry', 'kingdom', 50), T('spear', 'kingdom', 0)] });
+    addGeneral(game, { name: `${CHARACTERS[r].name}の兵`, side: K, kind: 'soldier', grade: 'low', owner: r, location: homes[r], troops: [T('spear', 'kingdom', 100)] });
+  }
+  addGeneral(game, { charId: 'nozomi', side: K, kind: 'queen', location: 0, troops: [], guard: 300 });
   addGeneral(game, { charId: 'yagyu', side: D, kind: 'yagyu', location: 28,
-    troops: ['orc', 'orc', 'goat', 'harpy', 'harpy'].map(t => newTroop(game, t, 'guard')) });
-  addGeneral(game, { charId: 'car', side: D, kind: 'officer', location: 23, troops: ['harpy', 'harpy'].map(t => newTroop(game, t, 'officer')) });
-  addGeneral(game, { charId: 'oh', side: D, kind: 'officer', location: 24, troops: ['orc', 'goat'].map(t => newTroop(game, t, 'officer')) });
-  addGeneral(game, { charId: 'kkb', side: D, kind: 'officer', location: 25, troops: ['orc', 'orc'].map(t => newTroop(game, t, 'officer')) });
-  addGeneral(game, { name: '魔将ボルグ', side: D, kind: 'majo', location: 22, troops: [newTroop(game, 'goat', 'zako')] });
-  addGeneral(game, { name: '魔将ザザ', side: D, kind: 'majo', location: 26, troops: [newTroop(game, 'orc', 'zako')] });
+    troops: [T('orc', 'guard', 150), T('orc', 'guard', 150), T('goat', 'guard', 100), T('harpy', 'guard', 100), T('harpy', 'guard', 0)] });
+  addGeneral(game, { charId: 'car', side: D, kind: 'officer', location: 23, guard: 100, troops: [T('harpy', 'officer', 100), T('goat', 'officer', 0)] });
+  addGeneral(game, { charId: 'oh', side: D, kind: 'officer', location: 24, guard: 100, troops: [T('orc', 'officer', 100), T('goat', 'officer', 0)] });
+  addGeneral(game, { charId: 'kkb', side: D, kind: 'officer', location: 25, guard: 100, troops: [T('orc', 'officer', 100), T('orc', 'officer', 0)] });
+  addGeneral(game, { name: '魔将ボルグ', side: D, kind: 'majo', grade: 'mid', location: 22, troops: [T('goat', 'zako', 150)] });
+  addGeneral(game, { name: '魔将ザザ', side: D, kind: 'majo', grade: 'mid', location: 26, troops: [T('orc', 'zako', 150)] });
 }
 
 // 武将を誰が動かすか
@@ -141,6 +202,7 @@ export function controllerFor(game, gen) {
   if (isConquest(game)) return controllerOf(game, gen.side);
   if (gen.side === 'demon') return game.players.yagyu ? 'yagyu' : 'ai';
   if (gen.kind === 'hero' && game.players[gen.charId]) return gen.charId;
+  if (gen.kind === 'extra' && gen.owner && game.players[gen.owner]) return gen.owner;
   if (gen.kind === 'soldier' && gen.owner && game.players[gen.owner]) return gen.owner;
   return 'ai';
 }
@@ -159,6 +221,7 @@ export function join(game, role, name) {
   // あいことば：別のパソコンや、URLが変わったあとでも、自分の役に戻るための4けたの数字
   const code = randomCode();
   game.players[role] = { name: (name || '').slice(0, 20) || CHARACTERS[role].name, token, code };
+  noteJoin(game, role);
   if (game.phase !== 'lobby') {
     refreshControllers(game);
     game.log.push(`${game.players[role].name} が ${CHARACTERS[role].name} として参加`);
@@ -183,6 +246,41 @@ export function rejoin(game, role, code) {
   return p.token;
 }
 
+// ---- 待機場（始まる前の部屋） ----
+// 部屋主：最初に入った人。部屋主が抜けたら、次に入った人が部屋主になる
+function pickHost(game) {
+  const joined = Object.entries(game.players).filter(([, p]) => p).sort((a, b) => (a[1].seq || 0) - (b[1].seq || 0));
+  game.host = joined[0]?.[0] || null;
+}
+function noteJoin(game, role) {
+  game.players[role].seq = (game.joinSeq = (game.joinSeq || 0) + 1);
+  if (!game.host || !game.players[game.host]) game.host = role;
+}
+function removeSeat(game, role) {
+  if (game.mode === 'royale' || isConquest(game)) delete game.players[role];
+  else game.players[role] = null;
+  if (game.host === role) pickHost(game);
+}
+// 抜ける：自分の枠から出る
+export function leave(game, role) {
+  if (game.phase !== 'lobby') throw new Error('始まったあとは抜けられません');
+  if (!game.players[role]) throw new Error('その枠にはだれもいません');
+  removeSeat(game, role);
+}
+// 枠を空ける：部屋主だけ。ほかの人がいる枠を空ける
+export function kick(game, byRole, role) {
+  if (game.phase !== 'lobby') throw new Error('始まったあとは枠を空けられません');
+  if (game.host !== byRole) throw new Error('枠を空けられるのは部屋主だけです');
+  if (role === byRole) throw new Error('自分の枠は「抜ける」で出てください');
+  if (!game.players[role]) throw new Error('その枠にはだれもいません');
+  removeSeat(game, role);
+}
+// 部屋を解散：部屋主だけ（消すのは呼ぶ側）
+export function canDisband(game, role) {
+  if (game.host !== role) throw new Error('解散できるのは部屋主だけです');
+  return true;
+}
+
 export function roleOf(game, token) {
   if (!token) return null;
   for (const r of Object.keys(game.players)) if (game.players[r]?.token === token) return r;
@@ -196,6 +294,7 @@ export function start(game) {
   // 人が1人でもいれば始められる。いない役はAIが動かす
   if (!ROLES.some(r => game.players[r]) && !game.allowNoHumans) throw new Error('だれも参加していません');
   setupGenerals(game);
+  placeFreeGenerals(game);
   refreshControllers(game);
   game.phase = 'day';
   game.day = 1;
@@ -267,21 +366,24 @@ export function setReady(game, role, ready) {
 // ---- 強さの見積もり（AI用） ----
 export function genStrength(game, g) {
   let s = 0;
+  // 戦力（兵の数＋本人のHP÷2）に、強さの目安をかける
   if (g.charId) {
     const st = gameStats(game, g.charId);
-    s += g.hp * Math.max(st.atk, st.mag) / 30;
+    const lv = Math.sqrt(Math.max(st.atk, st.mag) / 15);
+    s += ((g.guard || 0) + g.hp / 2) * Math.max(1, lv);
   }
-  for (const t of g.troops) s += t.hp;
+  const lead = 1 + genLead(game, g) / 200;
+  for (const t of g.troops) s += t.hp * lead * (t.q === 'guard' || t.q === 'officer' ? 1.3 : 1);
   return s;
 }
 export function territoryStrength(game, tid, side) {
   let s = 0;
   const t = game.territories[tid];
-  // 守備隊として戦えるのは3部隊（900人）まで
+  // 大都市の堀江たち（技なしで約6,250人ぶん）
+  if (side === 'neutral' && metroGuarded(game, tid)) s += 6000;
   if (t.owner === side) {
-    const T = TERRITORIES[tid];
-    const walls = ['fortress', 'metropolis', 'capital', 'castle'].includes(T.size) || t.facility === 'fort' || t.facility === 'rock';
-    s += Math.min(t.garrison, 900) * (1 + t.defense / 200) * (walls ? 1.4 : 1);
+    // 城の守りのぶん、守備兵は強い（落とすには守備兵の1.2〜3倍がいる）
+    s += Math.min(t.garrison, 2000) / castleOf(game, tid).take * 0.9;
   }
   for (const g of Object.values(game.generals)) if (g.status === 'active' && g.location === tid && g.side === side) s += genStrength(game, g);
   return s;
@@ -328,12 +430,13 @@ function doInternal(game, side, type, tid, by, extra) {
     case 'commerce': t.commerce = Math.min(Math.max(S.commerce, 20) * 2, t.commerce + 4); break;
     case 'people': t.pop = Math.min(Math.round(S.pop * 1.5), t.pop + 200); break;
     case 'conscript': {
-      const n = Math.min(t.facility === 'barracks' ? 250 : 150, t.pop - 200, garrisonCap(t) - t.garrison);
+      // 徴兵：1日に1つの陣地で、民の5%まで（兵舎があれば1.5倍）
+      const n = Math.min(Math.round(t.pop * 0.05 * (t.facility === 'barracks' ? 1.5 : 1)), t.pop - 200, garrisonCap(t) - t.garrison);
       if (n <= 0) { game.log.push(`${by}：${T.name}ではこれ以上兵を集められない`); return false; }
       t.pop -= n; t.garrison += n; t.loyalty = Math.max(0, t.loyalty - 2); break;
     }
     case 'fortify': t.defense = Math.min(100, t.defense + 10); break;
-    case 'alms': t.loyalty = Math.min(100, t.loyalty + 12); break;
+    case 'alms': t.loyalty = Math.min(100, t.loyalty + 12); t.almsDay = game.day; break;
     case 'train': res.training = Math.min(10, res.training + 1); break;
     case 'terror': t.fear = Math.min(100, t.fear + 15); t.pop = Math.max(100, t.pop - 80); break;
     case 'spawn': t.garrison = Math.min(garrisonCap(t), t.garrison + 200); break;
@@ -353,10 +456,10 @@ function doInternal(game, side, type, tid, by, extra) {
       let g;
       if (side === 'kingdom') {
         const owner = extra?.hero || HERO_ROLES.slice().sort((a, b) => soldiersOf(game, a) - soldiersOf(game, b))[0];
-        g = addGeneral(game, { name: `${CHARACTERS[owner].name}の兵`, side, kind: 'soldier', owner, location: tid, troops: [newTroop(game, ['spear', 'cavalry', 'archer'][game.genCount % 3], 'kingdom')] });
+        g = addGeneral(game, { name: `${CHARACTERS[owner].name}の兵`, side, kind: 'soldier', grade: 'mid', owner, location: tid, troops: [newTroop(game, ['spear', 'cavalry', 'archer'][game.genCount % 3], 'kingdom')] });
       } else {
         const names = ['ガル', 'ドラ', 'ベオ', 'ジン', 'モルド', 'ヴァズ', 'グリム', 'ネロ'];
-        g = addGeneral(game, { name: `魔将${names[game.genCount % names.length]}`, side, kind: 'majo', location: tid, troops: [newTroop(game, ['orc', 'goat', 'harpy'][game.genCount % 3], 'zako')] });
+        g = addGeneral(game, { name: `魔将${names[game.genCount % names.length]}`, side, kind: 'majo', grade: 'mid', location: tid, troops: [newTroop(game, ['orc', 'goat', 'harpy'][game.genCount % 3], 'zako')] });
       }
       g.controller = controllerFor(game, g);
       game.log.push(`${by}：${T.name}に新しい武将「${g.name}」が来た`);
@@ -559,32 +662,33 @@ function conflictAt(game, tid) {
   const side = k.length ? 'kingdom' : d.length ? 'demon' : n.length ? 'neutral' : null;
   if (!side || t.owner === side) return null;
   const arrivals = side === 'kingdom' ? k : side === 'demon' ? d : n;
-  if (t.garrison > 0) return { territoryId: tid, attackerSide: side, defenderSide: t.owner, attackers: arrivals, defenders: [], garrison: true };
+  if (t.garrison > 0 || metroGuarded(game, tid)) return { territoryId: tid, attackerSide: side, defenderSide: t.owner, attackers: arrivals, defenders: [], garrison: true };
   return { capture: true, side, gens: arrivals };
 }
 
+// 陣地の守備兵を、合戦用の部隊にまとめる（1部隊400人まで、5部隊まで。残りは控え）
 function garrisonGeneral(game, tid) {
   const t = game.territories[tid];
   const side = t.owner;
-  const types = side === 'demon' ? ['orc', 'harpy', 'goat'] : ['spear', 'archer', 'spear'];
-  const n = Math.min(3, Math.ceil(t.garrison / UNIT_MAX));
+  const types = side === 'demon' ? ['orc', 'harpy', 'goat', 'orc', 'harpy'] : ['spear', 'archer', 'spear', 'cavalry', 'archer'];
+  const PER = 400;
+  const n = Math.min(5, Math.ceil(t.garrison / PER));
   const troops = [];
   let left = t.garrison;
   for (let i = 0; i < n; i++) {
-    const hp = Math.min(UNIT_MAX, Math.ceil(left / (n - i)));
+    const hp = Math.min(PER, Math.ceil(left / (n - i)));
     left -= hp;
-    const tr = newTroop(game, types[i], side === 'demon' ? 'zako' : 'kingdom', hp);
-    tr.defBonus = t.defense / 200;
-    troops.push(tr);
+    troops.push(newTroop(game, types[i], 'zako', hp));
   }
-  const gen = addGeneral(game, { name: `${TERRITORIES[tid].name}守備隊`, side, kind: 'garrison', location: tid, troops, temp: true, reserve: left });
+  const gen = addGeneral(game, { name: `${TERRITORIES[tid].name}守備隊`, side, kind: 'garrison', lead: 50, location: tid, troops, temp: true, reserve: left });
   return gen;
 }
 
 function beginBattle(game, c) {
   const defenders = c.defenders.slice();
   // 守備隊は、武将が5人に満たないときだけ一緒に戦う
-  if (c.garrison && defenders.length < 5 && game.territories[c.territoryId].garrison > 0) {
+  if (metroGuarded(game, c.territoryId) && c.defenderSide === 'neutral') defenders.push(...metroArmy(game));
+  else if (c.garrison && defenders.length < 5 && game.territories[c.territoryId].garrison > 0) {
     defenders.push(garrisonGeneral(game, c.territoryId));
   }
   const b = createBattle(game, {
@@ -629,7 +733,7 @@ function queenSupportFor(game, b) {
 }
 
 const rolesOf = (b, side) => [...new Set(b.units.filter(u => u.side === side).map(u => u.controller).filter(r => r !== 'ai'))];
-const RANK = { yagyu: 100, nozomi: 90, sumire: 80, noguchi: 79, nanase: 78, horie: 70, kkb: 62, oh: 61, car: 60, yuki: 30 };
+const RANK = { yagyu: 100, nozomi: 90, sumire: 80, noguchi: 79, nanase: 78, horie: 70, kkb: 62, oh: 61, car: 60, kotone: 55, takeru: 54, jack: 50, takumi: 48, sakuya: 47, kotaro: 45, yuki: 30 };
 
 // 合戦の段階を、人の決定が必要なところまで進める
 function progress(game) {
@@ -692,10 +796,12 @@ function pursueInfo(game, b) {
   const pursuers = b.units.filter(u => u.alive && u.side === winner);
   const flee = b.units.filter(u => u.alive && u.side !== winner && !rearIds.includes(u.id) && !game.generals[u.genId]?.temp);
   // 野口の「くちかわき」：負けて退却するときは、追撃されずに必ず逃げ切れる
-  const slipped = flee.filter(u => game.generals[u.genId]?.charId === 'noguchi');
+  // 高速移動（こうたろ）：速さ比べでは速さ2倍
+  const raceSpd = (u) => getStat(b, u, 'spd') * (game.generals[u.genId]?.charId === 'kotaro' ? 2 : 1);
+  const pursueSpd = Math.max(0, ...pursuers.map(raceSpd));
+  const slipped = flee.filter(u => game.generals[u.genId]?.charId === 'noguchi' || (game.generals[u.genId]?.charId === 'kotaro' && raceSpd(u) > pursueSpd));
   const caught = flee.filter(u => !slipped.includes(u));
   const kkb = pursuers.find(u => u.charId === 'kkb' && (u.level || 1) >= 20);
-  const pursueSpd = Math.max(0, ...pursuers.map(u => getStat(b, u, 'spd')));
   // 逃げる側は、一番えらい武将の速さで逃げる
   const leader = caught.slice().sort((a, c) => (RANK[c.charId] || 0) - (RANK[a.charId] || 0) || (c.isLeaderUnit ? 1 : 0) - (a.isLeaderUnit ? 1 : 0))[0];
   const fleeSpd = leader ? getStat(b, leader, 'spd') : 0;
@@ -710,7 +816,7 @@ function decidePursuit(game, yes) {
   const b = game.battle;
   const info = pursueInfo(game, b);
   b.pursueInfo = info;
-  if (info.slipped.length) b.log.push(`野口の隊は気づかれずに逃げ切った（くちかわき）`);
+  if (info.slipped.length) b.log.push(`${info.slipped.join('・')}は追っ手をふり切って逃げ切った`);
   if (!yes) { b.log.push('勝った側は追撃しなかった'); b.stage = 'done'; return; }
   if (!info.fleeIds.length && !info.rearIds.length) { b.stage = 'done'; return; }
   if (!info.catchUp) {
@@ -815,11 +921,12 @@ function levelUp(game, charId) {
   const after = gameStats(game, charId);
   const g = game.generals[charId];
   if (g && g.status === 'active') g.hp = Math.min(after.hp, g.hp + (after.hp - before.hp));
+  if (g) fitTroops(game, g);
   game.log.push(`${CHARACTERS[charId].name} が Lv${c.level} になった`);
 }
 
 export function gainExp(game, charId, exp) {
-  if (!isConquest(game) && !HERO_ROLES.includes(charId) && charId !== 'horie') return;
+  if (!isConquest(game) && !HERO_ROLES.includes(charId) && !EXTRA_CHARS.includes(charId)) return;
   const c = game.chars[charId];
   c.exp += Math.round(exp);
   while (c.level < 30 && c.exp >= expToNext(c.level)) { c.exp -= expToNext(c.level); levelUp(game, charId); }
@@ -833,6 +940,7 @@ function knockDown(game, g) {
   const wait = isConquest(game) ? 3 : ({ yagyu: 2, nozomi: 0 }[g.charId] ?? (g.kind === 'hero' ? 3 : 4));
   g.respawnDay = game.day + wait;
   for (const t of g.troops) t.hp = 0;
+  g.guard = 0;
   game.log.push(`${g.name} が倒れた`);
 }
 
@@ -853,7 +961,10 @@ function concludeBattle(game) {
     if (!g) continue;
     if (u.charId) participants.add(u.charId);
     if (u.isLeaderUnit) {
-      g.hp = u.hp;
+      // 護衛の兵が先に減る：残りのうち本人のHPのぶんを分ける
+      const me = Math.min(Math.max(0, u.hp), u.charMax ?? u.hp);
+      g.hp = me;
+      g.guard = Math.max(0, u.hp - me);
       if (!u.alive) g.leaderDown = true;
       // 本隊が3割を切るほど戦った勇者は、怪我をする（2日）
       else if ((HERO_ROLES.includes(u.charId) || isConquest(game)) && u.hp < u.max * 0.3) {
@@ -861,7 +972,7 @@ function concludeBattle(game) {
         game.injuries[u.charId] = Math.max(game.injuries[u.charId] || 0, game.day + 2);
         game.log.push(`${u.name}は怪我をした（2日）`);
       }
-      if (u.charId) gainExp(game, u.charId, u.dealt / 2 + u.kills * 25 + (u.role === winRole ? 60 : 20));
+      if (u.charId) gainExp(game, u.charId, u.dealt / 2 + u.kills * 30 + (u.role === winRole ? 80 : 30));
     } else {
       const tr = g.troops.find(x => x.uid === u.troopRef);
       if (tr) tr.hp = u.hp;
@@ -895,7 +1006,7 @@ function concludeBattle(game) {
   for (const gid of [...b.generals.attacker, ...b.generals.defender]) {
     const g = game.generals[gid];
     if (g?.temp) {
-      t.garrison = g.troops.reduce((a, x) => a + x.hp, 0) + (g.reserve || 0);
+      if (g.kind === 'garrison') t.garrison = g.troops.reduce((a, x) => a + x.hp, 0) + (g.reserve || 0);
       delete game.generals[gid];
     }
   }
@@ -906,8 +1017,16 @@ function concludeBattle(game) {
     else if (g && !g.charId && g.troops.every(x => x.hp <= 0)) knockDown(game, g);
   }
 
+  // さくや：合戦があったばかりの村・町に現れる
+  const saku = game.generals.sakuya;
+  if (saku && (saku.status === 'hidden' || saku.status === 'free') && ['village', 'town'].includes(T.size) && !isConquest(game)) {
+    if (saku.status === 'hidden') game.log.push(`${T.name}に、ともしびを持った流れ者が現れた（さくや）`);
+    saku.status = 'free'; saku.location = tid;
+  }
+
   // 戦場になった陣地の民と畑
-  const loss = Math.round(t.pop * 0.15);
+  // 合戦があった陣地は民が1割減る（城攻めなら2割）
+  const loss = Math.round(t.pop * (b.siege ? 0.2 : 0.1));
   game.stats.civLoss[t.owner] = (game.stats.civLoss[t.owner] || 0) + loss;
   t.pop -= loss;
   t.farm = Math.max(5, Math.round(t.farm * 0.75));
@@ -1014,7 +1133,8 @@ function endOfDay(game) {
     if (t.damaged > 0) t.damaged--;
     // 民の暮らし
     const S = SIZES[TERRITORIES[t.id].size];
-    if (!t.damaged && R[t.owner].food > 0) t.pop = Math.min(Math.round(S.pop * 1.5), Math.round(t.pop * 1.005));
+    // 民：食料が足りていれば1日1%増える（施しをした日は2%）
+    if (!t.damaged && R[t.owner].food > 0) t.pop = Math.min(Math.round(S.pop * 1.5), Math.round(t.pop * (t.almsDay === game.day ? 1.02 : 1.01)));
     if (t.owner === 'kingdom') {
       t.loyalty += t.damaged ? -1 : (t.loyalty < 50 ? 1 : 0);
       if (!supplied.kingdom.has(t.id)) t.loyalty -= 1;
@@ -1055,6 +1175,12 @@ function endOfDay(game) {
   R.demon.food += Math.round(income.demon.food);
   R.demon.magic += Math.round(income.demon.magic);
 
+  // 増量（たくみ）：毎日、兵100人分の食料を余分に食べる
+  for (const g of Object.values(game.generals)) {
+    if (g.charId !== 'takumi' || g.status !== 'active' || !R[g.side]) continue;
+    g.fed = R[g.side].food >= 1;
+    if (g.fed) R[g.side].food -= 1;
+  }
   // 兵は食料を食べる
   for (const side of ['kingdom', 'demon']) {
     let soldiers = 0;
@@ -1084,26 +1210,45 @@ function endOfDay(game) {
       const st = gameStats(game, g.charId);
       g.hp = Math.min(st.hp, g.hp + Math.round(st.hp * (g.charId === 'yagyu' ? 0.3 : 0.25)));
     }
+    // 陣地の兵から部隊を補充する（入ったばかりの兵は新兵：5日の訓練で一人前）。王都の近衛2,000人は王都から出ない
+    fitTroops(game, g);
+    const keep = (g.location === 0 && t.owner === 'kingdom') ? 2000 : 50;
+    let room = t.facility === 'barracks' ? 300 : 150;
+    const fill = (have, cap) => {
+      const n = Math.max(0, Math.min(room, cap - have, t.garrison - keep));
+      room -= n; t.garrison -= n;
+      return n;
+    };
+    if (g.charId) g.guard = (g.guard || 0) + fill(g.guard || 0, guardCap(game, g));
     for (const x of g.troops) {
-      const need = Math.min(t.facility === 'barracks' ? 200 : 100, x.max - x.hp, Math.max(0, t.garrison - 50));
-      if (need > 0) { x.hp += need; t.garrison -= need; }
+      if (UNIT_TYPES[x.type].special && g.location !== 16) continue; // たけるの兵種は大都市でしか補充できない
+      const n = fill(x.hp, x.max);
+      if (n > 0) { x.hp += n; x.raw = (x.raw || 0) + n; }
     }
   }
+  // 新兵の訓練：毎日、部隊の上限の2割ずつ一人前になる
+  for (const g of Object.values(game.generals)) for (const x of g.troops) if (x.raw) x.raw = Math.max(0, Math.min(x.hp, x.raw - Math.ceil(x.max * 0.2)));
 
   // 復活
   const homes = { sumire: 5, noguchi: 7, nanase: 8, yagyu: 28, car: 28, oh: 28, kkb: 28, horie: null, yuki: 12 };
   for (const g of Object.values(game.generals)) {
     if (g.status !== 'down' || game.day + 1 < g.respawnDay) continue;
     let home = homes[g.charId];
-    if (g.charId === 'horie') home = g.side === 'kingdom' ? 0 : 28;
+    if (g.charId === 'horie' || EXTRA_CHARS.includes(g.charId)) home = g.side === 'kingdom' ? 0 : 28;
     if (home === undefined || home === null) continue;
+    // 復活地点を取られていたら、自分の陣営の一番大きい陣地で
+    if (game.territories[home].owner !== g.side) {
+      const alt = game.territories.filter(t => t.owner === g.side).sort((a, b) => b.garrison - a.garrison)[0];
+      if (alt) home = alt.id;
+    }
     if (game.territories[home].owner !== g.side) {
       if (!g.blockedMsg) { game.log.push(`${g.name} の復活地点（${TERRITORIES[home].name}）が奪われていて復活できない`); g.blockedMsg = true; }
       continue;
     }
     g.status = 'active'; g.location = home; g.blockedMsg = false;
     g.hp = gameStats(game, g.charId).hp;
-    for (const x of g.troops) x.hp = Math.max(x.hp, 100);
+    fitTroops(game, g);
+    for (const x of g.troops) x.hp = Math.max(x.hp, Math.min(100, x.max));
     game.log.push(`${g.name} が${TERRITORIES[home].name}で復活した`);
   }
 
@@ -1121,6 +1266,23 @@ function endOfDay(game) {
     }
     return false;
   });
+
+  // 追加武将：自分の陣地に、仕えていない武将と自分の武将がいっしょにいたら登用する
+  for (const g of Object.values(game.generals)) {
+    if (g.status !== 'free' || g.location == null) continue;
+    const owner = game.territories[g.location].owner;
+    if (owner !== 'kingdom' && owner !== 'demon') continue;
+    const by = gensAt(game, g.location).find(x => x.side === owner);
+    if (by) recruitExtra(game, g, owner, by);
+  }
+  // ことね：5日目から、5日ごとにあちこちを旅する（だれにも仕えていないあいだ）
+  const kt = game.generals.kotone;
+  if (kt && (kt.status === 'hidden' || kt.status === 'free') && game.day >= 5 && game.day % 5 === 0 && !isConquest(game)) {
+    const spots = game.territories.filter(t => t.id !== 0 && t.id !== 28 && t.id !== 16).map(t => t.id);
+    const pick = spots[(game.day * 7 + 3) % spots.length];
+    if (kt.status === 'hidden') game.log.push(`「えー、みんなすごーい」 流れ者のことねが${TERRITORIES[pick].name}にやってきた`);
+    kt.status = 'free'; kt.location = pick;
+  }
 
   // 大都市を占領し続けた日数
   const metro = game.territories[16];
@@ -1152,6 +1314,7 @@ function endOfDay(game) {
 function eventHelpers(game) {
   return {
     addGeneral: (g) => { const x = addGeneral(game, g); x.controller = controllerFor(game, x); return x; },
+    recruit: (charId, side) => { const x = addGeneral(game, { charId, side: 'free', kind: 'extra', status: 'free', location: 16, troops: [] }); recruitExtra(game, x, side, null); return x; },
     newTroop: (t, q) => newTroop(game, t, q),
   };
 }
@@ -1236,6 +1399,7 @@ function joinRoyale(game, charId, name) {
   if (Object.keys(game.players).length >= 8) throw new Error('8人までです');
   const token = randomHex(12);
   game.players[charId] = { name: (name || '').slice(0, 20) || CHARACTERS[charId].name, token, code: randomCode() };
+  noteJoin(game, charId);
   return token;
 }
 

@@ -9,6 +9,10 @@ for (const [charId, list] of Object.entries(SKILLS)) {
     const game = G.createGame('t', { trial: true });
     G.join(game, 'yagyu', 'y'); G.join(game, 'sumire', 's'); G.start(game);
     game.generals.horie = { id: 'horie', charId: 'horie', name: '堀江', side: 'kingdom', kind: 'horie', status: 'active', controller: 'ai', location: 16, hp: 500, troops: [] };
+    // 追加武将は、技を試すときだけ王国側に入れる
+    if (!['sumire', 'noguchi', 'nanase', 'horie', 'nozomi', 'yagyu', 'car', 'oh', 'kkb'].includes(charId)) {
+      game.generals.horie = { id: 'horie', charId, name: charId, side: 'kingdom', kind: 'extra', status: 'active', controller: 'ai', location: 16, hp: 300, guard: 100, troops: [] };
+    }
     const K = ['sumire', 'noguchi', 'nanase', 'horie', 'nozomi'];
     const D = ['yagyu', 'car', 'oh', 'kkb'];
     const b = createBattle(game, { territoryId: 16, attackerSide: 'demon', defenderSide: 'kingdom', attackers: D, defenders: K });

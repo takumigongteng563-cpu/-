@@ -1,6 +1,6 @@
 // 地図の上でのAIの攻め方（王国・魔族共通）
 // となりにいる武将を集めて、勝てる陣地を一緒に攻める。攻め先がない武将は前線へ出る。
-import { TERRITORIES, EDGES, neighbors } from '../shared/data.js';
+import { TERRITORIES, EDGES, neighbors, gameStats } from '../shared/data.js';
 import { genStrength, territoryStrength, stepToward } from './game.js';
 
 function distanceFrom(target) {
@@ -20,9 +20,11 @@ function distanceFrom(target) {
 const TO_CAPITAL = distanceFrom(0);
 const TO_CASTLE = distanceFrom(28);
 
+// 兵が上限の半分より少ないか、本人のHPが4割を切ったら休む
 const needsRest = (game, g) => {
-  const full = g.troops.length ? g.troops.reduce((a, t) => a + t.hp, 0) / (g.troops.length * 300) : 1;
-  return full < 0.5 || (g.charId && g.hp < 120);
+  const max = g.troops.reduce((a, t) => a + t.max, 0);
+  const full = max ? g.troops.reduce((a, t) => a + t.hp, 0) / max : 1;
+  return full < 0.35 || (g.charId && g.hp < gameStats(game, g.charId).hp * 0.4);
 };
 
 // opts（群雄割拠用）：hostile(勢力) 敵かどうか、canEnter(陣地) 入れるか、homes 本拠地、goal 目標までの距離
@@ -36,7 +38,9 @@ export function planMoves(game, side, gens, ratio = 1.3, opts = {}) {
   const free = [];
   for (const g of gens) {
     if (needsRest(game, g)) {
-      const step = stepToward(game, g, n => game.territories[n].garrison >= 300);
+      // 補充できる兵がいる陣地へ（王都の近衛2,000人は使えない）
+      const spare = (n) => game.territories[n].garrison - (n === 0 ? 2000 : 50);
+      const step = stepToward(game, g, n => spare(n) >= 200);
       if (step !== null) moves[g.id] = step;
     } else free.push(g);
   }

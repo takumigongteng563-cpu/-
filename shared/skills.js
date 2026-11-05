@@ -53,6 +53,27 @@ export const SKILLS = {
     { id: 'nandemoya', name: 'なんでも屋', kind: 'passive', lv: 25, desc: '毎ターンのはじめに、攻撃・防御・魔力のうち一番低いものが上がる' },
     { id: 'tenbin', name: '天秤の一閃', kind: 'active', lv: 30, mp: 15, once: true, target: 'enemy', reach: 'normal', desc: '味方が劣勢なほど威力が上がる大攻撃（1.5〜3倍）' },
   ],
+  takeru: [
+    { id: 'zengun', name: '全軍進撃', kind: 'personal', lv: 1, desc: 'たけるの軍の攻撃は、相手のまわり十字（上下左右）にも当たる。味方がいても同じだけ巻き込む' },
+  ],
+  jack: [
+    { id: 'jidori', name: '自撮り', kind: 'personal', lv: 1, desc: '動く前に攻撃したら、そのあと移動できる。速さが相手より10以上高いとダメージ1.2倍' },
+  ],
+  kotaro: [
+    { id: 'kousoku', name: '高速移動', kind: 'personal', lv: 1, desc: '移動+1。追撃と退却の速さ比べでは速さ2倍' },
+    { id: 'escort', name: 'エスコート', kind: 'personal', lv: 1, desc: '主と同じ戦場では、主のすぐあとに動く' },
+    { id: 'teshita', name: '手下化', kind: 'personal', lv: 1, desc: '仲間になると主の直属になる（王国ならスミレ、魔族ならヤギュー）' },
+  ],
+  takumi: [
+    { id: 'zouryou', name: '増量', kind: 'personal', lv: 1, desc: '毎日、兵100人分の食料を余分に食べる。足りれば攻撃+10%・防御+20%、足りなければ-20%' },
+    { id: 'manpuku', name: '満腹ドーン', kind: 'charge', lv: 1, mp: 8, target: 'self', area: 'sq:1', desc: '溜め技。次の番に、周り8マスの敵全部を攻撃。溜め中は防御+30%、攻撃されても溜めは消えない' },
+  ],
+  sakuya: [
+    { id: 'tomoshibi', name: 'ともしび', kind: 'personal', lv: 1, desc: '毎ターンどちらか：照らす＝2マス以内の敵の防御-15%（隠れた敵も狙える）／はげさす＝2マス以内の味方の攻撃+15%。近くに敵がいれば照らす' },
+  ],
+  kotone: [
+    { id: 'minnasugoi', name: 'みんなすごーい', kind: 'personal', lv: 1, desc: '味方が敵部隊を倒すたびに、ことねの2マス以内の味方の攻撃+5%（最大+20%）' },
+  ],
   car: [
     { id: 'sorena', name: 'それな', kind: 'personal', lv: 1, desc: '2マス以内に味方部隊がいると、攻撃・防御+25%' },
     { id: 'kuroi', name: '黒いですカー？', kind: 'active', lv: 5, mp: 5, target: 'enemy', reach: 'normal', desc: '闇の弾（0.8倍）。当たった敵は1ターン印がつき、受けるダメージ+20%' },
@@ -119,6 +140,7 @@ export function skillList(battle, u) {
     else if (s.once && u.used?.[s.id]) why = '使用済み';
     else if ((u.mp || 0) < s.mp) why = 'MPが足りない';
     else if (s.needs && !activeEff(battle, u, s.needs)) why = '魔神化中のみ';
+    else if (battle.active?.moveOnly && battle.active.unitId === u.id) why = '今は移動か待機だけ';
     else if (battle.active?.noSkill && battle.active.unitId === u.id) why = '2回目の行動では使えない';
     else if (s.kind === 'charge' && u.charge) why = '溜め中';
     else if ((u.effects || []).some(e => e.tag === 'pacified' && battle.round <= e.until)) why = 'とりなされている';

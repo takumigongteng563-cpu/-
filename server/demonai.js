@@ -46,7 +46,9 @@ function demonInternal(game) {
   // 2. 食料が少なければ開墾
   if (R.food < 300) { const t = mine.sort((a, b) => a.farm - b.farm)[0]; if (t) add({ type: 'farm', tid: t.id }); }
   // 3. まずレベル上げ（ヤギューを優先、幹部は低い順）。手下づくりのぶんは少し残す
-  const order = () => ['yagyu', ...['car', 'oh', 'kkb'].sort((x, y) => game.chars[x].level - game.chars[y].level)];
+  // AIは、勇者たちの平均レベルより10以上は上げない（ヤギューだけ強くなりすぎないように）
+  const heroAvg = HERO_ROLES.reduce((a, h) => a + game.chars[h].level, 0) / HERO_ROLES.length;
+  const order = () => ['yagyu', ...['car', 'oh', 'kkb'].sort((x, y) => game.chars[x].level - game.chars[y].level)].filter(c => game.chars[c].level < heroAvg + 10);
   for (let i = 0; i < 2; i++) {
     const pick = order().find(c => game.chars[c].level < 30 && levelUpCost(game.chars[c].level, c) <= magic);
     if (!pick || !add({ type: 'levelup', charId: pick })) break;

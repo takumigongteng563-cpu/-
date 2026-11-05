@@ -97,6 +97,10 @@ export function getStat(battle, u, stat) {
     if (n >= 2 && learned(u, 20)) v *= 1.4; else if (n >= 1) v *= 1.25;
   }
   if (u.charId === 'yagyu' && stat === 'atk') v *= 1 + 0.3 * (1 - u.hp / u.max); // HPが減るほど攻撃が上がる
+  // 増量（たくみ）：食料が足りていれば攻撃+10%・防御+20%、足りなければ-20%
+  if (u.charId === 'takumi' && (stat === 'atk' || stat === 'def')) v *= u.fed === false ? 0.8 : (stat === 'atk' ? 1.1 : 1.2);
+  // みんなすごーい（ことね）：味方が倒した数だけ、ことねの近くの味方の攻撃が上がる
+  if (stat === 'atk' && battle.sugoi?.[u.side] && battle.units.some(x => x.alive && x.charId === 'kotone' && x.side === u.side && cheb(x, u) <= 2)) v *= 1 + 0.05 * battle.sugoi[u.side];
   if (u.charId === 'sumire' && stat === 'atk') v *= 1 + 0.05 * (u.cover || 0);   // 愛情魂でかばった回数
   if (u.charId === 'oh' && physical) {
     // 寄生：隣の味方のステータスの一部を上乗せ
@@ -146,7 +150,7 @@ export function moveCost(tile, unit, battle) {
     case 'C':
       if (unit.side !== 'demon') return Infinity;
       return unit.climber || flyer || unit.kind === 'yagyu' ? 1 : 2;
-    case 'W': return unit.side === battle.defenderSide ? 1 : Infinity;
+    case 'W': case 'G': case 'T': return unit.side === battle.defenderSide ? 1 : Infinity;
     case 'S': return unit.side === 'demon' ? 2 : 1;
     default: return 1;
   }
@@ -192,39 +196,64 @@ export function targetsFrom(battle, unit, x, y) {
   for (const [tx, ty] of reachTiles(battle, unit, getRange(battle, unit), x, y)) {
     const occ = unitAt(battle, tx, ty);
     if (occ && occ.side !== unit.side) { if (isTargetable(battle, unit, occ)) units.push(occ); }
-    else if (!occ && battle.grid[ty][tx] === 'W' && unit.side !== battle.defenderSide) walls.push([tx, ty]);
+    else if (!occ && 'WGT'.includes(battle.grid[ty][tx]) && unit.side !== battle.defenderSide) walls.push([tx, ty]);
   }
   return { units, walls };
 }
 
-// ダメージ計算。opts.mult = 威力の倍率、opts.type = 'phys'|'mag'|'both'、opts.power = 威力を直接指定
+// 部隊の戦力：兵の部隊は兵の数。本隊は「兵の数＋本人のHP÷2」。ヤギュー（単騎）は「HP÷2」
+// 本隊の hp は「護衛の兵＋本人のHP」。護衛の兵が先に減る
+export function personalHp(u) {
+  return u.charMax ? Math.min(u.hp, u.charMax) : (u.isLeaderUnit ? u.hp : 0);
+}
+export function unitPower(u) {
+  if (!u.isLeaderUnit) return u.hp;
+  const me = personalHp(u);
+  return (u.hp - me) + me / 2;
+}
+
+// ダメージ計算（11/5の式）：ダメージ＝戦力×0.15×（攻撃÷防御）×相性×地形・技
+//   攻撃÷防御は0.5〜3.0に収める。相性は有利×1.5・不利×0.67
+//   opts.mult = 威力の倍率、opts.type = 'phys'|'mag'|'both'、opts.power = 攻撃の値を直接指定
 export function damage(battle, att, def, opts = {}) {
   let type = opts.type || att.dmg;
   if (type === 'best') type = getStat(battle, att, 'atk') >= getStat(battle, att, 'mag') ? 'phys' : 'mag';
-  let P, D;
+  let A, D;
   if (type === 'both') {
-    P = getStat(battle, att, 'atk') + getStat(battle, att, 'mag');
-    D = (getStat(battle, def, 'def') + getStat(battle, def, 'mdef'));
+    A = getStat(battle, att, 'atk') + getStat(battle, att, 'mag');
+    D = getStat(battle, def, 'def') + getStat(battle, def, 'mdef');
   } else {
-    P = opts.power ?? (type === 'mag' ? getStat(battle, att, 'mag') : getStat(battle, att, 'atk'));
+    A = opts.power ?? (type === 'mag' ? getStat(battle, att, 'mag') : getStat(battle, att, 'atk'));
     D = type === 'mag' ? getStat(battle, def, 'mdef') : getStat(battle, def, 'def');
   }
-  const aTile = TERRAIN[battle.grid[att.y][att.x]];
-  const dTile = TERRAIN[battle.grid[def.y][def.x]];
-  if (aTile.atkMod && !att.flyer) P *= aTile.atkMod;
-  if (dTile.defMod && !def.flyer) D *= dTile.defMod;
-  const base = (P * P) / (P + D) * 4;
-  // 兵が減るほど部隊は弱くなる（単騎のヤギューは別）
-  const strength = att.solo ? 1 : 0.5 + 0.5 * att.hp / att.max;
+  const ratio = Math.max(0.5, Math.min(3, A / Math.max(1, D)));
   let tri = 1;
   if (att.tri && def.tri) {
-    if (TRI_ADV[att.tri] === def.tri) tri = 1.3;
-    else if (TRI_ADV[def.tri] === att.tri) tri = 0.8;
+    if (TRI_ADV[att.tri] === def.tri) tri = 1.5;
+    else if (TRI_ADV[def.tri] === att.tri) tri = 0.67;
   }
+  // 地形：森で守ると×0.8、川にいると×1.2、高台から撃つと×1.2
+  const aTile = TERRAIN[battle.grid[att.y][att.x]];
+  const dTile = TERRAIN[battle.grid[def.y][def.x]];
   let mod = opts.mult || 1;
-  if (active(battle, def.markUntil)) mod *= 1.2;                                    // 黒いですカー？の印
+  if (aTile.atkMod && !att.flyer) mod *= aTile.atkMod;
+  if (dTile.defMod && !def.flyer) mod /= dTile.defMod;
+  // 城：城壁の上や内側にいる守り側は、受けるダメージが減る（門を破られて外にいると有利なし）
+  if (battle.castle && def.role === 'defender' && insideWalls(battle, def)) mod *= battle.castle.take;
+  if (battle.castle && att.role === 'defender' && insideWalls(battle, att)) mod *= battle.castle.deal;
+  if (active(battle, def.markUntil)) mod *= 1.2;
+  // 自撮り（ジャックナイフ）：速さが相手より10以上高いと1.2倍
+  if (att.charId === 'jack' && getStat(battle, att, 'spd') >= getStat(battle, def, 'spd') + 10) mod *= 1.2;                                    // 黒いですカー？の印
   if ((def.effects || []).some(e => e.tag === 'shinka' && active(battle, e.until))) mod *= 0.5; // 神化：受けるダメージ半分
-  return Math.max(1, Math.round(base * strength * tri * mod));
+  return Math.max(1, Math.round(unitPower(att) * 0.15 * ratio * tri * mod));
+}
+
+// 城壁の上か内側にいるか（城壁の列とそれより右）
+// 門か城壁を破られて、攻める側が中に入っていたら、守りの有利はなくなる
+export function insideWalls(battle, u) {
+  if (battle.wallX == null || u.x < battle.wallX) return false;
+  if (battle.castle?.breached && battle.units.some(a => a.alive && a.role === 'attacker' && a.x >= battle.wallX)) return false;
+  return true;
 }
 
 export const WALL_HP = 200;

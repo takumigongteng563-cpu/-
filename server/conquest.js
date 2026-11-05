@@ -1,8 +1,8 @@
 // 群雄割拠（バトルロワイヤルの国取り）：いろんな勢力が同じ地図で天下を争う
 // 勢力のID は 'f:キャラ'（例 'f:sumire'）。人が遊ぶ役は、その勢力の当主のキャラ。
-import { TERRITORIES, SIZES, CHARACTERS, neighbors, gameStats, garrisonCap, ROYALE_CHARS, emptyMaterials, CONQUEST_ACTIONS, CONQUEST_WIN } from '../shared/data.js';
+import { TERRITORIES, SIZES, CHARACTERS, neighbors, gameStats, garrisonCap, ROYALE_CHARS, emptyMaterials, CONQUEST_ACTIONS, CONQUEST_WIN, guardCap } from '../shared/data.js';
 import {
-  addGeneral, newTroop, gensAt, retreat, payCost, randomHex, randomCode, genStrength, territoryStrength, processPending, gainExp,
+  addGeneral, newTroop, fitTroops, gensAt, retreat, payCost, randomHex, randomCode, genStrength, territoryStrength, processPending, gainExp,
 } from './game.js';
 import { planMoves } from './ai.js';
 
@@ -41,6 +41,8 @@ export function initConquest(game, opts, name) {
   if (!name) game.name = '群雄割拠';
   // 最初はぜんぶ中立
   for (const t of game.territories) { t.owner = 'neutral'; t.fear = 0; t.loyalty = 60; }
+  // 大都市は堀江たちがいないかわりに、守備兵が多い
+  game.territories[16].garrison = 1500;
 }
 
 export function joinConquest(game, charId, name) {
@@ -50,6 +52,8 @@ export function joinConquest(game, charId, name) {
   if (Object.keys(game.players).length >= 8) throw new Error('8人までです');
   const token = randomHex(12);
   game.players[charId] = { name: (name || '').slice(0, 20) || CHARACTERS[charId].name, token, code: randomCode() };
+  game.players[charId].seq = (game.joinSeq = (game.joinSeq || 0) + 1);
+  if (!game.host || !game.players[game.host]) game.host = charId;
   return token;
 }
 
@@ -63,7 +67,7 @@ function hireRetainer(game, f, tid) {
   const types = troopTypes(leaderOf(f));
   const name = RETAINER_NAMES[(C.hired - 1) % RETAINER_NAMES.length] + (C.hired > RETAINER_NAMES.length ? '二世' : '');
   const g = addGeneral(game, {
-    name, side: f, kind: 'retainer', location: tid,
+    name, side: f, kind: 'retainer', grade: 'mid', location: tid,
     troops: [types[C.hired % 2 ? 0 : 1], types[2]].map(t => newTroop(game, t, 'kingdom')),
   });
   g.controller = controllerOf(game, f);
@@ -90,7 +94,7 @@ export function startConquest(game) {
     Object.assign(t, { owner: f, pop: 4000, farm: 60, commerce: 60, garrison: 900, defense: 30, loyalty: 70 });
     game.chars[c].level = Math.max(game.chars[c].level, C.level);
     const types = troopTypes(c);
-    const g = addGeneral(game, { charId: c, side: f, kind: 'leader', location: home, troops: types.map(x => newTroop(game, x, 'kingdom')) });
+    const g = addGeneral(game, { charId: c, side: f, kind: 'leader', location: home, guard: 9999, troops: types.map(x => newTroop(game, x, 'kingdom')) });
     g.controller = controllerOf(game, f);
     hireRetainer(game, f, home);
     hireRetainer(game, f, home);
@@ -146,7 +150,7 @@ function doAction(game, f, a, by) {
     case 'farm': t.farm = Math.min(Math.max(S.farm, 60) * 2, t.farm + 4); break;
     case 'commerce': t.commerce = Math.min(Math.max(S.commerce, 40) * 2, t.commerce + 4); break;
     case 'conscript': {
-      const n = Math.min(150, t.pop - 200, garrisonCap(t) - t.garrison);
+      const n = Math.min(Math.round(t.pop * 0.05), t.pop - 200, garrisonCap(t) - t.garrison);
       if (n <= 0) return false;
       t.pop -= n; t.garrison += n; t.loyalty = Math.max(0, t.loyalty - 2); break;
     }
@@ -464,10 +468,15 @@ export function conquestEndOfDay(game) {
       const st = gameStats(game, g.charId);
       g.hp = Math.min(st.hp, g.hp + Math.round(st.hp * 0.25));
     }
-    for (const x of g.troops) {
-      const need = Math.min(100, x.max - x.hp, Math.max(0, t.garrison - 50));
-      if (need > 0) { x.hp += need; t.garrison -= need; }
-    }
+    fitTroops(game, g);
+    let room = 150;
+    const fill = (have, cap) => {
+      const n = Math.max(0, Math.min(room, cap - have, t.garrison - 50));
+      room -= n; t.garrison -= n;
+      return n;
+    };
+    if (g.charId) g.guard = (g.guard || 0) + fill(g.guard || 0, guardCap(game, g));
+    for (const x of g.troops) x.hp += fill(x.hp, x.max);
   }
   // 当主の復活：本拠地か、ほかの自分の陣地で
   for (const g of Object.values(game.generals)) {

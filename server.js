@@ -134,6 +134,16 @@ const server = http.createServer(async (req, res) => {
         case 'ready': G.setReady(game, role, a.ready); break;
         case 'incident': G.incidentChoice(game, role, a.id, a.choice); break;
         case 'battle': G.battleAction(game, role, a.action || {}); break;
+        case 'leave': G.leave(game, role); break;
+        case 'kick': G.kick(game, role, a.role); break;
+        case 'disband': {
+          // 部屋を解散：ゲームごとなくして、見ている人みんなに知らせる
+          G.canDisband(game, role);
+          games.delete(game.id);
+          try { fs.unlinkSync(path.join(DATA, game.id + '.json')); } catch { /* なし */ }
+          for (const r of streams.get(game.id) || []) r.write(`data: ${JSON.stringify({ gone: true })}\n\n`);
+          return sendJson(res, 200, { ok: true });
+        }
         default: throw new Error('知らない操作です');
       }
       changed(game);

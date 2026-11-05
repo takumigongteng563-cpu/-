@@ -102,6 +102,14 @@ export async function api(path, data) {
     return { token: me, role: data.role };
   }
   const a = data.action || {};
+  if (a.type === 'disband') {
+    const snap = await db.doc('games/' + id).get();
+    const g = decode(snap);
+    if (!g) throw new Error('ゲームが見つかりません');
+    G.canDisband(g, G.roleOf(g, me));
+    await db.doc('games/' + id).delete();
+    return { ok: true };
+  }
   await mutate(id, g => {
     const role = G.roleOf(g, me);
     if (!role) throw new Error('参加していません');
@@ -111,6 +119,8 @@ export async function api(path, data) {
       case 'ready': G.setReady(g, role, a.ready); break;
       case 'incident': G.incidentChoice(g, role, a.id, a.choice); break;
       case 'battle': G.battleAction(g, role, a.action || {}); break;
+      case 'leave': G.leave(g, role); break;
+      case 'kick': G.kick(g, role, a.role); break;
       default: throw new Error('知らない操作です');
     }
   });
@@ -123,7 +133,7 @@ export function subscribe(id, _token, cb) {
   let timer = null;
   const unsub = db.doc('games/' + id).onSnapshot(snap => {
     const game = decode(snap);
-    if (!game) return;
+    if (!game) { if (!snap.exists) cb({ gone: true }); return; }
     cb(JSON.parse(JSON.stringify(G.publicView(game, G.roleOf(game, me)))));
     clearTimeout(timer);
     timer = drive(id, game);

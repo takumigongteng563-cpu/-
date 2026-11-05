@@ -99,6 +99,14 @@ export async function api(path, data) {
     case 'ready': G.setReady(game, role, a.ready); break;
     case 'incident': G.incidentChoice(game, role, a.id, a.choice); break;
     case 'battle': G.battleAction(game, role, a.action || {}); break;
+    case 'leave': G.leave(game, role); break;
+    case 'kick': G.kick(game, role, a.role); break;
+    case 'disband':
+      G.canDisband(game, role);
+      games.delete(game.id);
+      try { localStorage.removeItem(KEY + game.id); } catch { /* なし */ }
+      for (const s of subs.get(game.id) || []) s.cb({ gone: true });
+      return { ok: true };
     default: throw new Error('知らない操作です');
   }
   changed(game);

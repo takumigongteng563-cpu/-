@@ -289,6 +289,22 @@ function openGame(id, watchOnly) {
 // ---------- 状態が届いたら ----------
 function onState() {
   const g = S.game;
+  if (g.gone) {
+    // 部屋が解散された
+    store.set('yagyu:seat:' + S.gameId, null);
+    toast('部屋が解散されました');
+    if (!LOCAL) location.hash = '';
+    showLobby();
+    return;
+  }
+  if (S.me && g.phase === 'lobby' && !g.players[S.me.role]) {
+    // 部屋主に枠を空けられた
+    store.set('yagyu:seat:' + S.gameId, null);
+    toast('部屋主が、あなたの枠を空けました');
+    S.me = null;
+    showLobby();
+    return;
+  }
   const activeId = g.battle?.active?.unitId + ':' + g.battle?.round + ':' + !!g.battle?.active?.extra;
   if (activeId !== S.lastActive) { S.aim = null; S.lastActive = activeId; }
   if (S.me && g.phase === 'day' && S.draftDay !== g.day) {
@@ -475,14 +491,15 @@ function renderMap(g) {
     h += `<circle cx="${t.x}" cy="${t.y}" r="${r}" fill="${sideSoft(st.owner)}" stroke="${sideColor(st.owner)}" stroke-width="${isSel ? 5 : 2.5}"/>`;
     h += nodeIcon(t.size, t.x, t.y, sideColor(st.owner));
     h += `<text x="${t.x}" y="${t.y + r + 14}" text-anchor="middle" font-size="12.5" fill="#3b2f22" class="serif label">${t.name}</text>`;
-    h += `<text x="${t.x}" y="${t.y + r + 27}" text-anchor="middle" font-size="10" fill="#7a6648" class="label">兵${st.garrison}${t.specialty ? '・' + SPECIALTIES[t.specialty].name : ''}</text>`;
+    const metro = t.id === 16 && st.owner === 'neutral' && !g.flags?.horieSide && !isConquest(g);
+    h += `<text x="${t.x}" y="${t.y + r + 27}" text-anchor="middle" font-size="10" fill="#7a6648" class="label">${metro ? '堀江たちが守る' : '兵' + st.garrison}${t.specialty ? '・' + SPECIALTIES[t.specialty].name : ''}</text>`;
     if (st.facility) h += `<rect x="${t.x - r - 10}" y="${t.y + r - 14}" width="16" height="16" rx="3" fill="${st.owner === 'demon' ? '#5d2a70' : '#7a5a10'}" stroke="#fff" stroke-width="1"/><text x="${t.x - r - 2}" y="${t.y + r - 2}" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold">${FACILITIES[st.facility].label}</text>`;
     if (st.damaged > 0) h += `<text x="${t.x - r - 4}" y="${t.y - r + 4}" font-size="11" fill="#b23a2a" font-weight="bold" class="label">🔥${st.damaged}</text>`;
     h += `</g>`;
   }
-  // 武将のコマ
+  // 武将のコマ（まだだれにも仕えていない追加武将は灰色）
   const byLoc = {};
-  for (const gen of activeGens(g)) (byLoc[gen.location] ||= []).push(gen);
+  for (const gen of [...activeGens(g), ...Object.values(g.generals).filter(x => x.status === 'free' && x.location != null)]) (byLoc[gen.location] ||= []).push(gen);
   for (const [loc, gens] of Object.entries(byLoc)) {
     const t = T[loc];
     const r = R_SIZE[t.size];
@@ -490,7 +507,7 @@ function renderMap(g) {
       const x = t.x + r - 2 + (i % 4) * 20, y = t.y - r - 10 + Math.floor(i / 4) * 22;
       const mine = canOrder(gen);
       const isSel = S.selGen === gen.id;
-      const color = !isConquest(g) && gen.charId && CHAR_COLOR[gen.charId] ? CHAR_COLOR[gen.charId] : sideColor(gen.side);
+      const color = gen.status === 'free' ? '#9a958b' : !isConquest(g) && gen.charId && CHAR_COLOR[gen.charId] ? CHAR_COLOR[gen.charId] : sideColor(gen.side);
       h += `<g class="gen" data-gen="${gen.id}">
         <path d="${shield(x + 1, y + 1.5)}" fill="#000" opacity=".2"/>
         <path d="${shield(x, y)}" fill="${color}" stroke="${isSel ? '#ffcf4a' : mine ? '#f5d58a' : '#fff'}" stroke-width="${isSel ? 3 : mine ? 2 : 1}"/>
@@ -575,6 +592,13 @@ function genRow(g, gen) {
 
 function selGenSection(g) {
   const gen = S.selGen && g.generals[S.selGen];
+  if (gen && gen.status === 'free') {
+    const c = CHARACTERS[gen.charId];
+    return `<div class="sec"><h3>${esc(c.name)} <span class="muted">${c.title}・Lv${g.chars[gen.charId].level}</span></h3>
+      <div class="line"><span class="who">${esc(c.name)}</span>「${esc(c.quote)}」</div>
+      <div class="hint">まだどこにも仕えていない。この陣地を自分のものにして、自分の武将を置くと仲間になる（登用）。</div>
+      <details style="margin-top:6px"><summary>スキル</summary>${skillBook(gen.charId, g.chars[gen.charId].level)}</details></div>`;
+  }
   if (!gen || gen.status !== 'active') return '';
   let h = `<div class="sec"><h3>${esc(gen.name)}${gen.charId ? ` <span class="muted">${CHARACTERS[gen.charId].title}</span>` : ''}</h3>`;
   if (gen.charId) {
@@ -827,6 +851,7 @@ function conquestPanel(g) {
       ${joined.map(([c, p]) => `<div class="row"><span class="badge" style="background:${CHAR_COLOR[c]};color:#fff;border-radius:4px;padding:0 6px">${CHARACTERS[c].label}</span> ${CHARACTERS[c].name}軍：${esc(p.name)}</div>`).join('')}
       <p class="hint">ほかの人は、ロビーの一覧でキャラを押すと参加できます。始めると、AIの勢力が${g.conquest.bots}つ（合わせて8勢力まで）入ります。</p>
       <button class="primary big" id="btnStart" ${joined.length && S.me ? '' : 'disabled'}>群雄割拠を始める</button></div>`;
+    h += roomControls(g);
     $('#panel').innerHTML = h;
     return;
   }
@@ -863,6 +888,35 @@ function conquestPanel(g) {
   panel.scrollTop = scroll;
 }
 
+// 待機場：抜ける・枠を空ける（部屋主）・部屋を解散（部屋主）
+function roomControls(g) {
+  const me = S.me?.role;
+  const host = g.host;
+  const rows = Object.entries(g.players).filter(([, p]) => p).map(([r, p]) => {
+    let btn = '';
+    if (r === me) btn = `<button class="small" data-room="leave">抜ける</button>`;
+    else if (me && me === host) btn = `<button class="small" data-room="kick" data-role="${r}">枠を空ける</button>`;
+    return `<div class="row craft"><span>${CHARACTERS[r].title}${CHARACTERS[r].name}：${esc(p.name)}${r === host ? ' <b>👑部屋主</b>' : ''}${r === me ? '（あなた）' : ''}</span>${btn}</div>`;
+  }).join('');
+  return `<div class="sec"><h3>待機場</h3>${rows || '<div class="hint">まだだれもいません</div>'}
+    ${me && me === host ? `<button class="small danger" data-room="disband" style="margin-top:8px">部屋を解散</button>` : ''}
+    <div class="hint">空いたままの枠は、始めるときにAIになります。部屋主が抜けたら、次に入った人が部屋主になります。</div></div>`;
+}
+
+async function roomAction(b) {
+  const type = b.dataset.room;
+  if (type === 'disband' && !b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '本当に解散する？（もう一度押す）'; return; }
+  try {
+    await api(`/api/games/${S.gameId}/action`, { token: S.me.token, action: { type, role: b.dataset.role } });
+  } catch (e) { return toast(e.message); }
+  if (type === 'leave' || type === 'disband') {
+    store.set('yagyu:seat:' + S.gameId, null);
+    toast(type === 'leave' ? '部屋から抜けました' : '部屋を解散しました');
+    if (!LOCAL) location.hash = '';
+    showLobby();
+  }
+}
+
 function renderPanel(g) {
   if (isConquest(g)) return conquestPanel(g);
   let h = '';
@@ -872,6 +926,7 @@ function renderPanel(g) {
       ${joined.map(([c, p]) => `<div class="row"><span class="badge" style="background:${CHAR_COLOR[c]};color:#fff;border-radius:4px;padding:0 6px">${CHARACTERS[c].label}</span> ${CHARACTERS[c].name}：${esc(p.name)}</div>`).join('')}
       <p class="hint">ほかの人は、ロビーの一覧でキャラを押すと参加できます。始めると、AIが${g.royale.bots}人（合わせて8人まで）入ります。レベルは全員${g.royale.level}で、基本の強さは同じ。ちがいは技です。</p>
       <button class="primary big" id="btnStart" ${joined.length && S.me ? '' : 'disabled'}>バトルロワイヤルを始める</button></div>`;
+    h += roomControls(g);
     $('#panel').innerHTML = h;
     return;
   }
@@ -881,6 +936,7 @@ function renderPanel(g) {
       ${ROLES.map(r => `<div>${CHARACTERS[r].title}${CHARACTERS[r].name}：${g.players[r] ? esc(g.players[r].name) : '<span class="muted">空き（AIが動かす）</span>'}</div>`).join('')}
       <p class="hint">だれもいない役はAIが動かします。始まったあとからでも、空いている役に参加できます。</p>
       <button class="primary big" id="btnStart" ${ok && S.me ? '' : 'disabled'}>ゲームを始める</button></div>`;
+    h += roomControls(g);
   } else if (g.phase === 'ended') {
     h += `<div class="sec"><h3>決着！ ${sideName(g.winner)}の勝利</h3><button id="btnEnding" class="primary">エンディングを見る</button></div>`;
   }
@@ -923,6 +979,7 @@ $('#panel').addEventListener('click', async (e) => {
   if (!b) return;
   if (b.dataset.selgen) { S.selGen = b.dataset.selgen; S.selTerr = g.generals[S.selGen].location; render(); return; }
   if (b.id === 'btnStart') return act({ type: 'start' });
+  if (b.dataset.room) return roomAction(b);
   if (b.id === 'btnEnding') return showEnding(true);
   if (b.id === 'btnReady') {
     if (S.sendTimer) await flushDraft();
@@ -1007,7 +1064,7 @@ function statusList(b, u) {
 }
 
 // 戦場の地形の模様
-const TILE_ID = { '.': 'plain', F: 'forest', R: 'river', C: 'cliff', H: 'hill', W: 'wall', S: 'stone' };
+const TILE_ID = { '.': 'plain', F: 'forest', R: 'river', C: 'cliff', H: 'hill', W: 'wall', S: 'stone', G: 'gate', T: 'tower' };
 const TILE_DEFS = `<defs>
   <pattern id="tplain" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#cfe0a4"/><path d="M8,30 l2,-6 M11,30 l1,-5 M30,14 l2,-6 M33,14 l1,-5 M34,38 l2,-5" stroke="#9cb874" stroke-width="1.4"/></pattern>
   <pattern id="tforest" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#8fb46e"/><circle cx="14" cy="16" r="9" fill="#4f7d3c"/><circle cx="32" cy="28" r="10" fill="#5a8a45"/><circle cx="16" cy="36" r="6" fill="#4f7d3c"/><rect x="31" y="36" width="2.5" height="6" fill="#6b4f2a"/></pattern>
@@ -1015,6 +1072,8 @@ const TILE_DEFS = `<defs>
   <pattern id="tcliff" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#8d7a68"/><path d="M4,40 L16,10 L28,40 Z" fill="#6f5e4f"/><path d="M22,42 L34,18 L46,42 Z" fill="#7a6857"/><path d="M12,20 L16,10 L20,20" fill="#c9bcae"/></pattern>
   <pattern id="thill" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#d8c48a"/><path d="M4,34 q19,-26 38,0" fill="none" stroke="#a88a4a" stroke-width="2"/><path d="M12,34 q11,-14 22,0" fill="none" stroke="#a88a4a" stroke-width="1.5"/></pattern>
   <pattern id="twall" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#7d776f"/><path d="M0,11.5 H46 M0,23 H46 M0,34.5 H46 M15,0 V11.5 M31,11.5 V23 M15,23 V34.5 M31,34.5 V46" stroke="#5a554e" stroke-width="2"/></pattern>
+  <pattern id="tgate" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#7d776f"/><path d="M8,46 V18 Q23,4 38,18 V46 Z" fill="#6b4a2a" stroke="#3b2a1b" stroke-width="2"/><path d="M23,10 V46 M8,28 H38" stroke="#3b2a1b" stroke-width="1.5"/></pattern>
+  <pattern id="ttower" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#7d776f"/><path d="M10,44 V14 H36 V44 Z" fill="#8a6a3e" stroke="#3b2a1b" stroke-width="2"/><path d="M8,14 L23,3 L38,14 Z" fill="#a33a2a"/><rect x="19" y="22" width="8" height="8" fill="#3b2a1b"/></pattern>
   <pattern id="tstone" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#ece3cc"/><path d="M0,23 H46 M23,0 V23 M11,23 V46 M34,23 V46" stroke="#cdbf9c" stroke-width="1.5"/><circle cx="34" cy="10" r="2" fill="#e0c97a" opacity=".7"/></pattern>
 </defs>`;
 
@@ -1030,7 +1089,7 @@ function renderBattle(g) {
   for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) {
     const tile = b.grid[y][x];
     h += `<rect x="${x * CELL}" y="${y * CELL}" width="${CELL}" height="${CELL}" fill="url(#t${TILE_ID[tile]})" stroke="rgba(60,40,10,.12)" data-cell="${x},${y}"/>`;
-    if (tile === 'W') h += `<text x="${C(x)}" y="${y * CELL + 14}" text-anchor="middle" font-size="10" fill="#fff" stroke="#333" stroke-width="2" paint-order="stroke" pointer-events="none">${b.wallHp[x + ',' + y] ?? ''}</text>`;
+    if ('WGT'.includes(tile)) h += `<text x="${C(x)}" y="${y * CELL + 14}" text-anchor="middle" font-size="10" fill="#fff" stroke="#333" stroke-width="2" paint-order="stroke" pointer-events="none">${b.wallHp[x + ',' + y] ?? ''}</text>`;
   }
   if (b.kind === 'royale' && b.zone) {
     const z = b.zone;
@@ -1422,6 +1481,10 @@ const HOWTO = [
   ['勝ち方', '王国：魔王ヤギューを倒して、陣地の大半（20個）を取る。<br>魔族：勇者3人を全員倒して陣地の大半を取る。または、王都の女王のぞちちを倒す（すぐ勝ち）。'],
   ['ふだんの1日', '① 自分の武将（金色のふちのコマ）をクリック → 光っているとなりの陣地をクリックで移動。<br>② 右の「できごと」があれば対応を選ぶ。<br>③ 内政（勇者は兵の武将に、ヤギューは右の「魔族の内政」で）を決める。<br>④ 「準備完了」を押すと、その日の結果がまとめて出る。'],
   ['合戦', '速い部隊から順番に動く。自分の番は「移動（青いマス）＋攻撃か技を1回」。★の大将を倒せば勝ち。30ターンたつと守る側の勝ち。<br>三すくみ：槍兵・オーク → 騎兵・山羊騎兵 → 弓兵・ハーピー → 槍兵・オーク（矢印の先に強い）。<br>地形：森は守りが上がる、川は遅くて守りが下がる、高台から攻撃すると強い、崖は魔族だけ通れる。'],
+  ['兵の数とダメージ', '兵1人＝HP1。部隊の体力は兵の数そのもの。本隊（勇者や幹部がいる部隊）は、先に護衛の兵が減り、兵が0になると本人のHPが減る。ヤギューは単騎。<br>ダメージ＝戦力×0.15×（攻撃÷防御）×相性×地形。戦力は兵の数（本隊は兵＋本人のHP÷2）。兵が減るほど弱くなる。<br>新しく補充した兵は新兵（弱い）。5日で一人前になる。'],
+  ['城と守り', '陣地を守る側は、城の設備で受けるダメージが減る（村の柵×0.75〜王都×0.4）。城塞都市より大きい陣地には城壁・門・櫓がある。櫓は毎ターン近くの敵に矢を射る。<br>門や城壁を壊して中に入ると、守りの有利がなくなる。ふつうの攻撃は門に半分、突進・突撃などの技は2倍効く。'],
+  ['大都市の堀江たち', '大都市は堀江・たける・ジャックナイフが守っている（毎回満タン）。勝つと退き、大都市を10日守り続けると3人そろって仲間になる。'],
+  ['追加武将', '地図の灰色のコマは、まだだれにも仕えていない武将。その陣地を取って自分の武将を置くと仲間になる。こうたろ（月見の町）・たくみ（星見の城塞）・さくや（合戦のあった村や町に現れる）・ことね（あちこちを旅する）。'],
   ['合戦のあと', '負けた側は退却する。しんがりを残すと、追ってくる敵を足止めできる。勝った側は追撃するか選べる。速さ比べで勝てば3ターンの追撃戦になり、逃げる大将を倒せばその武将は倒れる。'],
   ['戦争にはお金と食料がいる', '兵は毎日食料を食べる。食料が尽きると兵が逃げる。王都（魔王城）から自分の陣地だけでつながっていない所は補給が届かず、兵が減っていく。'],
   ['戦争は民の暮らしを壊す', '合戦があった陣地は、民が減って畑が荒れ、しばらく収穫が半分になる。勝っても負けても同じ。'],

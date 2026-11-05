@@ -55,24 +55,31 @@ export const EVENTS = [
     ],
   },
   {
-    id: 'horie', day: 10, title: '堀江の決断',
+    // 日付は決まっていない：大都市を取って10日守り続けた陣営に、堀江・たける・ジャックナイフがそろって仲間になる
+    id: 'horie', day: 1, title: '堀江の決断',
     cond: (g) => g.flags.metroStreak.days >= 10 && !g.generals.horie,
     effect: (g, h) => {
       const side = g.flags.metroStreak.side;
       g.flags.horieSide = side;
       const troops = side === 'kingdom' ? ['spear', 'cavalry', 'archer', 'spear'] : ['orc', 'goat', 'harpy', 'orc'];
-      h.addGeneral({ charId: 'horie', side, kind: 'horie', location: 16, troops: troops.map(t => h.newTroop(t, side === 'kingdom' ? 'kingdom' : 'officer')) });
+      h.addGeneral({ charId: 'horie', side, kind: 'horie', location: 16, guard: 99999, troops: troops.map(t => h.newTroop(t, side === 'kingdom' ? 'kingdom' : 'officer')) });
+      h.recruit('takeru', side);
+      h.recruit('jack', side);
     },
     linesFor: (g) => g.flags.metroStreak.side === 'kingdom' ? [
       N('大都市の商人たちのまとめ役、堀江。ヤギューとも、のぞちちとも顔なじみの人物だ。'),
       S('堀江', 'この十日、王国の兵は町の人に乱暴をしなかった。勇者たちは、守りたいもののために戦っているんだね。'),
       S('堀江', 'ヤギューの気持ちも、わからなくはない。でも……ぼくは、今ここにいる人たちを守る側に立つよ。'),
-      N('堀江が王国の仲間になった。'),
+      S('たける', '他の国を陛下の物とし、我々は進軍し続ける！'),
+      S('ジャックナイフ', '自撮り？ スーパーで撮ってるよ？'),
+      N('堀江・たける・ジャックナイフが王国の仲間になった。'),
     ] : [
       N('大都市の商人たちのまとめ役、堀江。ヤギューとも、のぞちちとも顔なじみの人物だ。'),
       S('堀江', 'この十日、魔族の兵から山の民の話を聞いた。王国の麦が、山には一度も届かなかったって。'),
       S('堀江', 'のぞちちは、いい人だよ。でも、遠くの人には目を向けない。……だれかが、それを言わなきゃいけない。'),
-      N('堀江が魔族の仲間になった。'),
+      S('たける', '他の国を陛下の物とし、我々は進軍し続ける！'),
+      S('ジャックナイフ', '自撮り？ スーパーで撮ってるよ？'),
+      N('堀江・たける・ジャックナイフが魔族の仲間になった。'),
     ],
   },
   {

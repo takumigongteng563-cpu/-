@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ヤギュー討伐戦 試作</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<style>
+/* Layout: lobby card, then a battle screen with the field on the left (top on phones) and the command panel beside it. One dark world. */
+:root {
+  --night: #15131f;
+  --panel: #201d30;
+  --panel-2: #2a2640;
+  --line: #3d3858;
+  --ink: #efe8d8;
+  --muted: #a49dbb;
+  --gold: #f0c46a;
+  --kingdom: #5b9bff;
+  --demon: #e0465f;
+  --good: #6fd39a;
+  --plain: #37452f;
+  --forest: #22402a;
+  --river: #1d4c69;
+  --hill: #5d5233;
+  --cliff: #2b2532;
+  --font-display: "DotGothic16", "Hiragino Kaku Gothic ProN", monospace;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--night);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: max(16px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-bottom, 0px));
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(24px, 5vw, 36px); margin: 0; letter-spacing: .05em; line-height: 1.2; }
+h1 .d { color: var(--demon); } h1 .k { color: var(--kingdom); }
+h2 { font-family: var(--font-display); font-weight: 400; font-size: 18px; margin: 0; }
+.note { color: var(--muted); font-size: 12px; margin: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 7px 12px; font-size: 13px; }
+.btn:hover { border-color: var(--muted); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn.primary { background: var(--gold); color: var(--night); border-color: var(--gold); font-family: var(--font-display); font-size: 18px; padding: 10px 18px; }
+.btn.danger { border-color: #7a3040; color: #ffb3bf; }
+input[type="text"], select { background: var(--night); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); padding: 6px 8px; font: inherit; min-width: 0; }
+
+/* ---------- Lobby ---------- */
+.slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 640px) { .slots { grid-template-columns: 1fr; } }
+.slot { border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--panel-2); }
+.slot.d { border-left: 4px solid var(--demon); } .slot.k { border-left: 4px solid var(--kingdom); }
+.slot .role { font-family: var(--font-display); font-size: 17px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.chip { font-family: var(--font-body); font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+.chip.host { border-color: var(--gold); color: var(--gold); }
+.chip.ai { border-color: var(--muted); }
+.chip.human { border-color: var(--good); color: var(--good); }
+.slot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.slot input { flex: 1 1 120px; }
+.lobby-foot { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.leaders { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.confirm { background: #3a1c25; border: 1px solid #7a3040; border-radius: 6px; padding: 10px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.toast { color: var(--gold); font-size: 13px; min-height: 1.6em; margin: 0; }
+
+/* ---------- Battle ---------- */
+.hud { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.round { font-family: var(--font-display); font-size: 18px; }
+.battle { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 330px); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .battle { grid-template-columns: 1fr; } }
+.fieldwrap { width: 100%; overflow-x: auto; }
+#field { position: relative; width: 100%; min-width: 0; aspect-ratio: 16 / 12; max-width: 100%; display: grid; grid-template-columns: repeat(16, 1fr); grid-template-rows: repeat(12, 1fr); border: 2px solid #0c0a14; border-radius: 4px; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+.cell { border: 0; padding: 0; position: relative; background: var(--plain); box-shadow: inset 0 0 0 .5px rgba(0,0,0,.25); }
+.cell.F { background: var(--forest); background-image: radial-gradient(circle at 30% 35%, #2f5a39 18%, transparent 19%), radial-gradient(circle at 70% 65%, #2f5a39 18%, transparent 19%); }
+.cell.R { background: var(--river); background-image: repeating-linear-gradient(170deg, transparent 0 6px, rgba(255,255,255,.07) 6px 8px); }
+.cell.H { background: var(--hill); background-image: linear-gradient(135deg, rgba(255,255,255,.08), transparent 60%); }
+.cell.C { background: var(--cliff); background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 3px, transparent 3px 8px); }
+.cell.reach::after, .cell.tgt::after { content: ""; position: absolute; inset: 2px; border-radius: 3px; pointer-events: none; }
+.cell.reach::after { background: rgba(91,155,255,.25); box-shadow: inset 0 0 0 2px rgba(91,155,255,.8); }
+.cell.tgt::after { box-shadow: inset 0 0 0 3px var(--gold); background: rgba(240,196,106,.2); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+.unit { position: absolute; width: calc(100% / 16); height: calc(100% / 12); left: calc(var(--x) * 100% / 16); top: calc(var(--y) * 100% / 12); display: grid; place-items: center; pointer-events: none; transition: left .25s, top .25s; }
+.unit .body { width: 80%; height: 80%; display: grid; place-items: center; font-family: var(--font-display); font-size: clamp(11px, 2.2vw, 20px); line-height: 1; background: var(--night); border: 2px solid currentColor; position: relative; box-shadow: 0 2px 0 rgba(0,0,0,.5); }
+.unit.troop .body { border-radius: 5px; width: 72%; height: 72%; font-size: clamp(10px, 1.8vw, 16px); }
+.unit.hero .body { border-radius: 50%; }
+.unit.solo .body { border-radius: 50%; width: 94%; height: 94%; border-width: 3px; background: #2a0d18; }
+.unit.k { color: var(--kingdom); } .unit.d { color: var(--demon); }
+.unit.now .body { box-shadow: 0 0 0 3px var(--gold), 0 0 14px var(--gold); }
+.unit.done .body { opacity: .7; }
+.unit .bar { position: absolute; left: 8%; right: 8%; bottom: 3%; height: 4px; background: rgba(0,0,0,.7); border-radius: 2px; overflow: hidden; }
+.unit .bar i { display: block; height: 100%; background: currentColor; }
+.unit .bar.hp { bottom: calc(3% + 5px); } .unit .bar.hp i { background: var(--gold); }
+.unit .num { position: absolute; top: 1%; right: 4%; font-size: 9px; font-family: var(--font-body); color: var(--ink); text-shadow: 0 1px 2px #000; }
+.unit .crown { position: absolute; top: -2%; left: 2%; font-size: 10px; color: var(--gold); font-family: var(--font-display); text-shadow: 0 1px 2px #000; }
+.pop { position: absolute; width: calc(100% / 16); text-align: center; pointer-events: none; left: calc(var(--x) * 100% / 16); top: calc(var(--y) * 100% / 12); font-family: var(--font-display); font-size: clamp(13px, 2.4vw, 20px); color: #ff9b9b; text-shadow: 0 2px 0 #000, 0 0 5px #000; animation: rise 1s ease-out forwards; z-index: 5; }
+.pop.info { color: var(--gold); font-size: clamp(10px, 1.6vw, 13px); }
+@keyframes rise { to { transform: translateY(-90%); opacity: 0; } }
+
+.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.cur .name { font-family: var(--font-display); font-size: 18px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.stats span { color: var(--muted); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; min-height: 1.6em; }
+.order { display: flex; gap: 4px; flex-wrap: wrap; font-size: 12px; }
+.order b { font-weight: 400; padding: 1px 6px; border-radius: 3px; background: var(--panel-2); }
+.order b.k { color: var(--kingdom); } .order b.d { color: var(--demon); }
+.log { max-height: 220px; overflow-y: auto; font-size: 12px; }
+.log ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.log li { color: var(--muted); } .log li:first-child { color: var(--ink); }
+.legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 6px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; border-radius: 2px; background: var(--c); }
+.overlay { position: fixed; inset: 0; background: rgba(8,6,14,.8); display: grid; place-items: center; padding: 16px; z-index: 20; }
+.overlay .card { max-width: 420px; width: 100%; text-align: center; align-items: center; }
+@media (prefers-reduced-motion: reduce) { .unit { transition: none; } .cell.tgt::after, .pop { animation-duration: .01s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1><span class="d">魔王ヤギュー</span>討伐戦 <span class="k">試作</span></h1>
+  <p class="note">合戦の部分だけを、決めた数値で試す版。1台の画面で交代して遊ぶ。</p></header>
+
+  <!-- ===== Lobby ===== -->
+  <section id="lobby" class="card" aria-label="待機場">
+    <h2>待機場</h2>
+    <div class="slots" id="slots"></div>
+    <div id="confirmBox" class="confirm" hidden>
+      <span>本当に部屋を解散する？ 全員が部屋から出ます。</span>
+      <button class="btn danger" id="disbandYes" type="button">解散する</button>
+      <button class="btn" id="disbandNo" type="button">やめる</button>
+    </div>
+    <p class="toast" id="toast"></p>
+    <div class="lobby-foot">
+      <div class="leaders">
+        <label>王国の大将 <select id="leaderK"><option value="sumire">スミレ</option><option value="noguchi">野口</option><option value="nanase">七星</option></select></label>
+        <label>魔族の大将 <select id="leaderD"><option value="yagyu">ヤギュー</option><option value="kkb">KKB</option><option value="car">CAR</option></select></label>
+      </div>
+      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn danger" id="disbandBtn" type="button">部屋を解散</button>
+        <button class="btn primary" id="startBtn" type="button">合戦を始める</button>
+      </div>
+    </div>
+    <p class="note">本番のオンライン版では「抜ける」は自分の枠にだけ、「枠を空ける」「部屋を解散」は部屋主にだけ出る。この試作は1台なので全部見えている。空いた枠は始めるときにAIになる。本番は2人からだが、試作は1人でも始められる。</p>
+  </section>
+
+  <!-- ===== Battle ===== -->
+  <section id="battle" hidden aria-label="合戦">
+    <div class="hud">
+      <div class="round" id="round"></div>
+      <div class="order" id="order"></div>
+      <button class="btn" id="quitBtn" type="button">待機場に戻る</button>
+    </div>
+    <div class="battle" style="margin-top:12px">
+      <div>
+        <div class="fieldwrap"><div id="field" role="grid" aria-label="戦場"></div></div>
+        <div class="legend">
+          <span style="--c:var(--plain)">平地</span><span style="--c:var(--forest)">森（守り＋）</span><span style="--c:var(--river)">川（遅い・守り−）</span><span style="--c:var(--hill)">高台（上から強い）</span><span style="--c:var(--cliff)">崖（魔族だけ）</span>
+        </div>
+      </div>
+      <aside class="side">
+        <div class="card cur">
+          <div class="name" id="curName"></div>
+          <div class="note" id="curSub"></div>
+          <div class="stats" id="curStats"></div>
+          <div class="actions" id="actions"></div>
+          <p class="hint" id="hint"></p>
+        </div>
+        <div class="card" id="infoCard" hidden>
+          <div class="name" id="infoName" style="font-family:var(--font-display)"></div>
+          <div class="note" id="infoSub"></div>
+          <div class="stats" id="infoStats"></div>
+        </div>
+        <div class="card log"><div class="note">戦いの記録</div><ol id="log"></ol></div>
+      </aside>
+    </div>
+  </section>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="card">
+    <h2 id="ovTitle" style="font-size:26px"></h2>
+    <p id="ovText" class="note" style="font-size:14px"></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+      <button class="btn primary" id="againBtn" type="button">もう一度</button>
+      <button class="btn" id="backBtn" type="button">待機場に戻る</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= Data (from 「ステータスと兵数の基準 v1」) ================= */
+const W = 16, H = 12;
+const MAP = [
+  "...FF....R....C.",
+  "..FFF....R...CC.",
+  ".........R......",
+  ".H.....F.R...H..",
+  ".H.....F........",
+  ".......F........",
+  "..........F.....",
+  ".........R...H..",
+  "..FF.....R......",
+  "..F......R...CC.",
+  "...F.....R....C.",
+  ".........R......"
+];
+const TERRAIN = { ".": "平地", F: "森", R: "川", H: "高台", C: "崖" };
+const TROOPS = {
+  yari:  { name: "槍兵", g: "槍", atk: 10, def: 12, mdef: 5, spd: 8,  mv: 3, rng: "adj4", cls: "heavy" },
+  kiba:  { name: "騎兵", g: "騎", atk: 12, def: 9,  mdef: 5, spd: 14, mv: 5, rng: "adj4", cls: "fast" },
+  yumi:  { name: "弓兵", g: "弓", atk: 11, def: 7,  mdef: 8, spd: 10, mv: 3, rng: "man23", cls: "ranged" },
+  orc:   { name: "オーク", g: "オ", atk: 9, def: 11, mdef: 4, spd: 7,  mv: 3, rng: "adj4", cls: "heavy" },
+  goat:  { name: "山羊騎兵", g: "山", atk: 11, def: 8, mdef: 4, spd: 13, mv: 5, rng: "adj4", cls: "fast" },
+  harpy: { name: "ハーピー", g: "ハ", atk: 10, def: 6, mdef: 7, spd: 12, mv: 4, rng: "man12", cls: "ranged" }
+};
+// Lv10 values, read off the Lv1→Lv30 table
+const HEROES = {
+  sumire:  { name: "スミレ", g: "ス", side: "k", hp: 319, atk: 27, def: 26, mag: 9,  mdef: 15, spd: 19, lead: 75, mv: 4, rng: "adj8",  magic: false, skill: "愛情魂：隣の味方への攻撃を必ずかばう。かばうたび攻撃＋5%（最大＋25%）" },
+  noguchi: { name: "野口",   g: "野", side: "k", hp: 241, atk: 8,  def: 14, mag: 28, mdef: 25, spd: 21, lead: 50, mv: 4, rng: "line2", magic: true,  skill: "くちかわき：敵の隣にいないと狙われない。攻撃した直後の1ターンだけ狙われる" },
+  nanase:  { name: "七星",   g: "七", side: "k", hp: 231, atk: 8,  def: 12, mag: 33, mdef: 21, spd: 22, lead: 60, mv: 4, rng: "line13", magic: true, skill: "洛星：自分の番のはじめに、3マス以内で一番弱っている敵に小さな星（×0.3）" },
+  yagyu:   { name: "ヤギュー", g: "王", side: "d", hp: 738, atk: 62, def: 53, mag: 28, mdef: 38, spd: 48, lead: 85, mv: 5, rng: "line12", magic: false, solo: true, skill: "始祖の力：魔族全部隊の攻防＋10%。1回だけHP半分で復活。毎ターンHP3%回復。HPが減るほど攻撃が上がる" },
+  kkb:     { name: "KKB", g: "K", side: "d", hp: 271, atk: 28, def: 22, mag: 4,  mdef: 12, spd: 11, lead: 80, mv: 4, rng: "adj4",  magic: false, skill: "にらみつける：周り2マスの敵の攻撃−10%" },
+  car:     { name: "CAR", g: "C", side: "d", hp: 221, atk: 8,  def: 11, mag: 28, mdef: 15, spd: 15, lead: 65, mv: 4, rng: "line13", magic: true, skill: "それな：2マス以内に味方がいると攻防＋30%" }
+};
+const ARMY = [
+  // owner, hero, kind, troop, x, y  (勇者は5部隊、幹部は3部隊、ヤギューは単騎＋親衛5部隊)
+  ["sumire", "sumire", "hero", null, 2, 5], ["sumire", "sumire", "troop", "yari", 3, 5], ["sumire", "sumire", "troop", "yari", 3, 6],
+  ["sumire", "sumire", "troop", "kiba", 3, 4], ["sumire", "sumire", "troop", "kiba", 2, 4],
+  ["noguchi", "noguchi", "hero", null, 0, 3], ["noguchi", "noguchi", "troop", "yumi", 1, 2], ["noguchi", "noguchi", "troop", "yumi", 2, 2],
+  ["noguchi", "noguchi", "troop", "yari", 2, 3], ["noguchi", "noguchi", "troop", "yari", 1, 3],
+  ["nanase", "nanase", "hero", null, 0, 8], ["nanase", "nanase", "troop", "yumi", 1, 7], ["nanase", "nanase", "troop", "yumi", 1, 8],
+  ["nanase", "nanase", "troop", "kiba", 2, 7], ["nanase", "nanase", "troop", "yari", 2, 8],
+  ["yagyu", "yagyu", "solo", null, 14, 5], ["yagyu", "yagyu", "troop", "orc", 13, 5], ["yagyu", "yagyu", "troop", "orc", 13, 6],
+  ["yagyu", "yagyu", "troop", "goat", 13, 4], ["yagyu", "yagyu", "troop", "goat", 12, 5], ["yagyu", "yagyu", "troop", "harpy", 14, 6],
+  ["yagyu", "kkb", "hero", null, 14, 2], ["yagyu", "kkb", "troop", "orc", 13, 2], ["yagyu", "kkb", "troop", "harpy", 13, 3],
+  ["yagyu", "car", "hero", null, 15, 8], ["yagyu", "car", "troop", "harpy", 14, 8], ["yagyu", "car", "troop", "goat", 14, 9]
+];
+const SLOTS = [
+  { key: "yagyu", role: "魔王ヤギュー", side: "d", note: "ヤギュー・親衛・KKB・CARの部隊を全部動かす" },
+  { key: "sumire", role: "勇者スミレ", side: "k", note: "スミレの部隊を動かす" },
+  { key: "noguchi", role: "賢者野口", side: "k", note: "野口の部隊を動かす" },
+  { key: "nanase", role: "魔法使い七星", side: "k", note: "七星の部隊を動かす" }
+];
+
+/* ================= Lobby ================= */
+let lobby = { slots: {}, host: null };
+function resetLobby() {
+  lobby = { slots: {}, host: null };
+  SLOTS.forEach(s => { lobby.slots[s.key] = { state: "empty", name: "" }; });
+}
+resetLobby();
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let toastTimer = null;
+function toast(msg) {
+  $("toast").textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $("toast").textContent = ""; }, 3500);
+}
+function nextHost() {
+  const h = SLOTS.find(s => lobby.slots[s.key].state === "human");
+  lobby.host = h ? h.key : null;
+}
+function renderLobby() {
+  $("slots").innerHTML = SLOTS.map(s => {
+    const sl = lobby.slots[s.key];
+    const isHost = lobby.host === s.key;
+    let chips = "", body = "", btns = "";
+    if (sl.state === "empty") {
+      chips = '<span class="chip">空き</span>';
+      btns = `<button class="btn" data-act="join" data-k="${s.key}" type="button">参加する</button>
+              <button class="btn" data-act="ai" data-k="${s.key}" type="button">AIにする</button>`;
+    } else if (sl.state === "ai") {
+      chips = '<span class="chip ai">AI</span>';
+      if (lobby.host) btns = `<button class="btn" data-act="clear" data-k="${s.key}" type="button">枠を空ける</button>`;
+    } else {
+      chips = '<span class="chip human">参加中</span>' + (isHost ? '<span class="chip host">部屋主</span>' : "");
+      body = `<input type="text" id="name-${s.key}" maxlength="10" value="${esc(sl.name)}" aria-label="${s.role}の名前">`;
+      btns = `<button class="btn" data-act="leave" data-k="${s.key}" type="button">抜ける</button>` +
+             (!isHost && lobby.host ? `<button class="btn" data-act="clear" data-k="${s.key}" type="button">枠を空ける</button>` : "");
+    }
+    return `<div class="slot ${s.side}"><div class="role">${s.role} ${chips}</div>
+      <div class="note">${s.note}</div>${body ? `<div class="row">${body}</div>` : ""}<div class="row">${btns}</div></div>`;
+  }).join("");
+  $("slots").querySelectorAll("button").forEach(b => b.addEventListener("click", () => lobbyAct(b.dataset.act, b.dataset.k)));
+  SLOTS.forEach(s => {
+    const inp = $("name-" + s.key);
+    if (inp) inp.addEventListener("input", e => { lobby.slots[s.key].name = e.target.value; });
+  });
+  $("disbandBtn").disabled = !lobby.host;
+}
+function lobbyAct(act, key) {
+  const sl = lobby.slots[key];
+  const role = SLOTS.find(s => s.key === key).role;
+  if (act === "join") {
+    sl.state = "human"; sl.name = "プレイヤー" + (SLOTS.findIndex(s => s.key === key) + 1);
+    if (!lobby.host) lobby.host = key;
+    toast(`${role}の枠に入りました。`);
+  } else if (act === "ai") {
+    sl.state = "ai"; sl.name = "";
+    toast(`${role}をAIにしました。`);
+  } else if (act === "leave") {
+    const wasHost = lobby.host === key;
+    const who = sl.name || role;
+    sl.state = "empty"; sl.name = "";
+    if (wasHost) {
+      nextHost();
+      toast(lobby.host ? `${who}が抜けました。部屋主は${lobby.slots[lobby.host].name}になりました。` : `${who}が抜けました。部屋に人がいなくなりました。`);
+    } else toast(`${who}が抜けました。`);
+  } else if (act === "clear") {
+    sl.state = "empty"; sl.name = "";
+    toast(`${role}の枠を空けました。`);
+  }
+  renderLobby();
+}
+$("disbandBtn").addEventListener("click", () => { $("confirmBox").hidden = false; $("disbandYes").focus(); });
+$("disbandNo").addEventListener("click", () => { $("confirmBox").hidden = true; });
+$("disbandYes").addEventListener("click", () => {
+  $("confirmBox").hidden = true;
+  resetLobby(); renderLobby();
+  toast("部屋を解散しました。全員が部屋から出ました。");
+});
+$("startBtn").addEventListener("click", () => {
+  if (!SLOTS.some(s => lobby.slots[s.key].state === "human")) { toast("誰も参加していません。どれかの枠で「参加する」を押してください。"); return; }
+  startBattle();
+});
+
+/* ================= Battle ================= */
+let G = null, uid = 0, busy = false;
+const cheb = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+const alive = u => u && !u.dead;
+const key = (x, y) => x + "," + y;
+const tile = (x, y) => MAP[y][x];
+
+function makeUnit(row) {
+  const [owner, heroKey, kind, troop, x, y] = row;
+  const h = HEROES[heroKey];
+  const side = h.side;
+  const u = { id: ++uid, owner, hero: heroKey, kind: kind === "troop" ? "troop" : (h.solo ? "solo" : kind), troop, side, x, y, dead: false, cover: 0, revived: false, revealed: false };
+  const capMul = side === "k" ? 5 : 3.5;
+  const cap = Math.round(h.lead * capMul);
+  if (u.kind === "troop") {
+    const t = TROOPS[troop];
+    const elite = side === "d" ? 1.3 : 1;
+    const m = (1 + h.lead / 200) * elite;
+    u.base = { atk: t.atk * m, def: t.def * m, mag: 0, mdef: t.mdef * m };
+    u.spd = t.spd; u.mv = t.mv; u.rng = t.rng; u.cls = t.cls; u.magic = false;
+    u.n = u.nMax = cap; u.hp = u.hpMax = 0;
+    u.g = t.g; u.label = `${h.name}の${t.name}`;
+  } else {
+    u.base = { atk: h.atk, def: h.def, mag: h.mag, mdef: h.mdef };
+    u.spd = h.spd; u.mv = h.mv; u.rng = h.rng; u.cls = null; u.magic = h.magic;
+    u.n = u.nMax = u.kind === "hero" ? cap : 0;
+    u.hp = u.hpMax = h.hp;
+    u.g = h.g; u.label = u.kind === "hero" ? `${h.name}（本隊）` : h.name;
+  }
+  return u;
+}
+function startBattle() {
+  uid = 0;
+  const ctrl = {};
+  SLOTS.forEach(s => {
+    const sl = lobby.slots[s.key];
+    ctrl[s.key] = sl.state === "human" ? { human: true, name: (sl.name || "").trim() || s.role } : { human: false, name: "AI" };
+  });
+  G = {
+    units: ARMY.map(makeUnit), ctrl, round: 0, queue: [], cur: null, phase: null, from: null, log: [], over: false,
+    leader: { k: $("leaderK").value, d: $("leaderD").value }
+  };
+  $("lobby").hidden = true; $("battle").hidden = false; $("overlay").hidden = true;
+  buildField();
+  addLog(`合戦開始。王国の大将は${HEROES[G.leader.k].name}、魔族の大将は${HEROES[G.leader.d].name}。`);
+  nextUnit();
+}
+function buildField() {
+  const f = $("field");
+  f.innerHTML = "";
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const c = document.createElement("button");
+    c.type = "button";
+    c.className = "cell " + (tile(x, y) === "." ? "P" : tile(x, y));
+    c.id = `c${x}_${y}`;
+    c.setAttribute("aria-label", `${x + 1}列${y + 1}行 ${TERRAIN[tile(x, y)]}`);
+    c.addEventListener("click", () => onCell(x, y));
+    c.addEventListener("mouseenter", () => { const u = unitAt(x, y); if (u) showInfo(u); });
+    f.appendChild(c);
+  }
+}
+const unitAt = (x, y) => G.units.find(u => !u.dead && u.x === x && u.y === y);
+const isLeader = u => (u.kind !== "troop") && G.leader[u.side] === u.hero;
+const yagyu = () => G.units.find(u => u.kind === "solo");
+
+/* ---- stats & damage ---- */
+function eff(u, stat, at) {
+  const pos = at || u;
+  let v = u.base[stat];
+  if (u.side === "d" && u.kind !== "solo" && alive(yagyu())) v *= 1.1;
+  if (u.side === "k" && (stat === "atk" || stat === "mag") && G.units.some(o => alive(o) && o.hero === "kkb" && o.kind === "hero" && cheb(o, pos) <= 2)) v *= 0.9;
+  if (u.hero === "car" && u.kind === "hero" && G.units.some(o => o !== u && alive(o) && o.side === "d" && cheb(o, pos) <= 2)) v *= 1.3;
+  if (u.hero === "sumire" && u.kind === "hero" && stat === "atk") v *= 1 + 0.05 * u.cover;
+  if (u.kind === "solo" && stat === "atk") v *= 1 + Math.min(0.36, 0.04 * Math.floor((1 - u.hp / u.hpMax) * 10));
+  return v;
+}
+const power = u => u.n + (u.kind === "troop" ? 0 : u.hp / 2);
+function aff(a, b) {
+  const beats = { heavy: "fast", fast: "ranged", ranged: "heavy" };
+  if (!a.cls || !b.cls) return 1;
+  if (beats[a.cls] === b.cls) return 1.5;
+  if (beats[b.cls] === a.cls) return 0.67;
+  return 1;
+}
+function calcDmg(att, ax, ay, def, mult = 1) {
+  const A = eff(att, att.magic ? "mag" : "atk", { x: ax, y: ay });
+  const D = eff(def, att.magic ? "mdef" : "def");
+  let d = power(att) * 0.15 * Math.max(0.5, Math.min(3, A / D)) * aff(att, def) * mult;
+  const td = tile(def.x, def.y), ta = tile(ax, ay);
+  if (td === "F") d *= 0.8;
+  if (td === "R") d *= 1.2;
+  if (ta === "H" && td !== "H") d *= 1.2;
+  return Math.max(1, Math.round(d));
+}
+function applyDmg(t, d) {
+  if (t.kind === "troop") t.n = Math.max(0, t.n - d);
+  else if (t.kind === "hero") { const a = Math.min(t.n, d); t.n -= a; t.hp = Math.max(0, t.hp - (d - a)); }
+  else t.hp = Math.max(0, t.hp - d);
+  popup(t, "-" + d);
+  const gone = t.kind === "troop" ? t.n <= 0 : t.hp <= 0;
+  if (gone) {
+    if (t.kind === "solo" && !t.revived) {
+      t.revived = true; t.hp = Math.round(t.hpMax / 2);
+      addLog(`${t.label}は倒れたが、始祖の力でHP半分で立ち上がった！`);
+      popup(t, "復活", "info");
+    } else { t.dead = true; addLog(`${t.label}は倒れた。`); }
+  }
+}
+
+/* ---- range & movement ---- */
+function inRange(rng, fx, fy, tx, ty) {
+  const dx = Math.abs(tx - fx), dy = Math.abs(ty - fy), m = Math.max(dx, dy), man = dx + dy;
+  const line = dx === 0 || dy === 0 || dx === dy;
+  switch (rng) {
+    case "adj8": return m === 1;
+    case "adj4": return man === 1;
+    case "line2": return line && m === 2;
+    case "line13": return line && m >= 1 && m <= 3;
+    case "line12": return line && m >= 1 && m <= 2;
+    case "man23": return man >= 2 && man <= 3;
+    case "man12": return man >= 1 && man <= 2;
+  }
+  return false;
+}
+function targetable(att, t) {
+  if (!alive(t) || t.side === att.side) return false;
+  if (t.hero === "noguchi" && t.kind === "hero" && !t.revealed && !G.units.some(e => alive(e) && e.side !== t.side && cheb(e, t) === 1)) return false;
+  return true;
+}
+function targetsFrom(u, x, y) { return G.units.filter(t => targetable(u, t) && inRange(u.rng, x, y, t.x, t.y)); }
+function moveCost(u, ch) {
+  if (ch === "C") return u.side !== "d" ? Infinity : (u.troop === "goat" || u.troop === "harpy" ? 1 : 2);
+  if (u.troop === "harpy" && (ch === "F" || ch === "R")) return 1;
+  return { ".": 1, F: 2, R: 3, H: 2 }[ch];
+}
+function reachable(u) {
+  const best = new Map([[key(u.x, u.y), 0]]);
+  const q = [[u.x, u.y, 0]];
+  while (q.length) {
+    q.sort((a, b) => a[2] - b[2]);
+    const [x, y, c] = q.shift();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const o = unitAt(nx, ny);
+      if (o && o.side !== u.side) continue;
+      const nc = c + moveCost(u, tile(nx, ny));
+      if (nc > u.mv) continue;
+      const k = key(nx, ny);
+      if (best.has(k) && best.get(k) <= nc) continue;
+      best.set(k, nc); q.push([nx, ny, nc]);
+    }
+  }
+  const out = [];
+  best.forEach((c, k) => { const [x, y] = k.split(",").map(Number); const o = unitAt(x, y); if (!o || o === u) out.push({ x, y }); });
+  return out;
+}
+
+/* ---- turn flow ---- */
+function startRound() {
+  G.round++;
+  G.queue = G.units.filter(alive).sort((a, b) => b.spd - a.spd || a.id - b.id).map(u => u.id);
+  addLog(`― 第${G.round}ターン ―`);
+}
+function nextUnit() {
+  if (G.over) return;
+  let u = null;
+  while (!u) {
+    if (!G.queue.length) startRound();
+    const id = G.queue.shift();
+    const c = G.units.find(x => x.id === id);
+    if (alive(c)) u = c;
+  }
+  G.cur = u; G.from = null;
+  // start-of-turn effects
+  if (u.hero === "noguchi" && u.kind === "hero") u.revealed = false;
+  if (u.kind === "solo" && u.hp < u.hpMax) { const r = Math.round(u.hpMax * 0.03); u.hp = Math.min(u.hpMax, u.hp + r); popup(u, "+" + r, "info"); }
+  if (u.hero === "nanase" && u.kind === "hero") {
+    const foes = G.units.filter(t => targetable(u, t) && cheb(u, t) <= 3);
+    if (foes.length) {
+      const t = foes.sort((a, b) => (a.n + a.hp) / (a.nMax + a.hpMax) - (b.n + b.hp) / (b.nMax + b.hpMax))[0];
+      const d = calcDmg(u, u.x, u.y, t, 0.3);
+      addLog(`七星の洛星が${t.label}に落ちた。`);
+      applyDmg(t, d);
+      if (checkEnd()) return;
+    }
+  }
+  const ctrl = G.ctrl[u.owner];
+  if (ctrl.human) { G.phase = "move"; busy = false; render(); }
+  else { G.phase = null; busy = true; render(); setTimeout(() => aiTurn(u), 450); }
+}
+function endTurn() {
+  G.phase = null; G.from = null;
+  if (checkEnd()) return;
+  render();
+  setTimeout(nextUnit, 250);
+}
+function doAttack(att, t) {
+  let target = t;
+  if (t.side === "k" && !(t.hero === "sumire" && t.kind === "hero")) {
+    const s = G.units.find(o => alive(o) && o.hero === "sumire" && o.kind === "hero");
+    if (s && cheb(s, t) === 1) {
+      target = s; s.cover = Math.min(5, s.cover + 1);
+      addLog(`スミレが${t.label}をかばった！`);
+      popup(s, "かばう", "info", -0.3);
+    }
+  }
+  const d = calcDmg(att, att.x, att.y, target);
+  addLog(`${att.label}の攻撃。${target.label}に${d}。`);
+  applyDmg(target, d);
+  if (att.hero === "noguchi" && att.kind === "hero") att.revealed = true;
+}
+function checkEnd() {
+  if (G.over) return true;
+  for (const side of ["k", "d"]) {
+    const lead = G.units.find(u => u.side === side && u.kind !== "troop" && u.hero === G.leader[side]);
+    const any = G.units.some(u => u.side === side && alive(u));
+    if (!alive(lead) || !any) {
+      G.over = true; render();
+      const win = side === "k" ? "魔族" : "王国";
+      $("ovTitle").textContent = `${win}の勝ち`;
+      $("ovTitle").style.color = side === "k" ? "var(--demon)" : "var(--kingdom)";
+      $("ovText").textContent = `${HEROES[G.leader[side]].name}（大将）が倒れた。第${G.round}ターンで決着。`;
+      setTimeout(() => { $("overlay").hidden = false; $("againBtn").focus(); }, 500);
+      return true;
+    }
+  }
+  return false;
+}
+
+/* ---- human input ---- */
+function onCell(x, y) {
+  if (!G || G.over) return;
+  const here = unitAt(x, y);
+  if (here) showInfo(here);
+  if (busy || !G.phase) return;
+  const u = G.cur;
+  const tgt = targetsFrom(u, u.x, u.y).find(t => t.x === x && t.y === y);
+  if (tgt && (G.phase === "move" || G.phase === "act")) { doAttack(u, tgt); endTurn(); return; }
+  if (G.phase === "move") {
+    if (x === u.x && y === u.y) { G.phase = "act"; G.from = { x, y }; render(); return; }
+    if (reachable(u).some(p => p.x === x && p.y === y)) {
+      G.from = { x: u.x, y: u.y }; u.x = x; u.y = y; G.phase = "act"; render();
+    }
+  }
+}
+function undoMove() {
+  const u = G.cur;
+  if (G.from) { u.x = G.from.x; u.y = G.from.y; }
+  G.from = null; G.phase = "move"; render();
+}
+
+/* ---- AI ---- */
+function aiTurn(u) {
+  if (G.over) return;
+  let best = null;
+  for (const p of reachable(u)) {
+    for (const t of targetsFrom(u, p.x, p.y)) {
+      const d = calcDmg(u, p.x, p.y, t);
+      const left = t.kind === "troop" ? t.n : t.n + t.hp;
+      let score = d + (d >= left ? 400 : 0) + (isLeader(t) ? d * 0.5 : 0);
+      if (u.rng !== "adj4" && u.rng !== "adj8" && G.units.some(e => alive(e) && e.side !== u.side && cheb(e, p) === 1)) score -= d * 0.3;
+      if (!best || score > best.score) best = { p, t, score };
+    }
+  }
+  if (best) {
+    u.x = best.p.x; u.y = best.p.y; render();
+    setTimeout(() => { if (G.over) return; doAttack(u, best.t); busy = false; endTurn(); }, 300);
+    return;
+  }
+  const foes = G.units.filter(t => alive(t) && t.side !== u.side);
+  const near = p => Math.min(...foes.map(t => Math.abs(t.x - p.x) + Math.abs(t.y - p.y)));
+  const opts = reachable(u).sort((a, b) => near(a) - near(b));
+  if (opts.length && near(opts[0]) < near(u)) { u.x = opts[0].x; u.y = opts[0].y; }
+  addLog(`${u.label}は前に進んだ。`);
+  busy = false; endTurn();
+}
+
+/* ---- render ---- */
+function render() {
+  if (!G) return;
+  const u = G.cur;
+  document.querySelectorAll(".cell").forEach(c => c.classList.remove("reach", "tgt"));
+  if (u && G.phase && !busy) {
+    if (G.phase === "move") reachable(u).forEach(p => { if (p.x !== u.x || p.y !== u.y) $(`c${p.x}_${p.y}`).classList.add("reach"); });
+    targetsFrom(u, u.x, u.y).forEach(t => $(`c${t.x}_${t.y}`).classList.add("tgt"));
+  }
+  const f = $("field");
+  const ids = new Set(G.units.filter(alive).map(x => "u" + x.id));
+  f.querySelectorAll(".unit").forEach(el => { if (!ids.has(el.id)) el.remove(); });
+  G.units.filter(alive).forEach(x => {
+    let el = $("u" + x.id);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "u" + x.id;
+      el.innerHTML = '<div class="body"><span class="g"></span><span class="num"></span><span class="crown"></span><div class="bar hp"><i></i></div><div class="bar n"><i></i></div></div>';
+      f.appendChild(el);
+    }
+    el.className = `unit ${x.kind} ${x.side}${x === u && !G.over ? " now" : ""}`;
+    el.style.setProperty("--x", x.x); el.style.setProperty("--y", x.y);
+    el.querySelector(".g").textContent = x.g;
+    el.querySelector(".num").textContent = x.kind === "solo" ? x.hp : x.n;
+    el.querySelector(".crown").textContent = isLeader(x) ? "将" : "";
+    const hpBar = el.querySelector(".bar.hp"), nBar = el.querySelector(".bar.n");
+    hpBar.hidden = x.kind === "troop";
+    nBar.hidden = x.kind === "solo";
+    hpBar.querySelector("i").style.width = (x.hpMax ? 100 * x.hp / x.hpMax : 0) + "%";
+    nBar.querySelector("i").style.width = (x.nMax ? 100 * x.n / x.nMax : 0) + "%";
+  });
+  $("round").textContent = `第${G.round}ターン`;
+  const upcoming = [u, ...G.queue.map(id => G.units.find(x => x.id === id)).filter(alive)].filter(Boolean).slice(0, 7);
+  $("order").innerHTML = "行動順：" + upcoming.map(x => `<b class="${x.side}">${esc(x.kind === "troop" ? x.g : HEROES[x.hero].name)}</b>`).join("");
+  if (u) {
+    const ctrl = G.ctrl[u.owner];
+    $("curName").textContent = u.label;
+    $("curName").style.color = u.side === "k" ? "var(--kingdom)" : "var(--demon)";
+    $("curSub").textContent = `${ctrl.human ? ctrl.name + "の操作" : "AIの操作"} ・ ${TERRAIN[tile(u.x, u.y)]}にいる`;
+    $("curStats").innerHTML = statsHtml(u);
+  }
+  const acts = [];
+  if (G.phase === "act" && !busy) {
+    acts.push('<button class="btn" id="waitBtn" type="button">待機（攻撃しない）</button>');
+    if (G.from && (G.from.x !== u.x || G.from.y !== u.y)) acts.push('<button class="btn" id="undoBtn" type="button">移動をやり直す</button>');
+  } else if (G.phase === "move" && !busy) {
+    acts.push('<button class="btn" id="waitBtn" type="button">待機（何もしない）</button>');
+  }
+  $("actions").innerHTML = acts.join("");
+  if ($("waitBtn")) $("waitBtn").addEventListener("click", () => { addLog(`${u.label}は待機した。`); endTurn(); });
+  if ($("undoBtn")) $("undoBtn").addEventListener("click", undoMove);
+  $("hint").textContent = busy ? "AIが考えています……" : G.phase === "move" ? "青いマスで移動、光る敵をそのまま攻撃もできる。自分のマスを押すとその場で行動。" : G.phase === "act" ? "光る敵を押して攻撃。" : "";
+  $("log").innerHTML = G.log.slice(0, 60).map(l => `<li>${esc(l)}</li>`).join("");
+}
+function statsHtml(x) {
+  const s = (k) => Math.round(eff(x, k));
+  const rows = [];
+  if (x.kind !== "troop") rows.push(`<div><span>HP</span> ${x.hp}/${x.hpMax}</div>`);
+  if (x.kind !== "solo") rows.push(`<div><span>兵</span> ${x.n}/${x.nMax}</div>`);
+  rows.push(`<div><span>攻</span> ${s("atk")}</div>`, `<div><span>防</span> ${s("def")}</div>`);
+  if (x.kind !== "troop") rows.push(`<div><span>魔</span> ${s("mag")}</div>`);
+  rows.push(`<div><span>魔防</span> ${s("mdef")}</div>`, `<div><span>速</span> ${x.spd}</div>`, `<div><span>移動</span> ${x.mv}</div>`);
+  return rows.join("");
+}
+function showInfo(x) {
+  $("infoCard").hidden = false;
+  $("infoName").textContent = x.label + (isLeader(x) ? "（大将）" : "");
+  $("infoName").style.color = x.side === "k" ? "var(--kingdom)" : "var(--demon)";
+  const extra = x.kind === "troop" ? `${TROOPS[x.troop].name}・${{ heavy: "重い兵", fast: "速い兵", ranged: "遠距離の兵" }[x.cls]}` : HEROES[x.hero].skill;
+  $("infoSub").textContent = extra;
+  $("infoStats").innerHTML = statsHtml(x);
+}
+function popup(u, text, cls = "", dy = 0) {
+  const el = document.createElement("div");
+  el.className = "pop " + cls;
+  el.textContent = text;
+  el.style.setProperty("--x", u.x); el.style.setProperty("--y", u.y + dy);
+  $("field").appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+function addLog(t) { G.log.unshift(t); }
+function toLobby() {
+  G = null; busy = false;
+  $("overlay").hidden = true; $("battle").hidden = true; $("lobby").hidden = false;
+  renderLobby();
+}
+$("quitBtn").addEventListener("click", toLobby);
+$("backBtn").addEventListener("click", toLobby);
+$("againBtn").addEventListener("click", startBattle);
+renderLobby();
+</script>
+</body>
+</html>

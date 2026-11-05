@@ -1,9 +1,9 @@
 // 合戦（戦場画面のターン制バトル）
 import {
-  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, gameStats, evenStats,
+  TERRITORIES, UNIT_TYPES, QUALITY, CHARACTERS, HERO_ROLES, BATTLE_W, BATTLE_H, MAX_ROUNDS, gameStats, evenStats, genLead, guardCap, castleOf,
 } from '../shared/data.js';
 import {
-  reachable, targetsFrom, damage, getStat, getRange, reachTiles, isTargetable, unitAt, cheb, inBounds, moveCost, WALL_HP,
+  reachable, targetsFrom, damage, getStat, getRange, reachTiles, isTargetable, unitAt, cheb, inBounds, moveCost, unitPower,
 } from '../shared/battlecore.js';
 import { skillList, skillTargets, areaTiles } from '../shared/skills.js';
 
@@ -19,7 +19,7 @@ function rng(seed) {
 }
 
 // 陣地の地形から戦場を作る
-export function makeGrid(terr, { walls, seed }) {
+export function makeGrid(terr, { walls, seed, towers = 0 }) {
   const rand = rng(seed);
   const g = Array.from({ length: BATTLE_H }, () => Array(BATTLE_W).fill('.'));
   const sprinkle = (ch, rate, x0 = 3, x1 = 13) => {
@@ -61,7 +61,11 @@ export function makeGrid(terr, { walls, seed }) {
     }
   }
   if (walls) {
-    for (let y = 0; y < BATTLE_H; y++) if (y !== 2 && y !== 8) g[y][11] = 'W';
+    // 城壁（11列目）と、まん中の門。櫓は城壁の上に等間隔
+    for (let y = 0; y < BATTLE_H; y++) g[y][11] = 'W';
+    g[5][11] = 'G';
+    const rows = { 2: [2, 8], 4: [1, 3, 7, 9], 6: [0, 2, 4, 6, 8, 10] }[towers] || [];
+    for (const y of rows) g[y][11] = 'T';
   }
   // 攻める側の出撃地点は平らにする
   for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < 3; x++) if (g[y][x] !== 'S') g[y][x] = '.';
@@ -69,16 +73,10 @@ export function makeGrid(terr, { walls, seed }) {
 }
 
 export function hasWalls(game, terr) {
-  const size = terr.size;
-  if (terr.id === 0) {
-    // 王都の城壁は、まわりの砦（近衛の砦・白百合の城塞）が王国にあるかぎり残る
-    return game.territories[2].owner === 'kingdom' || game.territories[3].owner === 'kingdom';
-  }
-  const f = game.territories[terr.id].facility;
-  return size === 'fortress' || size === 'metropolis' || f === 'fort' || f === 'rock';
+  return castleOf(game, terr.id).gate > 0;
 }
 
-const COMMANDER_RANK = { yagyu: 100, nozomi: 90, sumire: 80, noguchi: 79, nanase: 78, horie: 70, kkb: 62, oh: 61, car: 60, yuki: 30 };
+const COMMANDER_RANK = { yagyu: 100, nozomi: 90, sumire: 80, noguchi: 79, nanase: 78, horie: 70, kkb: 62, oh: 61, car: 60, kotone: 55, takeru: 54, jack: 50, takumi: 48, sakuya: 47, kotaro: 45, yuki: 30 };
 function commanderRank(gen) {
   if (gen.charId) return COMMANDER_RANK[gen.charId] || 50;
   if (gen.kind === 'majo') return 40;
@@ -88,7 +86,9 @@ function commanderRank(gen) {
 
 function troopUnit(game, gen, troop, side) {
   const t = UNIT_TYPES[troop.type];
-  let q = QUALITY[troop.q] || 1;
+  // 兵の部隊の強さ：兵種の値×（1＋統率÷200）。幹部の部隊・親衛は×1.3。新兵は×0.8（訓練5日で戻る）
+  let q = (QUALITY[troop.q] || 1) * (1 + genLead(game, gen) / 200);
+  if (troop.raw && troop.hp > 0) q *= 1 - 0.2 * Math.min(1, troop.raw / troop.hp);
   let wq = 1, aq = 1;
   // 訓練と兵の装備は、王国（群雄割拠ではどの勢力でも）の兵に効く
   const K = game.resources[side];
@@ -99,22 +99,26 @@ function troopUnit(game, gen, troop, side) {
   }
   return {
     kind: 'troop', type: troop.type, name: `${gen.name}隊・${t.name}`, label: t.label,
-    atk: Math.round(t.atk * q * wq), def: Math.round(t.def * q * aq * (1 + (troop.defBonus || 0))), mag: Math.round(t.mag * q), mdef: Math.round(t.mdef * q),
+    atk: Math.round(t.atk * q * wq * 10) / 10, def: Math.round(t.def * q * aq * (1 + (troop.defBonus || 0)) * 10) / 10,
+    mag: Math.round(t.mag * q * 10) / 10, mdef: Math.round(t.mdef * q * 10) / 10,
     spd: t.spd, move: t.move, range: t.range, dmg: t.dmg, tri: t.tri, flyer: !!t.flyer, climber: !!t.climber,
-    hp: troop.hp, max: troop.max, troopRef: troop.uid,
+    hp: troop.hp, max: Math.max(troop.max, troop.hp), troopRef: troop.uid,
   };
 }
 
+// 本隊：hp は「護衛の兵＋本人のHP」。護衛の兵が先に減り、0になると本人のHPが減る
 export function leaderUnit(game, gen) {
   const c = CHARACTERS[gen.charId];
   const level = game.chars[gen.charId]?.level || 1;
   const st = gameStats(game, gen.charId);
   let mot = 1;
   if (gen.charId === 'nanase') mot = game.flags.nanaseMotivation || 1;
+  const gcap = guardCap(game, gen);
+  const guard = Math.min(gen.guard || 0, gcap);
   return {
     kind: gen.charId === 'yagyu' ? 'yagyu' : 'char', charId: gen.charId, name: c.name, label: c.label, level,
     atk: Math.round(st.atk * mot), def: st.def, mag: Math.round(st.mag * mot), mdef: st.mdef, spd: st.spd, move: st.move,
-    range: c.range, dmg: c.dmg, tri: null, solo: !!c.solo, hp: gen.hp, max: st.hp, isLeaderUnit: true,
+    range: c.range, dmg: c.dmg, tri: null, solo: !!c.solo, hp: gen.hp + guard, max: st.hp + gcap, charMax: st.hp, isLeaderUnit: true,
     mp: st.mp, maxMp: st.mp,
   };
 }
@@ -122,8 +126,11 @@ export function leaderUnit(game, gen) {
 // 合戦の準備
 export function createBattle(game, { territoryId, attackerSide, defenderSide, attackers, defenders }) {
   const terr = TERRITORIES[territoryId];
-  const walls = hasWalls(game, terr);
-  const grid = makeGrid(terr, { walls, seed: game.day * 131 + territoryId * 7 + game.battleCount });
+  // 陣地を持っている側が守るときだけ、城の守りが効く
+  const home = game.territories[territoryId].owner === defenderSide;
+  const castle = castleOf(game, territoryId);
+  const walls = home && castle.gate > 0;
+  const grid = makeGrid(terr, { walls, towers: castle.towers, seed: game.day * 131 + territoryId * 7 + game.battleCount });
   const battle = {
     id: 'b' + (++game.battleCount), territoryId, attackerSide, defenderSide,
     grid, wallHp: {}, units: [], order: [], idx: -1, round: 0, active: null, log: [], result: null, hits: [],
@@ -131,7 +138,17 @@ export function createBattle(game, { territoryId, attackerSide, defenderSide, at
     generals: { attacker: attackers.slice(0, 5), defender: defenders.slice(0, 5) },
     reserve: { attacker: attackers.slice(5), defender: defenders.slice(5) },
   };
-  for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) if (grid[y][x] === 'W') battle.wallHp[x + ',' + y] = WALL_HP;
+  for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) {
+    const c = grid[y][x];
+    if (c === 'G') battle.wallHp[x + ',' + y] = castle.gate;
+    if (c === 'W') battle.wallHp[x + ',' + y] = castle.gate * 2;
+    if (c === 'T') battle.wallHp[x + ',' + y] = TOWER_HP;
+  }
+  battle.siege = walls;
+  if (home) {
+    battle.castle = { name: castle.name, take: castle.take, deal: castle.deal, breached: false };
+    battle.wallX = 11;
+  }
 
   let uid = 0;
   for (const role of ['attacker', 'defender']) {
@@ -142,12 +159,13 @@ export function createBattle(game, { territoryId, attackerSide, defenderSide, at
     const front = [], back = [];
     for (const gen of gens) {
       const ctrl = gen.controller;
+      const tags = { takeru: gen.charId === 'takeru' || undefined };
       if (gen.charId) {
-        back.push({ ...leaderUnit(game, gen), genId: gen.id, controller: ctrl, isCommander: gen.id === commander.id });
+        back.push({ ...leaderUnit(game, gen), ...tags, master: gen.master, fed: gen.fed, genId: gen.id, controller: ctrl, isCommander: gen.id === commander.id });
       }
       for (const tr of gen.troops) {
         if (tr.hp <= 0) continue;
-        const u = { ...troopUnit(game, gen, tr, side), genId: gen.id, controller: ctrl };
+        const u = { ...troopUnit(game, gen, tr, side), ...tags, genId: gen.id, controller: ctrl };
         // キャラのいない武将（兵の武将・魔将・守備隊）が大将なら、その最初の部隊が大将
         if (!gen.charId && gen.id === commander.id && !back.some(b => b.isCommander)) {
           u.isCommander = true; back.push(u);
@@ -162,7 +180,7 @@ export function createBattle(game, { territoryId, attackerSide, defenderSide, at
         if (battle.units.some(o => o.x === x && o.y === y)) continue;
         const tile = grid[y][x];
         if (tile === 'C' && side !== 'demon') continue;
-        if (tile === 'W' && role !== 'defender') continue;
+        if ('WGT'.includes(tile) && role !== 'defender') continue;
         u.x = x; u.y = y; return true;
       }
       return false;
@@ -227,6 +245,11 @@ function applyDamage(b, src, t, dmg, label) {
       if (src) src.kills++;
       b.actionKills = (b.actionKills || 0) + 1;
       b.fallen[t.side] = (b.fallen[t.side] || 0) + 1;
+      // みんなすごーい（ことね）
+      if (src && b.units.some(x => x.alive && x.charId === 'kotone' && x.side === src.side)) {
+        b.sugoi ||= {};
+        b.sugoi[src.side] = Math.min(4, (b.sugoi[src.side] || 0) + 1);
+      }
       if (t.charge) t.charge = null;
       b.log.push(`${t.name} が倒れた`);
     }
@@ -261,7 +284,7 @@ function strike(b, att, def, opts = {}) {
   let dmg = damage(b, att, def, opts);
   if (opts.execute && !def.solo && def.hp <= def.max * 0.3) { dmg = def.hp; b.log.push('一刀両断！'); }
   applyDamage(b, att, def, dmg, opts.label);
-  if (def.charge && HERO_ROLES.includes(att.charId)) {
+  if (def.charge && def.charge.id !== 'manpuku' && HERO_ROLES.includes(att.charId)) {
     def.charge = null;
     def.effects = def.effects.filter(e => e.tag !== 'chargeGuard');
     b.log.push(`${def.name}の溜めが消えた`);
@@ -300,6 +323,10 @@ function dash(b, u, [dx, dy], maxSteps, opts) {
       if (opts.push && r.target === occ) pushBack(b, occ, dx, dy);
       return;
     }
+    if (!occ && 'WGT'.includes(b.grid[ny][nx]) && u.side !== b.defenderSide) {
+      hitStructure(b, u, nx, ny, 2 * (opts.mult || 1), opts.label);
+      return;
+    }
     if (occ || moveCost(b.grid[ny][nx], u, b) === Infinity) break;
     u.x = nx; u.y = ny;
   }
@@ -315,6 +342,9 @@ function fireCharge(b, u) {
   if (id === 'shogeki') {
     b.log.push(`${u.name} の衝撃波！`);
     areaDamage(b, u, lineTiles(u, dir, 3), { mult: 1.5, label: '衝撃波' });
+  } else if (id === 'manpuku') {
+    b.log.push(`${u.name} の満腹ドーン！`);
+    areaDamage(b, u, areaTiles('sq:1', u.x, u.y), { mult: 1.3, label: '満腹ドーン' });
   } else if (id === 'totsugeki') {
     b.log.push(`${u.name} の突撃！`);
     dash(b, u, dir, 4, { mult: 2.2, label: '突撃' });
@@ -418,8 +448,9 @@ function useSkill(b, u, s, tgt) {
     case 'girori': addEffect(t, { stat: 'move', add: -1, until: r + 2 }); addEffect(t, { stat: 'atk', mult: 0.85, until: r + 2 }); break;
     case 'shogeki':
     case 'totsugeki':
-      u.charge = { id: s.id, dir: tgt.dir };
-      if (s.id === 'totsugeki') addEffect(u, { stat: 'def', mult: 1.3, until: r + 5, tag: 'chargeGuard' });
+    case 'manpuku':
+      u.charge = { id: s.id, dir: tgt?.dir };
+      if (s.id === 'totsugeki' || s.id === 'manpuku') addEffect(u, { stat: 'def', mult: 1.3, until: r + 5, tag: 'chargeGuard' });
       if (u.instantCharge) { u.instantCharge = false; fireCharge(b, u); }
       else b.log.push(`${u.name} は力を溜めている…`);
       break;
@@ -450,6 +481,7 @@ function roundStart(b) {
   for (const u of b.units) u.effects = u.effects.filter(e => e.until >= r);
   b.dark = b.dark.filter(d => d.until >= r);
   b.rain = b.rain.filter(d => d.until >= r);
+  towersFire(b);
   for (const u of b.units) if (u.alive && u.maxMp) u.mp = Math.min(u.maxMp, u.mp + 2);
 
   // 種爆弾
@@ -461,6 +493,18 @@ function roundStart(b) {
 
   for (const u of b.units.filter(x => x.alive)) {
     if (u.charId === 'yagyu') heal(b, u, u.max * 0.03, '始祖の力');
+    if (u.charId === 'sakuya') {
+      // ともしび：近くに敵がいれば照らす（防御-15%・隠れていても狙える）、いなければ味方をはげます（攻撃+15%）
+      const foes = b.units.filter(x => x.alive && x.side !== u.side && cheb(x, u) <= 2);
+      if (foes.length) {
+        for (const x of foes) { addEffect(x, { stat: 'def', mult: 0.85, until: r }); x.visibleUntil = r; }
+        b.log.push('さくや「照らすよ？」 近くの敵の守りが下がった');
+      } else {
+        const friends = b.units.filter(x => x.alive && x.side === u.side && cheb(x, u) <= 2);
+        for (const x of friends) addEffect(x, { stat: 'atk', mult: 1.15, until: r });
+        if (friends.length) b.log.push('さくや「はげさすよ？」 近くの味方の攻撃が上がった');
+      }
+    }
     if (u.poisonUntil != null && r <= u.poisonUntil) applyDamage(b, null, u, Math.max(1, Math.round(u.max * 0.06)), '毒');
     if (u.charId === 'oh' && lvOK(u, 20)) {
       for (const x of b.units) if (x.alive && x.side === u.side && cheb(x, u) <= 1) heal(b, x, x.max * 0.05, '自然の恵み');
@@ -489,6 +533,13 @@ function roundStart(b) {
     .sort((a, c) => getStat(b, c, 'spd') - getStat(b, a, 'spd') || a.role.localeCompare(c.role) || a.id.localeCompare(c.id))
     .map(u => u.id);
   b.order = [...b.order.filter(id => !last.includes(id)), ...b.order.filter(id => last.includes(id))];
+  // エスコート（こうたろ）：主と同じ戦場では、主のすぐあとに動く
+  for (const k of b.units.filter(x => x.alive && x.charId === 'kotaro' && x.master)) {
+    const m = b.units.find(x => x.alive && x.charId === k.master && x.side === k.side);
+    if (!m) continue;
+    b.order = b.order.filter(id => id !== k.id);
+    b.order.splice(b.order.indexOf(m.id) + 1, 0, k.id);
+  }
   b.idx = 0;
 }
 
@@ -550,17 +601,32 @@ export function activeUnit(battle) {
   return battle.active && battle.units.find(u => u.id === battle.active.unitId);
 }
 
-function doAttackWall(battle, att, x, y) {
+// 門・城壁・櫓を攻撃する。ふつうの攻撃は半分、突進系の技は2倍効く
+export const TOWER_HP = 300;
+const STRUCT_NAME = { W: '城壁', G: '門', T: '櫓' };
+function hitStructure(battle, att, x, y, mult, label) {
   const P = att.dmg === 'mag' ? getStat(battle, att, 'mag') : Math.max(getStat(battle, att, 'atk'), att.dmg === 'best' ? getStat(battle, att, 'mag') : 0);
-  const dmg = Math.round(P * P / (P + 30) * 4 * (att.solo ? 1 : 0.5 + 0.5 * att.hp / att.max));
+  const dmg = Math.max(1, Math.round(unitPower(att) * 0.15 * Math.max(0.5, Math.min(3, P / 10)) * mult));
   const k = x + ',' + y;
+  const kind = battle.grid[y][x];
   battle.wallHp[k] -= dmg;
-  battle.log.push(`${att.name} が城壁を攻撃：${dmg}`);
+  battle.log.push(`${att.name}${label ? 'の' + label : ''} → ${STRUCT_NAME[kind]}：${dmg}`);
   if (att.charId === 'noguchi') att.visibleUntil = battle.round + 1;
   if (battle.wallHp[k] <= 0) {
     battle.grid[y][x] = '.';
     delete battle.wallHp[k];
-    battle.log.push('城壁がくずれた');
+    battle.log.push(`${STRUCT_NAME[kind]}がくずれた`);
+    if (kind !== 'T' && battle.castle && !battle.castle.breached) { battle.castle.breached = true; battle.log.push('城が破られた！ 中に入られると、守りの有利がなくなる'); }
+  }
+}
+function doAttackWall(battle, att, x, y) { hitStructure(battle, att, x, y, 0.5); }
+
+// 櫓：毎ターンのはじめに、3マス以内で一番弱っている敵に矢を射る（約40）
+function towersFire(b) {
+  for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) {
+    if (b.grid[y][x] !== 'T') continue;
+    const foes = b.units.filter(u => u.alive && u.role === 'attacker' && cheb(u, { x, y }) <= 3).sort((a, c) => a.hp / a.max - c.hp / c.max);
+    if (foes[0]) applyDamage(b, null, foes[0], 40, '櫓の矢');
   }
 }
 
@@ -624,6 +690,7 @@ export function applyBattleAction(battle, role, action) {
       if (a.moved) throw new Error('もう移動しました');
       if (!reachable(battle, u).some(([x, y]) => x === action.x && y === action.y)) throw new Error('そこへは動けません');
       u.x = action.x; u.y = action.y; a.moved = true;
+      if (a.moveOnly) nextActive(battle); // 自撮りのあとの移動
       return;
     }
     case 'undo':
@@ -631,20 +698,37 @@ export function applyBattleAction(battle, role, action) {
       return;
     case 'attack': {
       if (pacified) throw new Error('とりなされていて攻撃できません');
+      if (a.moveOnly) throw new Error('今は移動か待機だけです');
       const t = battle.units.find(x => x.id === action.targetId);
       if (!t || !t.alive || !targetsFrom(battle, u, u.x, u.y).units.includes(t)) throw new Error('攻撃が届きません');
       battle.hits = [];
+      const { x: tx, y: ty } = t;
       strike(battle, u, t);
+      // 全軍進撃（たけるの軍）：相手のまわり十字にも当たる。味方も巻き込む
+      if (u.takeru) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const o = unitAt(battle, tx + dx, ty + dy);
+          if (o && o !== u) applyDamage(battle, u, o, damage(battle, u, o, { mult: 0.6 }), '全軍進撃');
+        }
+      }
+      // 自撮り（ジャックナイフ）：動く前に攻撃したら、そのあと移動できる
+      if (u.charId === 'jack' && !a.moved && u.alive && !checkEnd(battle)) {
+        battle.active = { unitId: u.id, moved: false, ox: u.x, oy: u.y, extra: true, moveOnly: true, noSkill: true };
+        battle.log.push('ジャックナイフ「自撮り？」 まだ動ける');
+        return;
+      }
       break;
     }
     case 'attackWall': {
       if (pacified) throw new Error('とりなされていて攻撃できません');
+      if (a.moveOnly) throw new Error('今は移動か待機だけです');
       const { walls } = targetsFrom(battle, u, u.x, u.y);
       if (!walls.some(([x, y]) => x === action.x && y === action.y)) throw new Error('城壁に届きません');
       doAttackWall(battle, u, action.x, action.y);
       break;
     }
     case 'skill': {
+      if (a.moveOnly) throw new Error('今は移動か待機だけです');
       const s = skillList(battle, u).find(x => x.id === action.skillId);
       if (!s) throw new Error('その技はありません');
       if (!s.ok) throw new Error(s.why);
@@ -674,7 +758,7 @@ function bestSkillUse(b, u, s) {
   const close = enemies.some(e => cheb(e, u) <= 4);
   const dmgScore = (t, opts) => {
     const d = damage(b, u, t, opts);
-    let sc = Math.min(d, t.hp) * (t.solo ? 0.6 : 1);
+    let sc = Math.min(d, t.hp) * (t.solo && b.kind !== 'royale' ? 0.6 : 1);
     if (d >= t.hp) sc += 120;
     if (t.isCommander) sc += d >= t.hp ? 2000 : 40;
     return sc;
@@ -709,6 +793,7 @@ function bestSkillUse(b, u, s) {
     case 'mayagi': consider(areaScore(areaTiles('sq:1', u.x, u.y), {}) - cost, {}); break;
     case 'trashbox': consider(areaScore(areaTiles('sq:3', u.x, u.y), { mult: 0.6 + 0.15 * (b.fallen[u.side] || 0) }) - cost, {}); break;
     case 'star7': consider(enemies.sort((a, c) => a.hp / a.max - c.hp / c.max).slice(0, 7).reduce((a, t) => a + dmgScore(t, { mult: 1.2 }), 0) - cost, {}); break;
+    case 'manpuku': consider(areaScore(areaTiles('sq:1', u.x, u.y), { mult: 1.3 }) * 0.6 - cost, {}); break;
     case 'tosshin': case 'totsugeki': case 'suigyu': case 'shogeki': {
       for (const [x, y] of cells) {
         const dir = [x - u.x, y - u.y];
@@ -772,6 +857,7 @@ function bestSkillUse(b, u, s) {
 export function aiStep(battle) {
   const u = activeUnit(battle);
   if (!u) return;
+  if (battle.active.moveOnly) { applyBattleAction(battle, null, { type: 'wait' }); return; }
   const b = battle;
   const enemies = enemiesOf(b, u);
   const tiles = reachable(b, u);
@@ -785,7 +871,7 @@ export function aiStep(battle) {
     const { units, walls } = targetsFrom(b, u, x, y);
     if (!pacified) for (const t of units) {
       const d = damage(b, u, t);
-      let score = Math.min(d, t.hp) * (t.solo ? 0.6 : 1);
+      let score = Math.min(d, t.hp) * (t.solo && b.kind !== 'royale' ? 0.6 : 1);
       if (d >= t.hp) score += 150;
       if (t.isCommander) score += d >= t.hp ? 2000 : 60;
       score -= danger;
@@ -913,7 +999,7 @@ function queenSupport(b) {
   const foeHp = foes.reduce((a, u) => a + u.hp, 0);
   const canPay = (k) => sp.budget - sp.spent >= SUPPORT[k].gold;
   // 魔法を撃つなら、敵が一番集まっている所
-  const queen = { name: 'のぞちち', side, atk: sp.atk, mag: sp.mag, dmg: 'mag', solo: true, effects: [], dealt: 0, kills: 0, x: 0, y: 0 };
+  const queen = { name: 'のぞちち', side, atk: sp.atk, mag: sp.mag, dmg: 'mag', solo: true, hp: 400, max: 400, effects: [], dealt: 0, kills: 0, x: 0, y: 0 };
   let cluster = null;
   for (let y = 0; y < BATTLE_H; y++) for (let x = 0; x < BATTLE_W; x++) {
     const tiles = areaTiles('3x3', x, y);
@@ -961,8 +1047,8 @@ function queenSupport(b) {
       const t = UNIT_TYPES.spear;
       const u = {
         id: 'q' + b.round, kind: 'troop', type: 'spear', name: '王都の援軍・槍兵', label: '槍', side, role, controller: 'ai',
-        atk: t.atk, def: t.def, mag: t.mag, mdef: t.mdef, spd: t.spd, move: t.move, range: t.range, dmg: t.dmg, tri: t.tri,
-        hp: 200, max: 300, alive: true, dealt: 0, kills: 0, effects: [], used: {}, onceRound: {}, reinforcement: true,
+        atk: t.atk * 1.35, def: t.def * 1.35, mag: t.mag, mdef: t.mdef * 1.35, spd: t.spd, move: t.move, range: t.range, dmg: t.dmg, tri: t.tri,
+        hp: 200, max: 350, alive: true, dealt: 0, kills: 0, effects: [], used: {}, onceRound: {}, reinforcement: true,
       };
       for (const x of cols) {
         const y = [5, 4, 6, 3, 7, 2, 8, 1, 9, 0, 10].find(yy => !unitAt(b, x, yy) && moveCost(b.grid[yy][x], u, b) !== Infinity);
@@ -1024,7 +1110,8 @@ export function createRoyale(game) {
     const base = { side, role: side, controller: e.controller, alive: true, dealt: 0, kills: 0, effects: [], used: {}, onceRound: {} };
     b.units.push({
       ...base, id: 'u' + (++uid), kind: e.charId === 'yagyu' ? 'yagyu' : 'char', charId: e.charId, name: c.name, label: c.label, level: L,
-      ...st, max: st.hp, maxMp: st.mp, range: c.range, dmg: c.dmg, tri: null, solo: false, isLeaderUnit: true, isCommander: true, x: sx, y: sy,
+      ...st, hp: st.hp + (c.solo ? 0 : 200), max: st.hp + (c.solo ? 0 : 200), charMax: st.hp, maxMp: st.mp,
+      range: c.range, dmg: c.dmg, tri: null, solo: !!c.solo, isLeaderUnit: true, isCommander: true, x: sx, y: sy,
     });
     // 部隊を2つ、となりに置く
     const types = TROOPS[c.side] || TROOPS.neutral;
@@ -1036,7 +1123,7 @@ export function createRoyale(game) {
       grid[y][x] = '.';
       b.units.push({
         ...base, id: 'u' + (++uid), kind: 'troop', type, name: `${c.name}隊・${t.name}`, label: t.label,
-        atk: t.atk, def: t.def, mag: t.mag, mdef: t.mdef, spd: t.spd, move: t.move, range: t.range, dmg: t.dmg, tri: t.tri,
+        atk: t.atk * 1.35, def: t.def * 1.35, mag: t.mag, mdef: t.mdef * 1.35, spd: t.spd, move: t.move, range: t.range, dmg: t.dmg, tri: t.tri,
         flyer: !!t.flyer, climber: !!t.climber, hp: 220, max: 220, x, y,
       });
     });
