@@ -118,6 +118,7 @@ export async function api(path, data) {
       case 'orders': G.setOrders(g, role, a.orders || {}); break;
       case 'ready': G.setReady(g, role, a.ready); break;
       case 'incident': G.incidentChoice(g, role, a.id, a.choice); break;
+      case 'organize': G.organize(g, role, a.genId, a.plan); break;
       case 'battle': G.battleAction(g, role, a.action || {}); break;
       case 'leave': G.leave(g, role); break;
       case 'kick': G.kick(g, role, a.role); break;

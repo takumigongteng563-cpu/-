@@ -475,8 +475,8 @@ export function conquestEndOfDay(game) {
       room -= n; t.garrison -= n;
       return n;
     };
-    if (g.charId) g.guard = (g.guard || 0) + fill(g.guard || 0, guardCap(game, g));
-    for (const x of g.troops) x.hp += fill(x.hp, x.max);
+    if (g.charId) g.guard = (g.guard || 0) + fill(g.guard || 0, Math.min(guardCap(game, g), g.guardWant ?? Infinity));
+    for (const x of g.troops) x.hp += fill(x.hp, Math.min(x.max, x.want ?? Infinity));
   }
   // 当主の復活：本拠地か、ほかの自分の陣地で
   for (const g of Object.values(game.generals)) {

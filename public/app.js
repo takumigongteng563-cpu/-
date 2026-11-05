@@ -617,10 +617,12 @@ function selGenSection(g) {
     if (HERO_ROLES.includes(gen.charId) || gen.charId === 'horie' || isConquest(g)) h += `<div class="hint">経験 ${c.exp}/${expToNext(c.level)}</div>`;
     h += `<details style="margin-top:6px"><summary>技・スキル</summary>${skillBook(gen.charId, c.level)}</details>`;
   }
+  if (gen.charId && gen.guard != null && !CHARACTERS[gen.charId].solo) h += `<div class="row" style="gap:6px;margin-top:6px"><span style="width:64px">本隊の兵</span><span class="muted">${gen.guard}人（先に減る護衛）</span></div>`;
   if (gen.troops.length) {
     h += `<div style="margin-top:6px">${gen.troops.map(t => `<div class="row" style="gap:6px"><span style="width:64px">${UNIT_TYPES[t.type].name}</span>
-      <div class="bar" style="flex:1"><i style="width:${t.hp / t.max * 100}%"></i></div><span class="muted" style="width:60px;text-align:right">${t.hp}/${t.max}</span></div>`).join('')}</div>`;
+      <div class="bar" style="flex:1"><i style="width:${t.hp / t.max * 100}%"></i></div><span class="muted" style="width:72px;text-align:right">${t.hp}/${t.max}${t.raw ? '・新' : ''}</span></div>`).join('')}</div>`;
   }
+  if (canOrder(gen) && g.phase === 'day' && g.territories[gen.location]?.owner === gen.side && (gen.troops.length || (gen.charId && !CHARACTERS[gen.charId].solo))) h += organizeBox(g, gen);
   if (canOrder(gen) && g.phase === 'day') {
     if (gen.kind === 'queen') h += `<div class="hint">女王は王都から動きません。</div>`;
     else h += `<div class="hint">地図で、まわりの光っている陣地をクリックすると移動（もう一度で取り消し）。</div>`;
@@ -641,6 +643,35 @@ function selGenSection(g) {
     h += `<div class="hint">相手の武将です。</div>`;
   }
   return h + '</div>';
+}
+
+// 編成：部隊ごとの兵種と人数
+const ORG_TYPES = { kingdom: ['spear', 'archer', 'cavalry'], demon: ['orc', 'harpy', 'goat'] };
+function organizeBox(g, gen) {
+  const demonish = gen.side === 'demon' || gen.troops.some(t => UNIT_TYPES[t.type]?.side === 'demon');
+  const types = ORG_TYPES[demonish ? 'demon' : 'kingdom'];
+  const t = g.territories[gen.location];
+  const spare = Math.max(0, t.garrison - (gen.location === 0 && t.owner === 'kingdom' ? 2000 : 0));
+  const pay = gen.side === 'demon' ? '食料' : 'お金';
+  const row = (label, sel, want, max, i) => `<div class="row craft" style="gap:6px"><span style="width:84px">${label}</span>${sel}
+    <input type="number" min="0" max="${max}" step="10" value="${want}" data-org-want="${i}" style="width:76px"><span class="muted">/ ${max}人</span></div>`;
+  let rows = '';
+  if (gen.charId && !CHARACTERS[gen.charId].solo) {
+    const gmax = Math.max(gen.guard || 0, Math.round(({ kingdom: 5, demon: 3.5 })[CHARACTERS[gen.charId].side === 'demon' ? 'demon' : 'kingdom'] * gameStats(g, gen.charId).lead));
+    rows += row('本隊の護衛', '', gen.guardWant ?? gen.guard ?? 0, gmax, 'g');
+  }
+  gen.troops.forEach((x, i) => {
+    const special = UNIT_TYPES[x.type].special;
+    const sel = special ? `<span style="width:96px">${UNIT_TYPES[x.type].name}</span>`
+      : `<select data-org-type="${i}" style="width:96px">${types.map(k => `<option value="${k}" ${k === x.type ? 'selected' : ''}>${UNIT_TYPES[k].name}</option>`).join('')}</select>`;
+    rows += row(`部隊${i + 1}（今${x.hp}）`, sel, x.want ?? x.hp, x.max, i);
+  });
+  return `<details class="sec" id="orgBox" ${S.openOrg ? 'open' : ''}><summary><b>編成する</b>（兵種と人数）</summary>
+    <div class="hint">この陣地の兵 ${spare}人と入れかえます。減らすと兵は陣地にもどり、増やすと陣地の兵が入ります（${pay}がかかる・新兵）。
+    兵種を変えると、その部隊は新しい兵種の新兵になります。決めた人数までは、毎日少しずつ補充もされます。</div>
+    ${rows}
+    <div class="hint">相性：槍・オーク → 騎兵・山羊騎兵 → 弓・ハーピー → 槍・オーク（矢印の先に強い）</div>
+    <button class="primary small" data-organize="${gen.id}">この編成にする</button></details>`;
 }
 
 function demonSection(g) {
@@ -971,6 +1002,7 @@ function renderPanel(g) {
 
 $('#panel').addEventListener('toggle', (e) => {
   if (e.target.id === 'workshopBox') S.openWorkshop = e.target.open;
+  if (e.target.id === 'orgBox') S.openOrg = e.target.open;
 }, true);
 
 $('#panel').addEventListener('click', async (e) => {
@@ -980,6 +1012,16 @@ $('#panel').addEventListener('click', async (e) => {
   if (b.dataset.selgen) { S.selGen = b.dataset.selgen; S.selTerr = g.generals[S.selGen].location; render(); return; }
   if (b.id === 'btnStart') return act({ type: 'start' });
   if (b.dataset.room) return roomAction(b);
+  if (b.dataset.organize) {
+    const box = $('#orgBox');
+    const plan = { troops: [] };
+    const gen = g.generals[b.dataset.organize];
+    gen.troops.forEach((x, i) => plan.troops.push({ type: box.querySelector(`[data-org-type="${i}"]`)?.value || x.type, want: Number(box.querySelector(`[data-org-want="${i}"]`)?.value ?? x.hp) }));
+    const gw = box.querySelector('[data-org-want="g"]');
+    if (gw) plan.guard = Number(gw.value);
+    S.openOrg = true;
+    return act({ type: 'organize', genId: gen.id, plan });
+  }
   if (b.id === 'btnEnding') return showEnding(true);
   if (b.id === 'btnReady') {
     if (S.sendTimer) await flushDraft();
@@ -1482,6 +1524,7 @@ const HOWTO = [
   ['ふだんの1日', '① 自分の武将（金色のふちのコマ）をクリック → 光っているとなりの陣地をクリックで移動。<br>② 右の「できごと」があれば対応を選ぶ。<br>③ 内政（勇者は自分か兵の武将に、ヤギューは右の「魔族の内政」で）を決める。内政をした武将はその日は動かない。<br>④ 「準備完了」を押すと、その日の結果がまとめて出る。'],
   ['合戦', '速い部隊から順番に動く。自分の番は「移動（青いマス）＋攻撃か技を1回」。★の大将を倒せば勝ち。30ターンたつと守る側の勝ち。<br>三すくみ：槍兵・オーク → 騎兵・山羊騎兵 → 弓兵・ハーピー → 槍兵・オーク（矢印の先に強い）。<br>地形：森は守りが上がる、川は遅くて守りが下がる、高台から攻撃すると強い、崖は魔族だけ通れる。'],
   ['兵の数とダメージ', '兵1人＝HP1。部隊の体力は兵の数そのもの。本隊（勇者や幹部がいる部隊）は、先に護衛の兵が減り、兵が0になると本人のHPが減る。ヤギューは単騎。<br>ダメージ＝戦力×0.15×（攻撃÷防御）×相性×地形。戦力は兵の数（本隊は兵＋本人のHP÷2）。兵が減るほど弱くなる。<br>新しく補充した兵は新兵（弱い）。5日で一人前になる。'],
+  ['編成', '自分の陣地にいる武将を選ぶと「編成する」が出る。部隊ごとに兵種（槍・弓・騎、魔族はオーク・ハーピー・山羊騎兵）と人数を決められる。減らした兵は陣地にもどり、増やすと陣地の兵が入る（お金がかかる・新兵）。決めた人数までは毎日補充される。'],
   ['城と守り', '陣地を守る側は、城の設備で受けるダメージが減る（村の柵×0.75〜王都×0.4）。城塞都市より大きい陣地には城壁・門・櫓がある。櫓は毎ターン近くの敵に矢を射る。<br>門や城壁を壊して中に入ると、守りの有利がなくなる。ふつうの攻撃は門に半分、突進・突撃などの技は2倍効く。'],
   ['大都市の堀江たち', '大都市は堀江・たける・ジャックナイフが守っている（毎回満タン）。勝つと退き、大都市を10日守り続けると3人そろって仲間になる。'],
   ['追加武将', '地図の灰色のコマは、まだだれにも仕えていない武将。その陣地を取って自分の武将を置くと仲間になる。こうたろ（月見の町）・たくみ（星見の城塞）・さくや（合戦のあった村や町に現れる）・ことね（あちこちを旅する）。'],

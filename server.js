@@ -133,6 +133,7 @@ const server = http.createServer(async (req, res) => {
         case 'orders': G.setOrders(game, role, a.orders || {}); break;
         case 'ready': G.setReady(game, role, a.ready); break;
         case 'incident': G.incidentChoice(game, role, a.id, a.choice); break;
+        case 'organize': G.organize(game, role, a.genId, a.plan); break;
         case 'battle': G.battleAction(game, role, a.action || {}); break;
         case 'leave': G.leave(game, role); break;
         case 'kick': G.kick(game, role, a.role); break;

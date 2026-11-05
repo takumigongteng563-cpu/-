@@ -352,6 +352,80 @@ export function setOrders(game, role, orders) {
   game.ready[role] = false;
 }
 
+// ---- 編成：部隊ごとの兵種と人数を決める ----
+// plan = { guard: 人数, troops: [{ type, want }] }。今いる自分の陣地の兵と入れかえる
+//  ・人数を減らすと、余った兵は陣地にもどる。増やすと陣地の兵から入る（補充のお金がかかる・新兵になる）
+//  ・兵種を変えると、その部隊の兵は新しい兵種の新兵になる（装備代として補充と同じお金がかかる）
+//  ・決めた人数は覚えておき、毎日の補充もそこまでにする
+const KINGDOM_TYPES = ['spear', 'archer', 'cavalry'];
+const DEMON_TYPES = ['orc', 'harpy', 'goat'];
+export function typeChoices(gen) {
+  const demonish = gen.side === 'demon' || gen.troops.some(t => UNIT_TYPES[t.type]?.side === 'demon');
+  return demonish ? DEMON_TYPES : KINGDOM_TYPES;
+}
+export function organize(game, role, genId, plan = {}) {
+  if (game.phase !== 'day') throw new Error('編成は、ふだんの日にだけできます');
+  const g = game.generals[genId];
+  if (!g || g.status !== 'active' || g.controller !== role) throw new Error('あなたの武将ではありません');
+  const t = game.territories[g.location];
+  if (t.owner !== g.side) throw new Error('自分の陣地にいるときだけ編成できます');
+  fitTroops(game, g);
+  const R = game.resources[g.side];
+  const pay = g.side === 'demon' ? 'food' : 'gold';
+  const keep = (g.location === 0 && t.owner === 'kingdom') ? 2000 : 0;
+  const choices = typeChoices(g);
+  const cost = (type, n) => Math.ceil(n * (REFILL_COST[type] || 0.15));
+  // まず、減らす・兵種を変える部隊の兵を陣地へもどす（お金はまだ使わない）
+  const steps = (plan.troops || []).slice(0, g.troops.length).map((p, i) => {
+    const x = g.troops[i];
+    const special = UNIT_TYPES[x.type].special;
+    const type = !special && choices.includes(p.type) ? p.type : x.type;
+    const max = troopCap(game, g, type);
+    return { x, type, want: Math.max(0, Math.min(max, Math.round(Number(p.want ?? x.hp)) || 0)), max };
+  });
+  let need = 0;
+  for (const s of steps) {
+    if (s.type !== s.x.type) need += cost(s.type, Math.min(s.x.hp, s.want));
+  }
+  if ((R[pay] || 0) < need) throw new Error(`兵種を変えるのに${pay === 'gold' ? 'お金' : '食料'}が${need}いります`);
+  for (const s of steps) {
+    const x = s.x;
+    if (s.type !== x.type) {
+      // 兵種がえ：残る兵は新しい兵種の新兵になる
+      const stay = Math.min(x.hp, s.want);
+      t.garrison += x.hp - stay;
+      R[pay] -= cost(s.type, stay);
+      x.type = s.type; x.max = s.max; x.hp = stay; x.raw = stay;
+    } else if (s.want < x.hp) {
+      t.garrison += x.hp - s.want;
+      x.hp = s.want;
+      x.raw = Math.min(x.raw || 0, x.hp);
+    }
+    x.want = s.want;
+  }
+  // 本隊の護衛
+  if (g.charId && plan.guard != null && guardCap(game, g) > 0) {
+    const want = Math.max(0, Math.min(guardCap(game, g), Math.round(Number(plan.guard)) || 0));
+    if (want < (g.guard || 0)) { t.garrison += g.guard - want; g.guard = want; }
+    g.guardWant = want;
+  }
+  // 足りない部隊に、陣地の兵を入れる（補充のお金がかかる）
+  const add = (have, want, type) => {
+    let n = Math.max(0, Math.min(want - have, t.garrison - keep));
+    n = Math.min(n, Math.floor((R[pay] || 0) / (REFILL_COST[type] || 0.15)));
+    R[pay] -= cost(type, n);
+    t.garrison -= n;
+    return n;
+  };
+  if (g.charId && g.guardWant != null) g.guard = (g.guard || 0) + add(g.guard || 0, g.guardWant, 'guard');
+  for (const s of steps) {
+    if (UNIT_TYPES[s.x.type].special && g.location !== 16) continue;
+    const n = add(s.x.hp, s.want, s.x.type);
+    if (n > 0) { s.x.hp += n; s.x.raw = (s.x.raw || 0) + n; }
+  }
+  game.log.push(`${g.name} の部隊を編成した（${g.troops.map(x => `${UNIT_TYPES[x.type].name}${x.hp}`).join('・')}${g.charId && guardCap(game, g) ? `・本隊${g.guard}` : ''}）`);
+}
+
 export function incidentChoice(game, role, id, choice) {
   if (game.phase !== 'day') throw new Error('今は選べません');
   chooseIncident(game, role, id, choice);
@@ -1247,10 +1321,10 @@ function endOfDay(game) {
       room -= n; t.garrison -= n;
       return n;
     };
-    if (g.charId) g.guard = (g.guard || 0) + fill(g.guard || 0, guardCap(game, g), 'guard');
+    if (g.charId) g.guard = (g.guard || 0) + fill(g.guard || 0, Math.min(guardCap(game, g), g.guardWant ?? Infinity), 'guard');
     for (const x of g.troops) {
       if (UNIT_TYPES[x.type].special && g.location !== 16) continue; // たけるの兵種は大都市でしか補充できない
-      const n = fill(x.hp, x.max, x.type);
+      const n = fill(x.hp, Math.min(x.max, x.want ?? Infinity), x.type);
       if (n > 0) { x.hp += n; x.raw = (x.raw || 0) + n; }
     }
   }
