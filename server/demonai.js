@@ -3,7 +3,7 @@
 import {
   HERO_ROLES, neighbors, canRemodel, garrisonCap,
 } from '../shared/data.js';
-import { territoryStrength, stepToward, actionCost, demonActionCount } from './game.js';
+import { territoryStrength, stepToward, actionCost, demonActionCount, doInternalAI } from './game.js';
 import { planMoves } from './ai.js';
 
 function demonMoves(game) {
@@ -20,7 +20,9 @@ function demonMoves(game) {
   }
   // 追いつめられたら（陣地が4つ以下）、ヤギューたちは不利でも打って出る
   const cornered = game.territories.filter(t => t.owner === 'demon').length <= 4;
-  return { ...planMoves(game, 'demon', rest, cornered ? 0.8 : 1.3), ...moves };
+  // 陣地の大半を取ったら、王国の陣地のとなりに集まって総攻撃（勇者スミレをねらう）
+  const siege = game.territories.filter(t => t.owner === 'kingdom').length <= 6;
+  return { ...planMoves(game, 'demon', rest, cornered || siege ? 0.8 : 1.3, { siege }), ...moves };
 }
 
 function demonInternal(game) {
@@ -73,7 +75,29 @@ function demonInternal(game) {
   return { acts, globals };
 }
 
+// AIの魔族：魔力が余っていたら、ためこまずに手下（兵）と魔将に変える
+function demonSpendSurplus(game) {
+  const R = game.resources.demon;
+  let guard = 20;
+  while (R.magic > 150 && guard--) {
+    const before = R.magic;
+    const mine = game.territories.filter(t => t.owner === 'demon');
+    const front = (t) => neighbors(t.id, 'demon').some(m => game.territories[m].owner !== 'demon');
+    // 手下は前線へ。魔王城は1,500まで（城にためこむと、兵が戦いに出てこない）
+    const room = (t) => (t.id === 28 ? Math.min(1500, garrisonCap(t)) : garrisonCap(t)) - t.garrison;
+    const spot = mine.filter(t => room(t) >= 300).sort((a, b) => front(b) - front(a) || a.garrison - b.garrison)[0];
+    if (spot) doInternalAI(game, 'spawn', spot.id);
+    const majo = Object.values(game.generals).filter(g => g.side === 'demon' && g.kind === 'majo').length;
+    const big = mine.filter(t => t.garrison >= 700).sort((a, b) => b.garrison - a.garrison)[0];
+    if (majo < 6 && big && R.magic > 150) doInternalAI(game, 'summon', big.id);
+    // 手下を置く場所がなければ、魔力で食料を作る（補充に食料を使うので）
+    if (R.magic === before && R.food < 3000) { R.magic -= 100; R.food += 150; }
+    if (R.magic === before) break;
+  }
+}
+
 export function demonAIOrders(game) {
+  demonSpendSurplus(game);
   const { acts, globals } = demonInternal(game);
   return { moves: demonMoves(game), acts, globals };
 }

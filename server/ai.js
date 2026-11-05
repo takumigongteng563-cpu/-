@@ -75,7 +75,7 @@ export function planMoves(game, side, gens, ratio = 1.3, opts = {}) {
       let value = (isEnemy(t.owner) ? 1 : 0.7) + (10 - (goal.get(n) ?? 10)) * 0.08;
       if (TERRITORIES[n].metropolis) value += 0.4;
       // 相手の大将（ヤギュー／女王）や本拠地をねらう
-      const bossHere = Object.values(game.generals).some(x => x.status === 'active' && x.location === n && isEnemy(x.side) && (opts.hostile ? x.kind === 'leader' : (x.charId === 'yagyu' || x.charId === 'nozomi')));
+      const bossHere = Object.values(game.generals).some(x => x.status === 'active' && x.location === n && isEnemy(x.side) && (opts.hostile ? x.kind === 'leader' : (x.charId === 'yagyu' || x.charId === 'nozomi' || x.charId === 'sumire')));
       if (bossHere) value += 0.8;
       if (homes.has(n)) value += 0.6;
       const score = value * Math.min(3, sum / (enemy + 1));

@@ -42,7 +42,8 @@ export function actionCost(game, side, type, extra) {
 }
 
 export function demonActionCount(game) {
-  return 1 + Math.floor(ownedCount(game, 'demon') / 3);
+  // 魔族は陣地が少なくても動けるように、最低3回
+  return 3 + Math.floor(ownedCount(game, 'demon') / 3);
 }
 export function queenActionCount(game) {
   return 2 + Math.floor(ownedCount(game, 'kingdom') / 5);
@@ -189,9 +190,9 @@ function setupGenerals(game) {
   addGeneral(game, { charId: 'nozomi', side: K, kind: 'queen', location: 0, troops: [], guard: 300 });
   addGeneral(game, { charId: 'yagyu', side: D, kind: 'yagyu', location: 28,
     troops: [T('orc', 'guard', 150), T('orc', 'guard', 150), T('goat', 'guard', 100), T('harpy', 'guard', 100), T('harpy', 'guard', 0)] });
-  addGeneral(game, { charId: 'car', side: D, kind: 'officer', location: 28, guard: 100, troops: [T('harpy', 'officer', 100), T('goat', 'officer', 0)] });
-  addGeneral(game, { charId: 'oh', side: D, kind: 'officer', location: 28, guard: 100, troops: [T('orc', 'officer', 100), T('goat', 'officer', 0)] });
-  addGeneral(game, { charId: 'kkb', side: D, kind: 'officer', location: 28, guard: 100, troops: [T('orc', 'officer', 100), T('orc', 'officer', 0)] });
+  addGeneral(game, { charId: 'car', side: D, kind: 'officer', location: 28, guard: 150, troops: [T('harpy', 'officer', 150), T('goat', 'officer', 100)] });
+  addGeneral(game, { charId: 'oh', side: D, kind: 'officer', location: 28, guard: 150, troops: [T('orc', 'officer', 150), T('goat', 'officer', 100)] });
+  addGeneral(game, { charId: 'kkb', side: D, kind: 'officer', location: 28, guard: 150, troops: [T('orc', 'officer', 150), T('orc', 'officer', 100)] });
   addGeneral(game, { name: '魔将ボルグ', side: D, kind: 'majo', grade: 'mid', location: 28, troops: [T('goat', 'zako', 150)] });
   addGeneral(game, { name: '魔将ザザ', side: D, kind: 'majo', grade: 'mid', location: 28, troops: [T('orc', 'zako', 150)] });
 }
@@ -474,6 +475,9 @@ function payBack(res, cost) {
 const soldiersOf = (game, hero) => Object.values(game.generals).filter(g => g.kind === 'soldier' && g.owner === hero).length;
 export const canPay = (res, cost) => Object.entries(cost).every(([k, v]) => ((k in MATERIALS ? res.materials : res)[k] || 0) >= v);
 
+// AIの魔族が、内政の回数とは別に魔力を使うとき
+export function doInternalAI(game, type, tid) { return doInternal(game, 'demon', type, tid, 'ヤギュー'); }
+
 function doInternal(game, side, type, tid, by, extra) {
   const res = game.resources[side];
   const t = game.territories[tid];
@@ -511,7 +515,7 @@ function doInternal(game, side, type, tid, by, extra) {
     case 'alms': t.loyalty = Math.min(100, t.loyalty + 12); t.almsDay = game.day; break;
     case 'train': res.training = Math.min(10, res.training + 1); break;
     case 'terror': t.fear = Math.min(100, t.fear + 15); t.pop = Math.max(100, t.pop - 80); break;
-    case 'spawn': t.garrison = Math.min(garrisonCap(t), t.garrison + 200); break;
+    case 'spawn': t.garrison = Math.min(garrisonCap(t), t.garrison + 300); break;
     case 'build':
       if (t.facility) game.log.push(`${T.name}の${FACILITIES[t.facility].name}をこわした`);
       t.facility = extra.facility;
@@ -1215,7 +1219,7 @@ function endOfDay(game) {
     income[t.owner].food += t.farm * 0.35 * mult * (f === 'farm' ? 1.5 : 1);
     if (t.owner === 'kingdom') income.kingdom.gold += t.commerce * 0.7 * mult * (0.6 + t.loyalty / 150) * (f === 'market' ? 1.5 : 1);
     // 魔族はレベル上げに魔力を使わなくなったぶん、国が豊か（魔力1.3倍・食料1.2倍）
-    else { income.demon.magic += (t.fear * t.pop / 1000 * 0.13 * mult + (t.id === 28 ? 45 : 0)) * (f === 'fear' ? 1.3 : 1); income.demon.food += t.farm * 0.07 * mult; }
+    else { income.demon.magic += (t.fear * t.pop / 1000 * 0.16 * mult + (t.id === 28 ? 60 : 0)) * (f === 'fear' ? 1.3 : 1); income.demon.food += t.farm * 0.07 * mult; }
     // 恐怖の塔・魔物の巣
     if (f === 'fear') {
       t.fear = Math.min(100, t.fear + 3);
@@ -1423,7 +1427,8 @@ function checkWin(game) {
   let winner = null, kind = null;
   if (game.flags.queenDefeated || game.territories[0].owner === 'demon') { winner = 'demon'; kind = 'queen'; }
   else if (G.yagyu.status === 'down' && k >= MAJORITY) { winner = 'kingdom'; kind = 'kingdom'; }
-  else if (HERO_ROLES.every(h => G[h].status === 'down') && d >= MAJORITY) { winner = 'demon'; kind = 'heroes'; }
+  // 魔族：勇者スミレを倒して、陣地の大半を取る（王国が「ヤギューを倒して大半」なのと同じ形）
+  else if (G.sumire.status === 'down' && d >= MAJORITY) { winner = 'demon'; kind = 'heroes'; }
   if (winner) {
     game.phase = 'ended';
     game.winner = winner;
