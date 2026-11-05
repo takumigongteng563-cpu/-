@@ -190,11 +190,11 @@ function setupGenerals(game) {
   addGeneral(game, { charId: 'nozomi', side: K, kind: 'queen', location: 0, troops: [], guard: 300 });
   addGeneral(game, { charId: 'yagyu', side: D, kind: 'yagyu', location: 28,
     troops: [T('orc', 'guard', 150), T('orc', 'guard', 150), T('goat', 'guard', 100), T('harpy', 'guard', 100), T('harpy', 'guard', 0)] });
-  addGeneral(game, { charId: 'car', side: D, kind: 'officer', location: 23, guard: 100, troops: [T('harpy', 'officer', 100), T('goat', 'officer', 0)] });
-  addGeneral(game, { charId: 'oh', side: D, kind: 'officer', location: 24, guard: 100, troops: [T('orc', 'officer', 100), T('goat', 'officer', 0)] });
-  addGeneral(game, { charId: 'kkb', side: D, kind: 'officer', location: 25, guard: 100, troops: [T('orc', 'officer', 100), T('orc', 'officer', 0)] });
-  addGeneral(game, { name: '魔将ボルグ', side: D, kind: 'majo', grade: 'mid', location: 22, troops: [T('goat', 'zako', 150)] });
-  addGeneral(game, { name: '魔将ザザ', side: D, kind: 'majo', grade: 'mid', location: 26, troops: [T('orc', 'zako', 150)] });
+  addGeneral(game, { charId: 'car', side: D, kind: 'officer', location: 28, guard: 100, troops: [T('harpy', 'officer', 100), T('goat', 'officer', 0)] });
+  addGeneral(game, { charId: 'oh', side: D, kind: 'officer', location: 28, guard: 100, troops: [T('orc', 'officer', 100), T('goat', 'officer', 0)] });
+  addGeneral(game, { charId: 'kkb', side: D, kind: 'officer', location: 28, guard: 100, troops: [T('orc', 'officer', 100), T('orc', 'officer', 0)] });
+  addGeneral(game, { name: '魔将ボルグ', side: D, kind: 'majo', grade: 'mid', location: 28, troops: [T('goat', 'zako', 150)] });
+  addGeneral(game, { name: '魔将ザザ', side: D, kind: 'majo', grade: 'mid', location: 28, troops: [T('orc', 'zako', 150)] });
 }
 
 // 武将を誰が動かすか
