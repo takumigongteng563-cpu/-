@@ -137,8 +137,8 @@ export const UNIT_TYPES = {
 export const TRI_ADV = { heavy: 'fast', fast: 'ranged', ranged: 'heavy' };
 // 兵を部隊に補充するときのコスト（1人あたり）。王国はお金、魔族は食料。馬や翼のある兵ほど高い
 export const REFILL_COST = { spear: 0.06, archer: 0.1, cavalry: 0.15, orc: 0.06, harpy: 0.1, goat: 0.12, gunner: 0.25, tank: 0.25, fighter: 0.25, guard: 0.1 };
-// 兵が1日に食べる量：陣地にいる兵は100人で1、出陣している（武将が率いる）兵は50人で1
-export const FOOD_PER = { garrison: 100, field: 50 };
+// 兵が1日に食べる量：陣地にいる兵は120人で1、出陣している（武将が率いる）兵は80人で1
+export const FOOD_PER = { garrison: 120, field: 80 };
 
 // 部隊の質（数の王国、質の魔族）：幹部の部隊とヤギューの親衛は×1.3
 export const QUALITY = { kingdom: 1.0, zako: 1.0, officer: 1.3, guard: 1.3 };
@@ -294,7 +294,7 @@ export const DEMON_ACTIONS = {
   farm:    { name: '開墾',         cost: { magic: 6 },   desc: '畑+6' },
   people:  { name: '民を増やす',   cost: { food: 30 },   desc: '民+300' },
   terror:  { name: '恐怖を与える', cost: {},             desc: '恐怖+15（民が少し減る）' },
-  spawn:   { name: '手下を生む',   cost: { magic: 15 },  desc: '陣地の兵+200' },
+  spawn:   { name: '手下を生む',   cost: { magic: 30 },  desc: '陣地の兵+150' },
   build:       { name: '作り変え',         cost: {},            desc: '魔族の陣地を、恐怖の塔・魔物の巣・岩の砦に作り変える', build: true },
   darkFortify: { name: '闇の儀式：陣地の強化', cost: { magic: 20 }, desc: '陣地の守り+15' },
   curse:       { name: '闇の儀式：勇者を呪う', cost: { magic: 40 }, desc: '勇者1人を3日のあいだ呪う（怪我と同じくステータスが下がる）', heroTarget: true },

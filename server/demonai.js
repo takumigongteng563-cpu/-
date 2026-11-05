@@ -78,8 +78,8 @@ function demonInternal(game) {
 // AIの魔族：魔力が余っていたら、ためこまずに手下（兵）と魔将に変える
 function demonSpendSurplus(game) {
   const R = game.resources.demon;
-  let guard = 20;
-  while (R.magic > 150 && guard--) {
+  let guard = 1; // 1日に1回まで
+  while (R.magic > 500 && guard--) {
     const before = R.magic;
     const mine = game.territories.filter(t => t.owner === 'demon');
     const front = (t) => neighbors(t.id, 'demon').some(m => game.territories[m].owner !== 'demon');
