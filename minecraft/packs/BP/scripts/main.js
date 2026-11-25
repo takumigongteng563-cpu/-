@@ -8,20 +8,24 @@
 //   3. playerSpawn(initialSpawn)：参加処理（初回なら初期データ作成）
 //   4. playerLeave：保存してキャッシュから外す
 //   5. 自動保存：一定間隔で変更分のみ保存
+//   （第2弾）参加時に初期才能の抽選・能力値の再計算、HUD・HP/MP/スタミナ・戦闘記録・演出を登録
 // =============================================================
 import { world, system } from "@minecraft/server";
-import { ADDON_VERSION, KEY_PREFIX, SAVE, TAGS, PARTY } from "./config.js";
+import { ADDON_VERSION, SAVE, TAGS, PARTY } from "./config.js";
 import { ctx } from "./core/context.js";
 import { createLogger, setErrorListener } from "./core/log.js";
 import { subscribe } from "./core/events.js";
 import { attempt } from "./core/safe.js";
 import { every } from "./core/scheduler.js";
-import { ChunkedStore } from "./storage/chunkedStore.js";
 import { worldBackend } from "./storage/worldBackend.js";
 import { autosaveTick, flushAll, installSaveNotice } from "./storage/saveManager.js";
-import { WorldService } from "./world/worldService.js";
-import { PlayerService } from "./player/playerService.js";
-import { PartyService } from "./party/partyService.js";
+import { createApp, joinPlayer } from "./app.js";
+import { talents } from "./content/talents/index.js";
+import { gradeLabel } from "./content/grades.js";
+import { registerHud, forgetHud } from "./hud/hud.js";
+import { registerEffects } from "./fx/effects.js";
+import { registerCombatHooks, forgetCombatState } from "./actions/combatHooks.js";
+import { registerVitalsRuntime, syncHp, forgetVitalsState } from "./vitals/vitalsRuntime.js";
 import { ensureAdventurerBook, isAdventurerBook } from "./items/adventurerBook.js";
 import { registerActionGuard } from "./rules/actionGuard.js";
 import { openMainMenu, clearMenuState } from "./ui/menu.js";
@@ -36,8 +40,9 @@ const log = createLogger("main");
 /** @param {import("@minecraft/server").Player} player */
 function handleJoin(player) {
   if (!ctx.ready || !player.isValid) return;
-  const r = ctx.playerService.join(player);
+  const { join: r, rolled } = joinPlayer(ctx, player);
   if (r.alreadyJoined) return;
+  syncHp(player);
 
   for (const n of r.notices) player.sendMessage(n);
 
@@ -46,6 +51,15 @@ function handleJoin(player) {
     player.sendMessage("§fようこそ、異世界へ。あなたは §e種族：人間 / Lv1 / 無職§f として冒険を始めます。");
   } else {
     player.sendMessage(`§7おかえりなさい、${player.name}。冒険の記録を読み込みました。`);
+  }
+  if (rolled && rolled.length > 0) {
+    // 初期才能の抽選結果（初回のみ。第1弾から更新したプレイヤーも1回だけ）
+    const names = rolled.map((id) => {
+      const t = talents.get(id);
+      return t ? `${gradeLabel(t.grade)} §f${t.name}` : id;
+    });
+    player.sendMessage(`§bあなたに宿る才能： ${names.join("§7、")}`);
+    player.sendMessage("§7……そして、まだ本人も知らない何かが眠っている。");
   }
   const book = ensureAdventurerBook(player);
   if (book === "given") player.sendMessage("§a「冒険者の書」を受け取った。§7使用するとRPGメニューが開きます。");
@@ -65,26 +79,19 @@ function openMenu(player) {
 // ---------------------------------------------------------------
 function initialize() {
   if (ctx.ready) return;
-  const store = new ChunkedStore(worldBackend, {
-    prefix: KEY_PREFIX,
-    chunkSize: SAVE.chunkSize,
-    maxChunks: SAVE.maxChunks,
-  });
-  const worldService = new WorldService(store);
-  const playerService = new PlayerService(store, worldService);
-  const partyService = new PartyService(playerService);
-  ctx.store = store;
-  ctx.worldService = worldService;
-  ctx.playerService = playerService;
-  ctx.partyService = partyService;
-
-  const loaded = worldService.load();
+  const app = createApp(worldBackend, () => system.currentTick);
+  const loaded = app.worldService.load();
+  Object.assign(ctx, app);
   ctx.ready = true;
   installSaveNotice();
   log.warn(`v${ADDON_VERSION} 起動 world=${loaded.world.status} index=${loaded.index.status}`);
 
   // 自動保存（変更分のみ・少数ずつ）
   every("autosave", SAVE.autosaveIntervalTicks, autosaveTick);
+  // 行動記録による才能の条件判定（まとめて1秒ごと）
+  every("talent.evaluate", 20, () => ctx.actions.flushPending());
+  registerHud();
+  registerVitalsRuntime();
 
   // すでにいるプレイヤー（/reload 等）
   for (const p of world.getAllPlayers()) attempt("join(existing)", () => handleJoin(p));
@@ -130,7 +137,9 @@ subscribe(world.afterEvents.playerSpawn, "playerSpawn", (ev) => {
   if (ev.initialSpawn) {
     handleJoin(ev.player);
   } else {
-    // リスポーン時：念のため冒険者の書を確認
+    // リスポーン時：HP・MP・スタミナを全回復（バニラのリスポーンと合わせる）・冒険者の書を確認
+    ctx.vitals.onRespawn(ev.player.id);
+    syncHp(ev.player);
     ensureAdventurerBook(ev.player);
   }
 });
@@ -138,6 +147,9 @@ subscribe(world.afterEvents.playerSpawn, "playerSpawn", (ev) => {
 subscribe(world.afterEvents.playerLeave, "playerLeave", (ev) => {
   releaseMenuLock(ev.playerId);
   clearMenuState(ev.playerId);
+  forgetHud(ev.playerId);
+  forgetCombatState(ev.playerId);
+  forgetVitalsState(ev.playerId);
   if (!ctx.ready) return;
   ctx.playerService.leave(ev.playerId);
 });
@@ -152,4 +164,6 @@ subscribe(system.beforeEvents.shutdown, "shutdown", () => {
 });
 
 registerActionGuard(openMenu);
+registerEffects();
+registerCombatHooks();
 registerScriptEvents({ openMenu });

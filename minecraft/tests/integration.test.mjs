@@ -27,3 +27,23 @@ test("統合：初回起動 → 再起動 → 再々起動 → 予備初期化",
   }
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+function runRpg(stateFile, phase) {
+  const out = execFileSync(process.execPath, ["--import", "./tests/mock/loader.mjs", "tests/integration/rpgSession.mjs", stateFile, phase], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return JSON.parse(out);
+}
+
+test("統合（第2弾）：第1弾のセーブデータから更新 → 戦闘・成長・メニュー・管理者 → 強制終了後の再起動", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mnq2-"));
+  const stateFile = path.join(dir, "state.json");
+  fs.copyFileSync(path.join(root, "tests/fixtures/v1-state.json"), stateFile);
+  for (const phase of ["upgrade", "rpg", "rpg-restart"]) {
+    const r = runRpg(stateFile, phase);
+    assert.equal(r.phase, phase);
+    for (const c of r.checks) console.log(`  [${phase}] ✔ ${c}`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});

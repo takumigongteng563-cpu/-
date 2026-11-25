@@ -1,0 +1,191 @@
+// =============================================================
+// 管理者向けテスト機能（管理者タグ noguchi_admin を持つプレイヤーのみ）
+// 一般プレイヤーには表示されず、操作のたびに管理者かどうかを再確認する。
+// =============================================================
+import { world } from "@minecraft/server";
+import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
+import { ctx } from "../../core/context.js";
+import { isAdmin } from "../../admin/adminAuth.js";
+import { talents } from "../../content/talents/index.js";
+import { potentials } from "../../content/potentials.js";
+import { gradeLabel } from "../../content/grades.js";
+import { tierForStage } from "../../content/tiers.js";
+import { createLogger } from "../../core/log.js";
+import { showForm } from "../formUtil.js";
+import { heading, lines, num } from "../format.js";
+import { showInfoPage } from "./infoPage.js";
+
+const log = createLogger("admin");
+
+function intOf(v) {
+  const n = Number(String(v ?? "").trim());
+  return Number.isFinite(n) ? Math.floor(n) : NaN;
+}
+
+/** @param {import("@minecraft/server").Player} admin */
+async function askNumber(admin, title, label, def = "") {
+  const res = await showForm(admin, new ModalFormData().title(title).textField(label, "数値", { defaultValue: def }).submitButton("実行"));
+  if (!res || !res.formValues) return NaN;
+  return intOf(res.formValues[0]);
+}
+
+function report(admin, label, res, targetName) {
+  const ok = res === true || (res && res.ok);
+  admin.sendMessage(ok ? `§a[テスト] ${label}：成功（${targetName}）` : `§c[テスト] ${label}：失敗 ${res && res.reason ? res.reason : ""}`);
+  log.warn(`管理者 ${admin.name} が ${targetName} に ${label} を実行: ${ok ? "成功" : "失敗"}`);
+}
+
+/** @param {import("@minecraft/server").Player} admin */
+async function pickTarget(admin) {
+  const players = world.getAllPlayers().filter((p) => ctx.playerService.getSession(p.id));
+  if (players.length === 1) return players[0];
+  const res = await showForm(admin, new ModalFormData().title("対象プレイヤー").dropdown("対象", players.map((p) => p.name)).submitButton("決定"));
+  if (!res || !res.formValues) return undefined;
+  return players[Number(res.formValues[0])];
+}
+
+/** @param {import("@minecraft/server").Player} admin */
+async function saveDataView(admin, target) {
+  const d = ctx.playerService.dataFor(target.id);
+  const s = ctx.playerService.getSession(target.id);
+  const e = s ? ctx.playerService.records.peek(`p.${s.uid}`) : undefined;
+  const pot = d.hiddenPotential.entries.map((x) => `${potentials.get(x.id)?.name ?? x.id}${x.awakened ? "(覚醒済)" : "(未覚醒)"}`);
+  const acts = Object.entries(d.actions).map(([k, v]) => `${k}: ${num(v)}`);
+  const body = lines(
+    heading(`${target.name} のセーブデータ`),
+    `識別ID: ${d.uid} / 状態: ${e ? e.status : "-"} / 未保存: ${e && e.dirty ? "あり" : "なし"}`,
+    `Lv ${d.level} EXP ${num(d.exp)} 累計 ${num(d.totalExp)} 保留 ${num(d.expOverflow)}`,
+    `存在階級: ${tierForStage(d.limitBreak.stage).name}（${d.limitBreak.stage}）`,
+    `能力ポイント: 未使用 ${d.unspentStatPoints} / 累計 ${d.statPointsEarned}`,
+    `成長: ${JSON.stringify(d.statGrowth)}`,
+    `振り分け: ${JSON.stringify(d.statAllocated)}`,
+    `HP ${d.vitals.hp}/${d.vitals.hpMax} MP ${Math.floor(d.vitals.mp)}/${d.vitals.mpMax} ST ${Math.floor(d.vitals.stamina)}/${d.vitals.staminaMax}`,
+    `初期才能: ${d.talents.innate.map((id) => talents.get(id)?.name ?? id).join(", ") || "なし"}`,
+    `有効な才能: ${d.talents.active.map((a) => talents.get(a.id)?.name ?? a.id).join(", ") || "なし"}`,
+    `後天性: ${d.talents.acquired.join(", ") || "なし"}`,
+    `§d潜在能力（管理者のみ表示）: ${pot.join(", ") || "なし"}§r`,
+    "",
+    heading("行動の記録"),
+    acts.length ? acts : "なし",
+    "",
+    `フラグ: ${Object.keys(d.flags).join(", ") || "なし"}`
+  );
+  return showInfoPage(admin, "セーブデータ確認", body);
+}
+
+const ACTIONS = [
+  {
+    label: "経験値付与",
+    async run(admin, t) {
+      const n = await askNumber(admin, "経験値付与", "付与する経験値", "100");
+      if (!(n > 0)) return;
+      report(admin, `経験値 ${n}`, ctx.progression.grantExp(t.id, n, { source: "admin", noBonus: true }), t.name);
+    },
+  },
+  {
+    label: "レベル設定",
+    async run(admin, t) {
+      const n = await askNumber(admin, "レベル設定", "レベル（存在階級の上限まで）", String(ctx.playerService.dataFor(t.id).level));
+      if (!(n >= 1)) return;
+      report(admin, `レベル ${n}`, ctx.progression.setLevel(t.id, n), t.name);
+    },
+  },
+  {
+    label: "能力ポイント付与",
+    async run(admin, t) {
+      const n = await askNumber(admin, "能力ポイント付与", "付与するポイント", "5");
+      if (!(n > 0)) return;
+      report(admin, `能力ポイント ${n}`, ctx.progression.addStatPoints(t.id, n), t.name);
+    },
+  },
+  {
+    label: "HP・MP・スタミナの変更",
+    async run(admin, t) {
+      const res = await showForm(
+        admin,
+        new ModalFormData().title("HP・MP・スタミナ").dropdown("項目", ["HP", "MP", "スタミナ"]).textField("値", "数値", { defaultValue: "1" }).submitButton("実行")
+      );
+      if (!res || !res.formValues) return;
+      const kind = ["hp", "mp", "stamina"][Number(res.formValues[0])];
+      const v = intOf(res.formValues[1]);
+      if (!Number.isFinite(v)) return;
+      report(admin, `${kind}=${v}`, ctx.vitals.setValue(t.id, kind, v), t.name);
+    },
+  },
+  {
+    label: "才能付与",
+    async run(admin, t) {
+      const list = talents.all();
+      const res = await showForm(
+        admin,
+        new ModalFormData().title("才能付与").dropdown("才能", list.map((x) => `[${x.grade}] ${x.name}（${x.kind}）`)).submitButton("付与")
+      );
+      if (!res || !res.formValues) return;
+      const def = list[Number(res.formValues[0])];
+      report(admin, `才能「${def.name}」付与`, ctx.talents.grant(t.id, def.id), t.name);
+    },
+  },
+  {
+    label: "才能進化テスト",
+    async run(admin, t) {
+      const d = ctx.playerService.dataFor(t.id);
+      const options = [];
+      for (const a of d.talents.active) {
+        const def = talents.get(a.id);
+        for (const br of def?.evolvesTo || []) options.push({ from: a.id, to: br.to, label: `${def.name} → ${talents.get(br.to)?.name ?? br.to}` });
+      }
+      if (options.length === 0) {
+        admin.sendMessage("§7進化先のある才能を所持していません（先に「才能付与」で剣術適性などを付与してください）。");
+        return;
+      }
+      const res = await showForm(admin, new ModalFormData().title("才能進化テスト").dropdown("進化", options.map((o) => o.label)).submitButton("進化させる"));
+      if (!res || !res.formValues) return;
+      const o = options[Number(res.formValues[0])];
+      report(admin, `進化 ${o.label}`, ctx.talents.forceEvolve(t.id, o.from, o.to), t.name);
+    },
+  },
+  {
+    label: "潜在能力覚醒テスト",
+    async run(admin, t) {
+      report(admin, "潜在能力覚醒", ctx.talents.forceAwaken(t.id), t.name);
+    },
+  },
+  {
+    label: "限界突破テスト（条件を無視）",
+    async run(admin, t) {
+      report(admin, "限界突破", ctx.progression.limitBreak(t.id, { force: true, by: `admin:${admin.name}` }), t.name);
+    },
+  },
+  {
+    label: "ステータス再計算",
+    async run(admin, t) {
+      report(admin, "再計算", ctx.stats.recalc(t.id, { important: true }), t.name);
+    },
+  },
+  {
+    label: "セーブデータ確認",
+    async run(admin, t) {
+      await saveDataView(admin, t);
+    },
+  },
+];
+
+/** @param {import("@minecraft/server").Player} admin */
+export async function openAdminTest(admin) {
+  if (!isAdmin(admin)) return "back";
+  const target = await pickTarget(admin);
+  if (!target) return "back";
+  for (;;) {
+    if (!isAdmin(admin) || !target.isValid || !ctx.playerService.getSession(target.id)) return "back";
+    const d = ctx.playerService.dataFor(target.id);
+    const form = new ActionFormData()
+      .title("テスト機能（管理者）")
+      .body(`対象: §l${target.name}§r  Lv ${d.level}\n才能: ${d.talents.active.map((a) => { const x = talents.get(a.id); return x ? `${gradeLabel(x.grade)}${x.name}` : a.id; }).join(" ") || "なし"}\n§c※ 開発確認用。通常のプレイでは使わないでください。§r`);
+    for (const a of ACTIONS) form.button(a.label);
+    form.button("§l戻る");
+    const res = await showForm(admin, form);
+    if (!res || res.selection === undefined || res.selection >= ACTIONS.length) return "back";
+    if (!isAdmin(admin)) return "back";
+    await ACTIONS[res.selection].run(admin, target);
+  }
+}

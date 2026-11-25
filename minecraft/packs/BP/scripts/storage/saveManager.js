@@ -9,6 +9,7 @@ import { ctx } from "../core/context.js";
 import { SAVE } from "../config.js";
 import { createLogger } from "../core/log.js";
 import { recordNameForUid } from "../player/playerService.js";
+import { notifyActionBar } from "../hud/hud.js";
 
 const log = createLogger("save");
 
@@ -55,7 +56,7 @@ export function installSaveNotice() {
     const session = ctx.playerService.onlineSessions().find((s) => s.uid === uid);
     if (!session) return;
     const p = world.getAllPlayers().find((pl) => pl.id === session.playerId);
-    if (p) p.onScreenDisplay.setActionBar("§7冒険の記録を保存しました");
+    if (p) notifyActionBar(p, "§7冒険の記録を保存しました", 20);
   };
 }
 

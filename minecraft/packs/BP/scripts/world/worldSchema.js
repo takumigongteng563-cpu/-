@@ -4,6 +4,8 @@
 // 既存の項目を削除・改名しないこと。
 // =============================================================
 import { conform } from "../storage/sanitize.js";
+import { DEFAULT_OVERFLOW_POLICY } from "../balance/progression.js";
+import { DEFAULT_EXHAUSTION_POLICY } from "../balance/vitals.js";
 
 export function worldTemplate() {
   return {
@@ -62,6 +64,19 @@ export function worldTemplate() {
       partyScaling: true,
       // NPCによる人数補完（後続で実装）
       npcCompanions: false,
+      // --- 第2弾 ---
+      progression: {
+        overflowPolicy: DEFAULT_OVERFLOW_POLICY, // レベル上限時の余剰経験値 "store" | "discard"
+        vanillaMobExp: true, // 【暫定】バニラのモンスター討伐で経験値を得る
+      },
+      vitals: {
+        exhaustion: DEFAULT_EXHAUSTION_POLICY, // スタミナ切れの制限 "slow" | "none"
+      },
+    },
+
+    // --- 第2弾：才能の統計（潜在能力がパーティ内で偏らないように使う） ---
+    talentStats: {
+      potentialAssigned: {}, // { [potentialId]: 割り当て人数 }
     },
   };
 }

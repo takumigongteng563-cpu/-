@@ -53,6 +53,14 @@ export class ModalFormData extends BaseForm {
   constructor() {
     super("modal");
   }
+  dropdown(label, items, opt) {
+    this.controls.push({ kind: "dropdown", label, items, defaultValue: opt?.defaultValueIndex });
+    return this;
+  }
+  textField(label, placeholder, opt) {
+    this.controls.push({ kind: "textField", label, defaultValue: opt?.defaultValue });
+    return this;
+  }
   toggle(label, opt) {
     this.controls.push({ kind: "toggle", label, defaultValue: opt?.defaultValue });
     return this;
@@ -69,5 +77,13 @@ export class ModalFormData extends BaseForm {
 export class MessageFormData extends BaseForm {
   constructor() {
     super("message");
+  }
+  button1(t) {
+    this.buttons[0] = { text: t };
+    return this;
+  }
+  button2(t) {
+    this.buttons[1] = { text: t };
+    return this;
   }
 }

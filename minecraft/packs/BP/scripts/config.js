@@ -6,7 +6,7 @@
 // =============================================================
 
 /** アドオンのバージョン（表示・診断用） */
-export const ADDON_VERSION = "0.1.0";
+export const ADDON_VERSION = "0.2.0";
 
 /** アイテム・タグ等の名前空間（変更禁止） */
 export const NAMESPACE = "noguchi";
@@ -15,7 +15,7 @@ export const NAMESPACE = "noguchi";
 export const KEY_PREFIX = "mnq";
 
 /** 現在のデータ構造バージョン。構造を変えたら +1 し、移行処理を追加する */
-export const PLAYER_SCHEMA_VERSION = 1;
+export const PLAYER_SCHEMA_VERSION = 2;
 export const WORLD_SCHEMA_VERSION = 1;
 export const INDEX_SCHEMA_VERSION = 1;
 

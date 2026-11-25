@@ -34,6 +34,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const uuids = [bpm.header.uuid, rpm.header.uuid, ...bpm.modules.map((m) => m.uuid), ...rpm.modules.map((m) => m.uuid)];
 for (const u of uuids) if (!UUID.test(u)) err(`UUID形式不正: ${u}`);
 if (new Set(uuids).size !== uuids.length) err("UUIDが重複しています");
+// 公開済みのパックUUID。変更するとセーブデータが読めなくなるため固定（引き継ぎ資料 1 章）
+const FIXED_UUIDS = {
+  bp: "50903bc5-4b62-4f02-b2a5-c67c5fed6127",
+  rp: "21d9f0a2-978b-483e-92a1-9fc2e70134a4",
+};
+if (bpm.header.uuid !== FIXED_UUIDS.bp) err("BP の header.uuid が変更されています（変更禁止）");
+if (rpm.header.uuid !== FIXED_UUIDS.rp) err("RP の header.uuid が変更されています（変更禁止）");
 const dep = (m, uuid) => m.dependencies.find((d) => d.uuid === uuid);
 if (!dep(bpm, rpm.header.uuid)) err("BP が RP に依存していません");
 else if (dep(bpm, rpm.header.uuid).version.join(".") !== rpm.header.version.join(".")) err("BP→RP 依存バージョン不一致");

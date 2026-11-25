@@ -10,6 +10,7 @@ import { ctx } from "../core/context.js";
 import { subscribe } from "../core/events.js";
 import { TAGS } from "../config.js";
 import { isAdventurerBook } from "../items/adventurerBook.js";
+import { notifyActionBar } from "../hud/hud.js";
 
 const WARN_COOLDOWN_MS = 2000;
 /** @type {Map<string, number>} */
@@ -41,7 +42,7 @@ function warn(player, text) {
   // before イベント中は書き込み系APIが使えないため次のtickで送る
   system.run(() => {
     try {
-      if (player.isValid) player.onScreenDisplay.setActionBar(text);
+      if (player.isValid) notifyActionBar(player, text);
     } catch {
       // 無視
     }

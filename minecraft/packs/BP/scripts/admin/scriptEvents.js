@@ -9,6 +9,19 @@
 //   /scriptevent noguchi:restrict <break|place|interact> <on|off>
 //   /scriptevent noguchi:dump          実行者の個人データをコンテンツログに出力（外部バックアップ用）
 //   /scriptevent noguchi:dump_world    ワールド共有データをコンテンツログに出力
+//
+// 【第2弾：管理者テスト用】プレイヤーが実行する場合は管理者タグ（noguchi_admin）が必要。
+// 最後の引数にオンラインのプレイヤー名を書くと、そのプレイヤーが対象になる（省略時は実行者）。
+//   /scriptevent noguchi:exp <量> [名前]           経験値付与
+//   /scriptevent noguchi:level <レベル> [名前]     レベル設定
+//   /scriptevent noguchi:points <数> [名前]        能力ポイント付与
+//   /scriptevent noguchi:vital <hp|mp|stamina> <値> [名前]
+//   /scriptevent noguchi:talent <才能ID> [名前]    才能付与
+//   /scriptevent noguchi:evolve <才能ID> [進化先ID] [名前]  才能進化テスト
+//   /scriptevent noguchi:awaken [潜在能力ID] [名前]          潜在能力覚醒テスト
+//   /scriptevent noguchi:limitbreak [名前]         限界突破テスト（条件無視）
+//   /scriptevent noguchi:recalc [名前]             ステータス再計算
+//   /scriptevent noguchi:flag <フラグID> [名前]    特殊イベントのフラグを立てる
 // =============================================================
 import { system, world, Player } from "@minecraft/server";
 import { ctx } from "../core/context.js";
@@ -17,6 +30,28 @@ import { NAMESPACE, KEY_PREFIX, ADDON_VERSION } from "../config.js";
 import { flushAll, pendingCount } from "../storage/saveManager.js";
 import { worldStorageBytes, countKeys } from "../storage/worldBackend.js";
 import { ensureAdventurerBook } from "../items/adventurerBook.js";
+import { isAdmin } from "./adminAuth.js";
+
+// 第2弾のテスト用コマンド（第1弾のコマンドは従来どおり /scriptevent の実行権限のみで使える）
+const ADMIN_COMMANDS = new Set(["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag"]);
+
+/** 最後の引数がオンラインのプレイヤー名ならそのプレイヤー、違えば実行者 */
+function resolveTarget(args, src) {
+  const last = args[args.length - 1];
+  if (last) {
+    const p = world.getAllPlayers().find((x) => x.name === last);
+    if (p) {
+      args.pop();
+      return p;
+    }
+  }
+  return src;
+}
+
+function result(ev, label, res) {
+  const ok = res === true || (res && res.ok);
+  reply(ev, ok ? `§a${label}：成功` : `§c${label}：失敗 ${res && res.reason ? res.reason : ""}`);
+}
 
 const RESTRICT_KEYS = { break: "blockBreak", place: "blockPlace", interact: "blockInteract" };
 
@@ -48,6 +83,17 @@ export function registerScriptEvents(hooks) {
     const src = ev.sourceEntity instanceof Player ? ev.sourceEntity : undefined;
     if (!ctx.ready) {
       reply(ev, "§eデータを準備中です。");
+      return;
+    }
+    if (ADMIN_COMMANDS.has(cmd) && src && !isAdmin(src)) {
+      reply(ev, "§cこのコマンドは管理者（noguchi_admin タグ）専用です。");
+      return;
+    }
+    const target = ["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag"].includes(cmd)
+      ? resolveTarget(args, src)
+      : src;
+    if (target === undefined && ["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag"].includes(cmd)) {
+      reply(ev, "§c対象のプレイヤーを指定してください。");
       return;
     }
 
@@ -105,6 +151,40 @@ export function registerScriptEvents(hooks) {
         reply(ev, `§aコンテンツログに出力しました（${n}行）。`);
         return;
       }
+      case "exp":
+        result(ev, `経験値 ${args[0]}`, ctx.progression.grantExp(target.id, Number(args[0]), { source: "admin", noBonus: true }));
+        return;
+      case "level":
+        result(ev, `レベル ${args[0]}`, ctx.progression.setLevel(target.id, Number(args[0])));
+        return;
+      case "points":
+        result(ev, `能力ポイント ${args[0]}`, ctx.progression.addStatPoints(target.id, Number(args[0])));
+        return;
+      case "vital":
+        if (!["hp", "mp", "stamina"].includes(args[0]) || !Number.isFinite(Number(args[1]))) {
+          reply(ev, "§c使い方: /scriptevent noguchi:vital <hp|mp|stamina> <値> [名前]");
+          return;
+        }
+        result(ev, `${args[0]}=${args[1]}`, ctx.vitals.setValue(target.id, args[0], Number(args[1])));
+        return;
+      case "talent":
+        result(ev, `才能 ${args[0]}`, ctx.talents.grant(target.id, args[0]));
+        return;
+      case "evolve":
+        result(ev, `進化 ${args[0]}`, ctx.talents.forceEvolve(target.id, args[0], args[1]));
+        return;
+      case "awaken":
+        result(ev, "潜在能力覚醒", ctx.talents.forceAwaken(target.id, args[0]));
+        return;
+      case "limitbreak":
+        result(ev, "限界突破", ctx.progression.limitBreak(target.id, { force: true, by: `admin:${src ? src.name : "command"}` }));
+        return;
+      case "recalc":
+        result(ev, "再計算", ctx.stats.recalc(target.id, { important: true }));
+        return;
+      case "flag":
+        result(ev, `フラグ ${args[0]}`, args[0] ? ctx.actions.setFlag(target.id, args[0]) : false);
+        return;
       default:
         reply(ev, `§c不明なコマンド: ${ev.id}`);
     }

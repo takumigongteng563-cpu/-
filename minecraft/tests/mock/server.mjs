@@ -36,7 +36,7 @@ class Signal {
 }
 
 export const ItemLockMode = { inventory: "inventory", none: "none", slot: "slot" };
-export const EntityComponentTypes = { Inventory: "minecraft:inventory" };
+export const EntityComponentTypes = { Inventory: "minecraft:inventory", Health: "minecraft:health" };
 export const GameMode = { Adventure: "Adventure", Creative: "Creative", Spectator: "Spectator", Survival: "Survival" };
 
 const KNOWN_BLOCKS = new Set(["minecraft:stone", "minecraft:dirt", "minecraft:crafting_table"]);
@@ -87,11 +87,58 @@ function checkValue(v) {
   if (typeof v === "string" && Buffer.byteLength(v, "utf8") > 32767) throw new Error("[mock] 動的プロパティの文字列が長すぎます");
 }
 
-export class Entity {}
+class HealthComponent {
+  constructor(owner, max) {
+    this.owner = owner;
+    this.effectiveMax = max;
+    this.effectiveMin = 0;
+    this.defaultValue = max;
+    this.currentValue = max;
+  }
+  setCurrentValue(v) {
+    assertWritable("health.setCurrentValue");
+    const old = this.currentValue;
+    this.currentValue = Math.max(0, Math.min(this.effectiveMax, v));
+    if (old !== this.currentValue) world.afterEvents.entityHealthChanged.fire({ entity: this.owner, oldValue: old, newValue: this.currentValue });
+    return true;
+  }
+  resetToMaxValue() {
+    this.setCurrentValue(this.effectiveMax);
+  }
+}
+
+const dimension = {
+  id: "minecraft:overworld",
+  particles: [],
+  spawnParticle(id, loc) {
+    assertWritable("spawnParticle");
+    this.particles.push(id);
+  },
+};
+
+let entitySeq = 1;
+export class Entity {
+  constructor(typeId, families = []) {
+    this.typeId = typeId;
+    this.id = String(1000 + entitySeq++);
+    this.families = families;
+    this.isValid = true;
+    this.location = { x: 0, y: 64, z: 0 };
+    this.dimension = dimension;
+    this.health = new HealthComponent(this, 20);
+  }
+  matches(opt) {
+    if (opt.families) return opt.families.every((f) => this.families.includes(f));
+    return true;
+  }
+  getComponent(id) {
+    return id === EntityComponentTypes.Health ? this.health : undefined;
+  }
+}
 
 export class Player extends Entity {
   constructor(id, name, props = {}) {
-    super();
+    super("minecraft:player", ["player", "mob"]);
     this.id = id;
     this.name = name;
     this.typeId = "minecraft:player";
@@ -103,11 +150,21 @@ export class Player extends Entity {
     this.gameMode = GameMode.Survival;
     this.selectedSlotIndex = 0;
     this.inventory = new Container(36);
+    this.isSprinting = false;
+    this.isSneaking = false;
+    this.isSleeping = false;
+    this.sounds = [];
+    this.titles = [];
+    this.effects = [];
     const self = this;
     this.onScreenDisplay = {
       setActionBar(t) {
         assertWritable("setActionBar");
         self.actionBar.push(t);
+      },
+      setTitle(t, opt) {
+        assertWritable("setTitle");
+        self.titles.push({ title: t, subtitle: opt && opt.subtitle });
       },
     };
   }
@@ -121,7 +178,16 @@ export class Player extends Entity {
     else this.props.set(k, v);
   }
   getComponent(id) {
+    if (id === EntityComponentTypes.Health) return this.health;
     return id === EntityComponentTypes.Inventory ? { container: this.inventory } : undefined;
+  }
+  playSound(id) {
+    assertWritable("playSound");
+    this.sounds.push(id);
+  }
+  addEffect(id, duration, opt) {
+    assertWritable("addEffect");
+    this.effects.push({ id, duration, amplifier: opt && opt.amplifier });
   }
   sendMessage(m) {
     assertWritable("sendMessage");
@@ -148,6 +214,15 @@ export const world = {
     playerSpawn: new Signal(),
     playerLeave: new Signal(),
     itemUse: new Signal(),
+    entityDie: new Signal(),
+    entityHitEntity: new Signal(),
+    entityHurt: new Signal(),
+    entityHealthChanged: new Signal(),
+    projectileHitEntity: new Signal(),
+  },
+  timeOfDay: 6000,
+  getTimeOfDay() {
+    return this.timeOfDay;
   },
   beforeEvents: {
     playerBreakBlock: new Signal(true),
@@ -239,6 +314,23 @@ export const __test = {
     const p = new Player(id, name, props);
     players.push(p);
     return p;
+  },
+  /** モンスター等を作る */
+  spawnMob(typeId, families = ["monster", "mob"]) {
+    return new Entity(typeId, families);
+  },
+  /** プレイヤーがモンスターを攻撃して倒すまでの一連のイベント */
+  hit(player, mob) {
+    world.afterEvents.entityHitEntity.fire({ damagingEntity: player, hitEntity: mob });
+  },
+  kill(player, mob) {
+    mob.isValid = false;
+    world.afterEvents.entityDie.fire({ deadEntity: mob, damageSource: { cause: "entityAttack", damagingEntity: player } });
+  },
+  /** モンスターからプレイヤーへのダメージ（体力を減らし、hurt を発火） */
+  hurt(player, mob, damage) {
+    player.health.setCurrentValue(player.health.currentValue - damage);
+    world.afterEvents.entityHurt.fire({ hurtEntity: player, damage, damageSource: { cause: "entityAttack", damagingEntity: mob } });
   },
   removePlayer(p) {
     p.isValid = false;

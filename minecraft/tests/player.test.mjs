@@ -15,10 +15,14 @@ test("初回参加：人間・Lv1・無職・一般人相当・金貨0で作成�
   assert.equal(d.exp, 0);
   assert.equal(d.job.current, "unemployed");
   assert.equal(d.gold, 0);
-  assert.deepEqual(d.stats, { str: 5, vit: 5, agi: 5, dex: 5, int: 5, mnd: 5, luk: 5 });
+  // 第2弾で魔力(mag)を追加し8種類
+  assert.deepEqual(d.stats, { str: 5, vit: 5, mag: 5, agi: 5, dex: 5, int: 5, mnd: 5, luk: 5 });
   assert.equal(d.unspentStatPoints, 0);
   assert.equal(d.adventurer.rank, "unregistered");
-  assert.deepEqual(d.talents, { innate: [], acquired: [] });
+  // PlayerService 単体では才能は未抽選（抽選は app.joinPlayer が行う。rpg.test.mjs で検証）
+  assert.deepEqual(d.talents.innate, []);
+  assert.deepEqual(d.talents.acquired, []);
+  assert.equal(d.talents.rolled, false);
   assert.equal(p.getDynamicProperty(PLAYER_UID_PROPERTY), r.uid);
   // 4-2 の全項目が保存構造に存在する
   for (const k of ["uid", "level", "exp", "job", "vitals", "stats", "unspentStatPoints", "talents", "hiddenPotential", "skills", "proficiency", "equipment", "gold", "titles", "adventurer", "quests", "npcAffinity", "storage", "dungeonRecords", "limitBreak"]) {
@@ -175,7 +179,7 @@ test("欠けた項目は読み込み時に補完される（アップデート�
   w = bootWorld(b);
   w.ps.join(p);
   const d = w.ps.dataFor(p.id);
-  assert.deepEqual(d.limitBreak, { stage: 0, unlocked: [] });
+  assert.deepEqual(d.limitBreak, { stage: 0, unlocked: [], history: [] });
   assert.equal(d.gold, 42);
 });
 

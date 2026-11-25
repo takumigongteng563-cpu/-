@@ -1,11 +1,13 @@
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ctx } from "../../core/context.js";
 import { getRecentErrors } from "../../core/log.js";
-import { ADDON_VERSION, KEY_PREFIX, TAGS, PLAYER_SCHEMA_VERSION, WORLD_SCHEMA_VERSION } from "../../config.js";
+import { ADDON_VERSION, KEY_PREFIX, PLAYER_SCHEMA_VERSION, WORLD_SCHEMA_VERSION } from "../../config.js";
 import { flushAll, pendingCount, saveStats } from "../../storage/saveManager.js";
 import { worldStorageBytes, countKeys } from "../../storage/worldBackend.js";
 import { recordNameForUid } from "../../player/playerService.js";
 import { showForm } from "../formUtil.js";
+import { isAdmin } from "../../admin/adminAuth.js";
+import { openAdminTest } from "./adminTest.js";
 import { showInfoPage } from "./infoPage.js";
 import { dateTime, heading, lines, num } from "../format.js";
 
@@ -18,13 +20,6 @@ const STATUS_JA = {
 };
 
 /** @param {import("@minecraft/server").Player} player */
-function isAdmin(player) {
-  try {
-    return player.hasTag(TAGS.admin);
-  } catch {
-    return false;
-  }
-}
 
 /** @param {import("@minecraft/server").Player} player */
 async function personalSettings(player) {
@@ -32,12 +27,15 @@ async function personalSettings(player) {
   const form = new ModalFormData()
     .title("個人設定")
     .toggle("保存したときに通知を表示する", { defaultValue: !!d.settings.saveNotice })
+    .toggle("HUD（画面下のHP・MP・スタミナ表示）を表示する", { defaultValue: d.settings.hud !== false })
     .submitButton("決定");
   const res = await showForm(player, form);
   if (!res || !res.formValues) return;
   const saveNotice = !!res.formValues[0];
+  const hud = res.formValues[1] === undefined ? d.settings.hud !== false : !!res.formValues[1];
   ctx.playerService.update(player.id, (pd) => {
     pd.settings.saveNotice = saveNotice;
+    pd.settings.hud = hud;
   }, { important: true });
   player.sendMessage("§a設定を保存しました。");
 }
@@ -85,7 +83,7 @@ async function restrictionSettings(player) {
     .toggle("ブロックの使用（作業台・かまど・チェスト等）を禁止", { defaultValue: !!r.blockInteract })
     .submitButton("決定");
   const res = await showForm(player, form);
-  if (!res || !res.formValues) return;
+  if (!res || !res.formValues || !isAdmin(player)) return;
   // label は formValues に undefined として含まれるため、真偽値だけを取り出す
   const vals = res.formValues.filter((v) => typeof v === "boolean");
   if (vals.length !== 3) return;
@@ -98,6 +96,28 @@ async function restrictionSettings(player) {
 }
 
 /** @param {import("@minecraft/server").Player} player */
+/** @param {import("@minecraft/server").Player} player */
+async function progressionSettings(player) {
+  const w = ctx.worldService.world.settings;
+  const POL = ["store", "discard"];
+  const EXH = ["slow", "none"];
+  const form = new ModalFormData()
+    .title("成長・余剰経験値の設定（管理者）")
+    .dropdown("レベル上限での余剰経験値", ["保留して限界突破時に加算", "捨てる"], { defaultValueIndex: Math.max(0, POL.indexOf(w.progression.overflowPolicy)) })
+    .toggle("【暫定】バニラのモンスター討伐で経験値を得る", { defaultValue: !!w.progression.vanillaMobExp })
+    .dropdown("スタミナ切れの制限", ["移動が遅くなる", "制限なし"], { defaultValueIndex: Math.max(0, EXH.indexOf(w.vitals.exhaustion)) })
+    .submitButton("決定");
+  const res = await showForm(player, form);
+  if (!res || !res.formValues || !isAdmin(player)) return;
+  const [pol, mob, exh] = res.formValues;
+  ctx.worldService.updateWorld((wd) => {
+    wd.settings.progression.overflowPolicy = POL[Number(pol)] ?? "store";
+    wd.settings.progression.vanillaMobExp = !!mob;
+    wd.settings.vitals.exhaustion = EXH[Number(exh)] ?? "slow";
+  }, { important: true });
+  player.sendMessage("§a設定を保存しました。");
+}
+
 async function recentErrors(player) {
   const errs = getRecentErrors();
   const body = errs.length === 0 ? "記録されたエラーはありません。" : errs.map((e) => `§7${dateTime(e.at)}§r\n${e.text}`).join("\n\n");
@@ -121,6 +141,8 @@ export const settingsPage = {
       if (admin) {
         items.push({ label: "§1[管理者]§r 行動制限の設定", run: () => restrictionSettings(player) });
         items.push({ label: "§1[管理者]§r 最近のエラー", run: () => recentErrors(player) });
+        items.push({ label: "§1[管理者]§r 成長・余剰経験値の設定", run: () => progressionSettings(player) });
+        items.push({ label: "§1[管理者]§r テスト機能", run: () => openAdminTest(player) });
       }
       const form = new ActionFormData().title("設定").body(admin ? "§7管理者として表示しています§r" : "");
       for (const it of items) form.button(it.label);

@@ -34,7 +34,14 @@ export function playerTemplate() {
     // --- 基本 ---
     race: DEFAULT_RACE_ID,
     level: 1,
-    exp: 0,
+    exp: 0, // 現在のレベル内での経験値（次のレベルまでの進捗）
+    // --- 第2弾：経験値の記録 ---
+    totalExp: 0, // 累計獲得経験値
+    expOverflow: 0, // レベル上限で保留中の余剰経験値（限界突破時に加算）
+    rewardLog: {
+      recent: [], // 最近受け取った報酬キー（二重付与防止）
+      once: {}, // 一度きりの報酬 { [key]: 受け取った時刻 }
+    },
 
     // --- 職業 ---
     job: {
@@ -45,7 +52,8 @@ export function playerTemplate() {
       history: [], // 転職履歴 [{ from, to, at }]
     },
 
-    // --- HP・MP・スタミナ（RPG内部値。バニラの体力とは第1弾では連動しない） ---
+    // --- HP・MP・スタミナ ---
+    // hp はバニラの体力の割合から算出（第2弾）。最大値は派生能力値から再計算される
     vitals: {
       hp: INITIAL_VITALS.hp,
       hpMax: INITIAL_VITALS.hp,
@@ -55,21 +63,42 @@ export function playerTemplate() {
       staminaMax: INITIAL_VITALS.stamina,
     },
 
-    // --- 能力値 ---
-    stats: initialBaseStats(),
+    // --- 能力値（第2弾で層ごとに分離。合計値はここに保存せず毎回計算する） ---
+    stats: initialBaseStats(), // 基礎値（第1弾からの項目）
+    statGrowth: {}, // 成長率によるレベルアップ時の上昇分 { [statId]: 整数 }
+    statGrowthFrac: {}, // 成長の端数（1未満の貯まり）
+    statAllocated: {}, // 自由振り分けで確定した分
     unspentStatPoints: 0,
+    statPointsEarned: 0, // これまでに得た能力ポイントの合計
+    respecTokens: 0, // 再振り分けの権利（将来の特殊アイテム・試練用）
+    buffs: [], // 一時的な効果 [{ id, source, stats, derived, untilTick }]（同じ id は1つだけ）
+    // 計算結果の保存（他システム・不在時の参照用。いつでも再計算できる）
+    computed: {
+      primary: {},
+      derived: {},
+      elements: {},
+      at: 0,
+    },
 
     // --- 才能 ---
     talents: {
-      innate: [], // 先天的才能のID一覧
-      acquired: [], // 後天的才能のID一覧
+      innate: [], // 先天的才能のID一覧（初回抽選の結果。進化しても記録として残す）
+      acquired: [], // 後天的才能のID一覧（獲得した記録）
+      // --- 第2弾 ---
+      rolled: false, // 初期才能を抽選済みか（true になったら二度と抽選しない）
+      rolledAt: 0,
+      active: [], // 現在有効な才能 [{ id, origin: "innate"|"acquired"|"admin", since, lineage: [進化前のID...] }]
+      history: [], // 獲得・進化の履歴 [{ type, id, from, at }]
     },
     // 隠された潜在能力。本人にも内容は見えない。seed は将来の抽選用
     hiddenPotential: {
       seed: 0,
       revealed: [], // 開花済みの潜在能力ID
-      entries: [], // 内部的に決定済みの潜在能力（未公開）
+      entries: [], // 内部的に決定済みの潜在能力（未公開） [{ id, awakened, awakenedAt }]
     },
+    // --- 第2弾：行動の記録（後天性才能・潜在能力の条件に使う） ---
+    actions: {}, // { [行動キー]: 回数・量 }
+    flags: {}, // 特殊イベント・試練などのフラグ { [flagId]: 時刻 }
 
     // --- スキル・熟練度 ---
     skills: {
@@ -114,13 +143,15 @@ export function playerTemplate() {
 
     // --- 限界突破 ---
     limitBreak: {
-      stage: 0,
+      stage: 0, // 限界突破回数 = 存在階級の段階（0 = 一般級）
       unlocked: [],
+      history: [], // [{ from, to, at, by }]
     },
 
     // --- 個人設定 ---
     settings: {
       saveNotice: false, // 保存時にアクションバーへ通知するか
+      hud: true, // HUD（アクションバーのステータス表示）
     },
 
     // --- 記録 ---
