@@ -62,3 +62,9 @@ node test/conquest.js 10 6        # バトルロワイヤル（群雄割拠）�
 - `server/` ゲームの進行（`game.js`）、合戦（`battle.js`）、歴史イベントとエンディング（`events.js`）、日々のできごと（`incidents.js`）、地図のAI（`ai.js`・`demonai.js`）
 - `public/` 画面
 - `server.js` サーバー本体
+
+---
+
+## 別プロジェクト：魔神野口と4人の勇者たち（Minecraft統合版アドオン）
+
+このリポジトリの [`minecraft/`](minecraft/) フォルダには、Minecraft 統合版用のRPGアドオン『魔神野口と4人の勇者たち』が入っています。導入方法などは [minecraft/README.md](minecraft/README.md) を見てください。

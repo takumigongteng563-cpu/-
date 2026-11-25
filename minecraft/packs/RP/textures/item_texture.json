@@ -1,0 +1,9 @@
+{
+  "resource_pack_name": "majin_noguchi_rp",
+  "texture_name": "atlas.items",
+  "texture_data": {
+    "noguchi_adventurer_book": {
+      "textures": "textures/items/adventurer_book"
+    }
+  }
+}
