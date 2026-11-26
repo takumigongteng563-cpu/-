@@ -10,6 +10,7 @@ import { talents } from "../content/talents/index.js";
 import { potentials } from "../content/potentials.js";
 import { gradeLabel } from "../content/grades.js";
 import { tierForStage } from "../content/tiers.js";
+import { jobs } from "../content/jobs.js";
 import { invalidateHud } from "../hud/hud.js";
 
 function tryDo(fn) {
@@ -102,7 +103,39 @@ export function registerEffects() {
     })
   );
 
-  for (const name of ["statsChanged", "vitalsChanged", "expGained"]) {
+  // --- 第3弾：職業 ---
+  on("jobChanged", (e) =>
+    later(e.playerId, (p) => {
+      const to = jobs.get(e.to);
+      if (!to) return;
+      const fusion = e.kind === "fusion";
+      title(p, fusion ? "§6§l職業融合" : "§b§l転職", `§f${jobs.get(e.from)?.name ?? e.from} → §e§l${to.name}`, 60);
+      p.sendMessage(`§6${to.name}§r になった！ §7${to.fusionText ?? ""}§r`);
+      sound(p, fusion ? "random.totem" : "random.levelup", fusion ? 1.2 : 0.8);
+      particles(p, fusion ? "minecraft:totem_particle" : "minecraft:villager_happy", fusion ? 20 : 8);
+    })
+  );
+  on("jobLevelUp", (e) =>
+    later(e.playerId, (p) => {
+      p.sendMessage(`§b${jobs.get(e.jobId)?.name ?? e.jobId}の職業レベルが ${e.level} に上がった！`);
+      sound(p, "random.orb", 1.4);
+    })
+  );
+  on("jobUnlocked", (e) =>
+    later(e.playerId, (p) => {
+      p.sendMessage(`§a新たな職業「${jobs.get(e.jobId)?.name ?? e.jobId}」への道が開けた！ §7（冒険者の書 → 職業）`);
+      sound(p, "random.orb", 0.8);
+    })
+  );
+  on("hiddenJobDiscovered", (e) =>
+    later(e.playerId, (p) => {
+      title(p, "§5§l隠し職業 発見", `§d${jobs.get(e.jobId)?.name ?? e.jobId}`, 60);
+      sound(p, "random.totem");
+      particles(p, "minecraft:totem_particle", 15);
+    })
+  );
+
+  for (const name of ["statsChanged", "vitalsChanged", "expGained", "jobChanged", "jobLevelUp"]) {
     on(name, (e) => {
       if (e && e.playerId) invalidateHud(e.playerId);
     });

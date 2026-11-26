@@ -43,7 +43,8 @@ export function hudText(d) {
   const v = d.vitals;
   const cap = levelCapForStage(d.limitBreak.stage);
   const exp = d.level >= cap ? "§6MAX" : `${Math.floor(d.exp)}/${expToNext(d.level, d.limitBreak.stage)}`;
-  const job = jobs.get(d.job.current)?.name ?? d.job.current;
+  const jl = d.job.levels[d.job.current];
+  const job = `${jobs.get(d.job.current)?.name ?? d.job.current}${jl && d.job.current !== "unemployed" ? ` Lv${jl.level}` : ""}`;
   const ex = v.exhausted ? "§c" : "§e";
   return (
     `§cHP ${Math.round(v.hp)}/${v.hpMax}  §9MP ${Math.floor(v.mp)}/${v.mpMax}  ${ex}ST ${Math.floor(v.stamina)}/${v.staminaMax}` +

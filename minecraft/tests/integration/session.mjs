@@ -105,9 +105,9 @@ if (phase === "first") {
   );
   const pageTitles = __ui.shown.filter((s, i) => i % 2 === 1).map((s) => s.form._title);
   assert.equal(pageTitles.length, pageCount);
-  // 未実装の機能を含むページには「今後実装予定」、第2弾で実装したステータス・才能には出ない
+  // 未実装の機能を含むページには「今後実装予定」。第2弾で実装したステータス・才能、第3弾で実装した職業には出ない
   const soonTitles = __ui.shown.filter((s) => s.form._body.includes("今後実装予定")).map((s) => s.form._title);
-  assert.deepEqual(soonTitles, ["職業", "スキル", "装備", "称号", "クエスト", "冒険者情報", "ステージ情報", "倉庫"]);
+  assert.deepEqual(soonTitles, ["スキル", "装備", "称号", "クエスト", "冒険者情報", "ステージ情報", "倉庫"]);
   ok("RPG専用メニュー：11項目が開き、未実装項目は「今後実装予定」表示");
 
   // 多重表示防止：連打しても1つしか開かない

@@ -106,14 +106,16 @@ async function progressionSettings(player) {
     .dropdown("レベル上限での余剰経験値", ["保留して限界突破時に加算", "捨てる"], { defaultValueIndex: Math.max(0, POL.indexOf(w.progression.overflowPolicy)) })
     .toggle("【暫定】バニラのモンスター討伐で経験値を得る", { defaultValue: !!w.progression.vanillaMobExp })
     .dropdown("スタミナ切れの制限", ["移動が遅くなる", "制限なし"], { defaultValueIndex: Math.max(0, EXH.indexOf(w.vitals.exhaustion)) })
+    .toggle("冒険者の書から転職できる（転職神殿の完成まで）", { defaultValue: !!w.jobs.changeFromMenu })
     .submitButton("決定");
   const res = await showForm(player, form);
   if (!res || !res.formValues || !isAdmin(player)) return;
-  const [pol, mob, exh] = res.formValues;
+  const [pol, mob, exh, jobMenu] = res.formValues;
   ctx.worldService.updateWorld((wd) => {
     wd.settings.progression.overflowPolicy = POL[Number(pol)] ?? "store";
     wd.settings.progression.vanillaMobExp = !!mob;
     wd.settings.vitals.exhaustion = EXH[Number(exh)] ?? "slow";
+    if (typeof jobMenu === "boolean") wd.settings.jobs.changeFromMenu = jobMenu;
   }, { important: true });
   player.sendMessage("§a設定を保存しました。");
 }

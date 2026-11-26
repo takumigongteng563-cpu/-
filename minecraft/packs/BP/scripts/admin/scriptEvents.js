@@ -27,6 +27,13 @@
 //   /scriptevent noguchi:give_focus                操作判定の確認用アイテム「修練の触媒」を受け取る
 //   /scriptevent noguchi:input_test <on|off>       操作判定テスト（使用時に判定結果を表示）
 //   /scriptevent noguchi:stage_clear <番号>         ステージクリアの記録テスト（復興・解放処理の確認）
+//
+// 【第3弾：職業（管理者テスト用）】
+//   /scriptevent noguchi:job <職業ID> [名前]        無条件転職（例：warrior.mage.mage）
+//   /scriptevent noguchi:joblevel <レベル> [名前]   現在の職業の職業レベル設定
+//   /scriptevent noguchi:jobexp <量> [名前]         職業経験値付与
+//   /scriptevent noguchi:jobtoken <個数> [名前]     転職の証を付与
+//   /scriptevent noguchi:jobcheck                   職業データの自動検証
 // =============================================================
 import { system, world, Player } from "@minecraft/server";
 import { ctx } from "../core/context.js";
@@ -36,11 +43,13 @@ import { flushAll, pendingCount } from "../storage/saveManager.js";
 import { worldStorageBytes, countKeys } from "../storage/worldBackend.js";
 import { ensureAdventurerBook, giveSkillFocus } from "../items/adventurerBook.js";
 import { stageIdOf } from "../content/stages.js";
+import { validateJobs } from "../content/jobs/validateJobs.js";
 import { TAGS } from "../config.js";
 import { isAdmin } from "./adminAuth.js";
 
 // 第2弾のテスト用コマンド（第1弾のコマンドは従来どおり /scriptevent の実行権限のみで使える）
-const ADMIN_COMMANDS = new Set(["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag", "give_focus", "input_test", "stage_clear"]);
+const ADMIN_COMMANDS = new Set(["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag", "give_focus", "input_test", "stage_clear", "job", "joblevel", "jobexp", "jobtoken", "jobcheck"]);
+const TARGETED = ["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag", "job", "joblevel", "jobexp", "jobtoken"];
 
 /** 最後の引数がオンラインのプレイヤー名ならそのプレイヤー、違えば実行者 */
 function resolveTarget(args, src) {
@@ -96,10 +105,8 @@ export function registerScriptEvents(hooks) {
       reply(ev, "§cこのコマンドは管理者（noguchi_admin タグ）専用です。");
       return;
     }
-    const target = ["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag"].includes(cmd)
-      ? resolveTarget(args, src)
-      : src;
-    if (target === undefined && ["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag"].includes(cmd)) {
+    const target = TARGETED.includes(cmd) ? resolveTarget(args, src) : src;
+    if (target === undefined && TARGETED.includes(cmd)) {
       reply(ev, "§c対象のプレイヤーを指定してください。");
       return;
     }
@@ -210,6 +217,24 @@ export function registerScriptEvents(hooks) {
         const ids = world.getAllPlayers().filter((p) => ctx.playerService.getSession(p.id)).map((p) => p.id);
         const r = ctx.stages.recordClear(stageIdOf(n), ids);
         result(ev, `ステージ${n} クリア記録${r.first ? "（初回）" : ""}${r.unlockedNext ? ` → ${r.unlockedNext} 解放` : ""}`, r);
+        return;
+      }
+      case "job":
+        result(ev, `無条件転職 ${args[0]}`, ctx.jobs.changeJob(target.id, args[0], { force: true, by: `admin:${src ? src.name : "command"}` }));
+        return;
+      case "joblevel":
+        result(ev, `職業レベル ${args[0]}`, ctx.jobs.setJobLevel(target.id, Number(args[0])));
+        return;
+      case "jobexp":
+        result(ev, `職業経験値 ${args[0]}（+${ctx.jobs.addJobExp(target.id, Number(args[0]))}レベル）`, true);
+        return;
+      case "jobtoken":
+        result(ev, `転職の証 ×${args[0]}`, ctx.jobs.addCrossLineToken(target.id, Number(args[0]) || 1));
+        return;
+      case "jobcheck": {
+        const r = validateJobs();
+        reply(ev, `${r.ok ? "§a" : "§c"}職業データの自動検証：${r.ok ? "合格" : "不合格"}（${r.checks.filter((c) => c.ok).length}/${r.checks.length}項目）`);
+        for (const e of r.errors.slice(0, 5)) reply(ev, `§c${e}`);
         return;
       }
       default:

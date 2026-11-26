@@ -6,6 +6,7 @@
 import { conform } from "../storage/sanitize.js";
 import { DEFAULT_OVERFLOW_POLICY } from "../balance/progression.js";
 import { DEFAULT_EXHAUSTION_POLICY } from "../balance/vitals.js";
+import { DEFAULT_JOB_CHANGE_FROM_MENU } from "../balance/jobs.js";
 
 export function worldTemplate() {
   return {
@@ -98,6 +99,11 @@ export function worldTemplate() {
       },
       vitals: {
         exhaustion: DEFAULT_EXHAUSTION_POLICY, // スタミナ切れの制限 "slow" | "none"
+      },
+      // --- 第3弾 ---
+      jobs: {
+        // 転職神殿（第15弾）の完成までは冒険者の書から条件付きの転職を行える
+        changeFromMenu: DEFAULT_JOB_CHANGE_FROM_MENU,
       },
     },
 

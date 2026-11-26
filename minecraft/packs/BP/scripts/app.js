@@ -16,6 +16,7 @@ import { StageService } from "./stages/stageService.js";
 import { UniqueItemService } from "./unique/uniqueItemService.js";
 import { SkillBindingService } from "./input/skillBindingService.js";
 import { RewardService } from "./rewards/rewardService.js";
+import { JobService } from "./job/jobService.js";
 import { KEY_PREFIX, SAVE } from "./config.js";
 
 /**
@@ -38,7 +39,16 @@ export function createApp(backend, nowTick) {
   const uniqueItems = new UniqueItemService(worldService, playerService);
   const skillBindings = new SkillBindingService(playerService, vitals, nowTick);
   const rewards = new RewardService(playerService, stages, uniqueItems);
-  return { store, worldService, playerService, partyService, stats, talents, progression, actions, vitals, kingdom, stages, uniqueItems, skillBindings, rewards, nowTick };
+  // --- 第3弾：職業 ---
+  const jobs = new JobService(playerService, worldService, nowTick);
+  actions.onRecorded = (pid, key, amount) => jobs.onAction(pid, key, amount);
+  actions.onFlush = (pid) => jobs.evaluateUnlocks(pid);
+  progression.onExpGranted = (pid, amount, levelsGained) => {
+    if (amount > 0) jobs.onPlayerExp(pid, amount);
+    if (levelsGained > 0) jobs.evaluateUnlocks(pid);
+  };
+  return {
+    jobs, store, worldService, playerService, partyService, stats, talents, progression, actions, vitals, kingdom, stages, uniqueItems, skillBindings, rewards, nowTick };
 }
 
 /**
@@ -51,5 +61,6 @@ export function joinPlayer(app, player) {
   const rolled = app.talents.ensureRolled(player.id);
   app.playerService.update(player.id, (d) => recalcData(d, app.nowTick()));
   app.talents.evaluate(player.id);
+  app.jobs.evaluateUnlocks(player.id);
   return { join, rolled };
 }

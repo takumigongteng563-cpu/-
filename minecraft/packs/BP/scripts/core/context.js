@@ -15,6 +15,7 @@
  * @property {import("../unique/uniqueItemService.js").UniqueItemService} uniqueItems
  * @property {import("../input/skillBindingService.js").SkillBindingService} skillBindings
  * @property {import("../rewards/rewardService.js").RewardService} rewards
+ * @property {import("../job/jobService.js").JobService} jobs
  * @property {() => number} nowTick 現在のtick
  * @property {boolean} ready
  */
@@ -35,6 +36,7 @@ export const ctx = {
   uniqueItems: null,
   skillBindings: null,
   rewards: null,
+  jobs: null,
   nowTick: () => 0,
   ready: false,
 };

@@ -67,3 +67,16 @@ test("統合（最終仕様対応）：第2弾のセーブデータから更新 
   }
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("統合（第3弾）：v0.2.1 のセーブデータから更新 → 職業メニューで転職・職業融合・ツリー・管理者テスト → 再起動", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mnq4-"));
+  const stateFile = path.join(dir, "state.json");
+  fs.copyFileSync(path.join(root, "tests/fixtures/v021-state.json"), stateFile);
+  for (const phase of ["jobs", "jobs-restart"]) {
+    const out = execFileSync(process.execPath, ["--import", "./tests/mock/loader.mjs", "tests/integration/jobSession.mjs", stateFile, phase], { cwd: root, encoding: "utf8" });
+    const r = JSON.parse(out);
+    assert.equal(r.phase, phase);
+    for (const c of r.checks) console.log(`  [${phase}] ✔ ${c}`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});

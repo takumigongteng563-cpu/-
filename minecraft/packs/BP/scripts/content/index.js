@@ -10,8 +10,9 @@ export { tierForStage, levelCapForStage, nextTier, EXISTENCE_TIERS } from "./tie
 export { talents, innateTalents, acquiredTalents } from "./talents/index.js";
 export { potentials } from "./potentials.js";
 export { specialStats } from "./specialStats.js";
-export { JOB_LINES, JOB_DEFINITIONS, EXPECTED_PER_TIER, tierOfJobId } from "./jobTree.js";
-export { normalJobs } from "./jobs.js";
+export { JOB_LINES, EXPECTED_PER_TIER, tierOfJobId } from "./jobTree.js";
+export { normalJobs, hiddenJobs, jobsOfTier } from "./jobs.js";
+export { ROLES, WEAPONS, ARMORS, ELEMENT_NAMES, TIER_RULES } from "./jobs/catalog.js";
 export { npcs } from "./npcs.js";
 export { rewardTables } from "./rewardTables.js";
 export { stages, STAGE_TYPES, stageIdOf } from "./stages.js";

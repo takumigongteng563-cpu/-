@@ -50,7 +50,14 @@ export function playerTemplate() {
       // 職業ごとの職業レベル。{ [jobId]: { level, exp } }
       levels: { [DEFAULT_JOB_ID]: { level: 1, exp: 0 } },
       unlocked: [DEFAULT_JOB_ID],
-      history: [], // 転職履歴 [{ from, to, at }]（過去の職業の習得記録として残す）
+      history: [], // 転職履歴 [{ from, to, at, kind, by }]（過去の職業の習得記録として残す）
+      // --- 第3弾 ---
+      held: [], // 経験した職業（同じ職業に戻ると職業レベルを引き継ぐ）
+      fusionHistory: [], // 職業融合の履歴 [{ job, fusedLine, at }]
+      inheritedPassives: [], // 引き継いでいる固有パッシブ（職業ID）
+      discoveredHidden: {}, // 発見した隠し職業 { [jobId]: 時刻 }
+      tokens: { crossLine: 0 }, // 特殊アイテム「転職の証」（別系統への転職に使う）
+      expFrac: 0, // 職業経験値の端数
     },
     // --- 最終仕様：職業系統の専用能力値（基盤） { [id]: { base, unlocked, unlockedAt } } ---
     specialStats: {},

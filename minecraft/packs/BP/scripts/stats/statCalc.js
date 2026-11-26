@@ -15,7 +15,7 @@
 import { STAT_IDS } from "../content/stats.js";
 import { talents } from "../content/talents/index.js";
 import { potentials } from "../content/potentials.js";
-import { jobs } from "../content/jobs.js";
+import { jobModifiers } from "../job/jobBonus.js";
 import {
   INITIAL_STATS,
   STAT_HARD_CAP,
@@ -26,7 +26,7 @@ import {
 } from "../balance/stats.js";
 import { GROWTH_BONUS_CAP } from "../balance/growth.js";
 import { statCapForStage } from "../content/tiers.js";
-import { specialStats } from "../content/specialStats.js";
+import { specialStats, SPECIAL_STAT_CAPS } from "../content/specialStats.js";
 
 /** 素の値（基礎＋成長＋振り分け。上限を掛ける前） */
 export function naturalStat(data, s) {
@@ -61,8 +61,8 @@ export function collectModifiers(data, nowTick = 0) {
     const def = potentials.get(e.id);
     if (def) mods.push({ layer: "talent", id: def.id, name: def.name, def });
   }
-  const job = jobs.get(data.job.current);
-  if (job && (job.stats || job.derived || job.growth)) mods.push({ layer: "job", id: job.id, name: job.name, def: job });
+  // 職業：現在の職業（職業レベル込み）と引き継ぎパッシブだけ（第3弾）
+  mods.push(...jobModifiers(data));
   for (const [slot, item] of Object.entries(data.equipment.slots || {})) {
     if (item && typeof item === "object" && (item.stats || item.derived)) {
       mods.push({ layer: "equip", id: `${slot}:${item.id ?? "?"}`, name: item.name ?? slot, def: item });
@@ -128,6 +128,27 @@ export function computeStats(data, nowTick = 0) {
     primary[s] = clamp(Math.floor(raw * (1 + p / 100)), 0, STAT_HARD_CAP);
   }
 
+  // 職業専用能力値（現在の職業・特殊な入手分・補正から計算。存在階級ごとの上限あり）
+  /** @type {Record<string, number>} */
+  const special = {};
+  const sp = data.specialStats || {};
+  const specialCap = SPECIAL_STAT_CAPS[Math.min(SPECIAL_STAT_CAPS.length - 1, data.limitBreak.stage || 0)];
+  for (const def of specialStats.all()) {
+    let v = num(sp[def.id] && sp[def.id].base);
+    let p = 0;
+    let touched = !!(sp[def.id] && sp[def.id].unlocked);
+    for (const m of mods) {
+      const x = m.def.special;
+      if (!x) continue;
+      if (x.flat && def.id in x.flat) touched = true;
+      v += num(x.flat && x.flat[def.id]);
+      p += num(x.pct && x.pct[def.id]);
+    }
+    if (!touched) continue;
+    p = clamp(p, STAT_PERCENT_CAP.min, STAT_PERCENT_CAP.max);
+    special[def.id] = clamp(Math.floor(v * (1 + p / 100)), 0, specialCap);
+  }
+
   const level = Math.max(1, num(data.level));
   const derived = {};
   for (const [id, f] of Object.entries(DERIVED_FORMULAS)) {
@@ -135,6 +156,8 @@ export function computeStats(data, nowTick = 0) {
     for (const [s, c] of Object.entries(f.coef)) v += c * (primary[s] - INITIAL_STATS[s]);
     let flat = 0;
     let p = 0;
+    // 専用能力値から派生能力値への効果（例：治癒力 → 回復効果）
+    for (const [sid, sv] of Object.entries(special)) flat += num(specialStats.get(sid)?.links?.[id]) * sv;
     for (const m of mods) {
       const d = m.def.derived;
       if (!d) continue;
@@ -153,26 +176,6 @@ export function computeStats(data, nowTick = 0) {
     let v = 0;
     for (const m of mods) v += num(m.def.elements && m.def.elements[e.id]);
     elements[e.id] = clamp(v, ELEMENT_RESIST_CAP.min, ELEMENT_RESIST_CAP.max);
-  }
-
-  // 職業系統の専用能力値（基盤のみ。解放済みのものだけ計算）
-  /** @type {Record<string, number>} */
-  const special = {};
-  const sp = data.specialStats || {};
-  for (const def of specialStats.all()) {
-    let v = num(sp[def.id] && sp[def.id].base);
-    let p = 0;
-    let touched = !!(sp[def.id] && sp[def.id].unlocked);
-    for (const m of mods) {
-      const x = m.def.special;
-      if (!x) continue;
-      if (x.flat && def.id in x.flat) touched = true;
-      v += num(x.flat && x.flat[def.id]);
-      p += num(x.pct && x.pct[def.id]);
-    }
-    if (!touched) continue;
-    p = clamp(p, STAT_PERCENT_CAP.min, STAT_PERCENT_CAP.max);
-    special[def.id] = clamp(Math.floor(v * (1 + p / 100)), 0, STAT_HARD_CAP);
   }
 
   return { primary, layers, pct, derived, elements, special, statCap, cappedBy, growth: growthMultipliers(mods), modifiers: mods };

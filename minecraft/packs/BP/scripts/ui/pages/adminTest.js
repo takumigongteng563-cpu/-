@@ -14,6 +14,9 @@ import { stageIdOf } from "../../content/stages.js";
 import { KINGDOM_PHASES } from "../../content/kingdom.js";
 import { TAGS } from "../../config.js";
 import { giveSkillFocus } from "../../items/adventurerBook.js";
+import { treeBrowser } from "./job.js";
+import { validateJobs } from "../../content/jobs/validateJobs.js";
+import { jobs } from "../../content/jobs.js";
 import { createLogger } from "../../core/log.js";
 import { showForm } from "../formUtil.js";
 import { heading, lines, num } from "../format.js";
@@ -164,6 +167,58 @@ const ACTIONS = [
     label: "ステータス再計算",
     async run(admin, t) {
       report(admin, "再計算", ctx.stats.recalc(t.id, { important: true }), t.name);
+    },
+  },
+  {
+    label: "§l職業：無条件転職（ツリーから選ぶ）",
+    async run(admin, t) {
+      await treeBrowser(admin, { admin: true, targetPlayer: t });
+    },
+  },
+  {
+    label: "職業：職業レベル設定",
+    async run(admin, t) {
+      const d = ctx.playerService.dataFor(t.id);
+      const n = await askNumber(admin, "職業レベル設定", `職業レベル（${jobs.get(d.job.current)?.name ?? ""} 上限 ${jobs.get(d.job.current)?.levelCap ?? "-"}）`, "10");
+      if (!(n >= 1)) return;
+      report(admin, `職業レベル ${n}`, ctx.jobs.setJobLevel(t.id, n), t.name);
+    },
+  },
+  {
+    label: "職業：職業経験値付与",
+    async run(admin, t) {
+      const n = await askNumber(admin, "職業経験値付与", "職業経験値", "500");
+      if (!(n > 0)) return;
+      const lv = ctx.jobs.addJobExp(t.id, n);
+      report(admin, `職業経験値 ${n}（+${lv}レベル）`, true, t.name);
+    },
+  },
+  {
+    label: "職業：転職の証を付与",
+    async run(admin, t) {
+      const n = await askNumber(admin, "転職の証", "個数", "1");
+      if (!(n > 0)) return;
+      report(admin, `転職の証 ×${n}`, ctx.jobs.addCrossLineToken(t.id, n), t.name);
+    },
+  },
+  {
+    label: "職業：解放・隠し職業の判定",
+    async run(admin, t) {
+      const r = ctx.jobs.evaluateUnlocks(t.id);
+      admin.sendMessage(`§a解放：${r.unlocked.map((id) => jobs.get(id)?.name).join("、") || "なし"} ／ 発見：${r.discovered.map((id) => jobs.get(id)?.name).join("、") || "なし"}`);
+    },
+  },
+  {
+    label: "職業：データの自動検証",
+    async run(admin) {
+      const r = validateJobs();
+      const body = lines(
+        `結果: ${r.ok ? "§a合格§r" : "§c不合格§r"}（職業 ${r.summary.total}件・通常 ${r.summary.normal}・隠し ${r.summary.hidden}・スキル/奥義 ${r.summary.skills}件）`,
+        "",
+        r.checks.map((c) => `${c.ok ? "§a✓" : "§c✗"}§r ${c.name}
+  §7${c.detail}§r`)
+      );
+      await showInfoPage(admin, "職業データの自動検証", body);
     },
   },
   {

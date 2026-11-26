@@ -51,6 +51,8 @@ export class ProgressionService {
     this.playerService = playerService;
     this.worldService = worldService;
     this.nowTick = nowTick;
+    /** 経験値を得たときに呼ばれる（職業経験値・職業の解放判定。app.js が設定） @type {((playerId: string, amount: number, levelsGained: number) => void)|null} */
+    this.onExpGranted = null;
   }
 
   get settings() {
@@ -146,6 +148,7 @@ export class ProgressionService {
         this.emitTalentEvents(playerId, talentEvents);
       }
       emit("expGained", { playerId, amount: res.granted, source: opt.source });
+      if (this.onExpGranted) this.onExpGranted(playerId, res.granted, res.levelsGained);
     }
     return res;
   }

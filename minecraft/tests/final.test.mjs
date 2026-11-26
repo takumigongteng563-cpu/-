@@ -165,9 +165,10 @@ test("通常職業：4系統×3分岐×5段階 = 484。無職は含めない", (
     else assert.equal(j.children.length, 0);
     for (const c of j.children) assert.equal(jobs.get(c).parent, j.id);
   }
-  assert.deepEqual(JOB_LINES.map((l) => jobs.get(l.id).name), ["戦士", "魔法使い", "斥候", "僧侶"]);
+  // 第3弾：第1次職業は「戦士・魔法使い・盗賊・僧侶」（斥候 → 盗賊）、484職業すべてにデータあり
+  assert.deepEqual(JOB_LINES.map((l) => jobs.get(l.id).name), ["戦士", "魔法使い", "盗賊", "僧侶"]);
   assert.ok(!n.some((j) => j.id === "unemployed"));
-  assert.equal(n.filter((j) => j.defined).length, 4); // 中身は第3弾
+  assert.equal(n.filter((j) => j.defined).length, 484);
 });
 
 // ---------------- 100ステージ・10章・王国 ----------------

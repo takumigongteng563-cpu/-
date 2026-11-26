@@ -2,27 +2,27 @@
   "format_version": 2,
   "header": {
     "name": "魔神野口と4人の勇者たち BP",
-    "description": "魔神野口と4人の勇者たち ビヘイビアーパック（最終仕様Ver.1.0対応）",
+    "description": "魔神野口と4人の勇者たち ビヘイビアーパック（第3弾：全484職業・職業融合）",
     "uuid": "50903bc5-4b62-4f02-b2a5-c67c5fed6127",
-    "version": [0, 2, 1],
+    "version": [0, 3, 0],
     "min_engine_version": [1, 21, 90]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "17642d43-b4a5-4454-9def-b30d0630a6f2",
-      "version": [0, 2, 1]
+      "version": [0, 3, 0]
     },
     {
       "type": "script",
       "language": "javascript",
       "uuid": "5427f70a-6788-4df5-9ef5-dc1b3d40a014",
       "entry": "scripts/main.js",
-      "version": [0, 2, 1]
+      "version": [0, 3, 0]
     }
   ],
   "dependencies": [
-    { "uuid": "21d9f0a2-978b-483e-92a1-9fc2e70134a4", "version": [0, 2, 1] },
+    { "uuid": "21d9f0a2-978b-483e-92a1-9fc2e70134a4", "version": [0, 3, 0] },
     { "module_name": "@minecraft/server", "version": "2.0.0" },
     { "module_name": "@minecraft/server-ui", "version": "2.0.0" }
   ],
