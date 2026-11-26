@@ -2,27 +2,27 @@
   "format_version": 2,
   "header": {
     "name": "魔神野口と4人の勇者たち BP",
-    "description": "魔神野口と4人の勇者たち ビヘイビアーパック（v0.4.0 第4弾：スキル・魔法・必殺技・熟練度）",
+    "description": "魔神野口と4人の勇者たち ビヘイビアーパック（v0.5.0 第5弾：戦闘・属性相性・状態異常）",
     "uuid": "50903bc5-4b62-4f02-b2a5-c67c5fed6127",
-    "version": [0, 4, 0],
+    "version": [0, 5, 0],
     "min_engine_version": [1, 21, 90]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "17642d43-b4a5-4454-9def-b30d0630a6f2",
-      "version": [0, 4, 0]
+      "version": [0, 5, 0]
     },
     {
       "type": "script",
       "language": "javascript",
       "uuid": "5427f70a-6788-4df5-9ef5-dc1b3d40a014",
       "entry": "scripts/main.js",
-      "version": [0, 4, 0]
+      "version": [0, 5, 0]
     }
   ],
   "dependencies": [
-    { "uuid": "21d9f0a2-978b-483e-92a1-9fc2e70134a4", "version": [0, 4, 0] },
+    { "uuid": "21d9f0a2-978b-483e-92a1-9fc2e70134a4", "version": [0, 5, 0] },
     { "module_name": "@minecraft/server", "version": "2.0.0" },
     { "module_name": "@minecraft/server-ui", "version": "2.0.0" }
   ],

@@ -140,6 +140,12 @@ export function playerTemplate() {
       skills: {}, // { [skillId]: { level, exp, learnedAt } }
       history: [], // [{ god, from, to, reason }]
     },
+    // --- 第5弾：戦闘ログ（件数に上限。セーブデータが肥大化しない） ---
+    combatLog: {
+      battles: [], // 直近の戦闘の記録（新しい順・最大5件）
+      totals: {}, // 累計 { battles, justGuards, justDodges }
+      lastDefeat: null, // 最後に戦闘不能になった原因 { cause, by, skill, at }
+    },
     // 熟練度（最終仕様：武器・魔法・スキル） { [id]: { level, exp } }
     proficiency: {
       weapon: {},

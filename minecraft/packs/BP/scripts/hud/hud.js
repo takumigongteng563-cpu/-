@@ -14,6 +14,43 @@ import { levelCapForStage } from "../content/tiers.js";
 import { skills } from "../content/skills.js";
 import { INPUT } from "../balance/input.js";
 import { chargeOf } from "../input/inputRuntime.js";
+import { lastTarget } from "../combat/combatRuntime.js";
+import { STATUS_EFFECTS } from "../content/combat/statusEffects.js";
+import { ELEMENT_NAMES } from "../content/jobs/catalog.js";
+import { EntityComponentTypes } from "@minecraft/server";
+
+/**
+ * 第5弾：戦闘中の表示（優先順位：自分の状態異常 → 攻撃中の敵 → 仲間の危険）。1行ずつ・Switch の画面を埋めない
+ */
+export function combatLines(p) {
+  if (!ctx.combat) return "";
+  const out = [];
+  const mine = Object.entries(ctx.combat.statusesOf(p.id));
+  if (mine.length) out.push(`§d状態：${mine.map(([id, s]) => `${STATUS_EFFECTS[id].name}${s.stacks > 1 ? `×${s.stacks}` : ""}`).join(" ")}`);
+  const lt = lastTarget.get(p.id);
+  if (lt && system.currentTick - lt.tick < 200) {
+    try {
+      const e = lt.entity;
+      const en = ctx.combat.enemies.get(e.id);
+      const h = e.getComponent(EntityComponentTypes.Health);
+      if (en && h) {
+        const weak = [...en.discovered].filter((x) => x.endsWith("weak")).map((x) => ELEMENT_NAMES[x.split(":")[0]]).slice(0, 3);
+        const st = Object.keys(ctx.combat.statusesOf(e.id)).map((id) => STATUS_EFFECTS[id].name).slice(0, 2);
+        const broken = en.brokenUntil > system.currentTick;
+        out.push(`§6${e.typeId.replace(/^.*:/, "")} Lv${en.profile.level} §fHP${Math.round((h.currentValue / h.effectiveMax) * 100)}% §7${ELEMENT_NAMES[en.profile.element]}${weak.length ? ` §a弱:${weak.join("")}` : ""}${st.length ? ` §d${st.join("")}` : ""}${broken ? " §6§l崩" : ` §8体勢${Math.max(0, Math.round((en.poise / en.profile.poise) * 100))}%`}`);
+      }
+    } catch {
+      // 無視
+    }
+  }
+  for (const q of world.getAllPlayers()) {
+    if (q.id === p.id) continue;
+    const qd = ctx.playerService.dataFor(q.id);
+    if (qd && qd.vitals.hpMax > 0 && qd.vitals.hp / qd.vitals.hpMax < 0.3) out.push(`§c仲間 ${q.name} HP${qd.vitals.hp}/${qd.vitals.hpMax}${qd.vitals.hp <= 0 ? "（戦闘不能）" : ""}`);
+    if (out.length >= 3) break;
+  }
+  return out.join("\n");
+}
 
 const ACTION_SHORT = [["tap", "通"], ["jump", "跳"], ["sprint", "走"], ["charge", "溜"], ["ultimate", "奥"]];
 
@@ -94,7 +131,8 @@ function update() {
     const s = st(p.id);
     if (now < s.yieldUntil) continue;
     const charge = chargeOf(p);
-    const text = hudText(d, charge ? skillLine(d, p.id, p.selectedSlotIndex, charge) : "");
+    const extra = [charge ? skillLine(d, p.id, p.selectedSlotIndex, charge) : "", combatLines(p)].filter(Boolean).join("\n");
+    const text = hudText(d, extra);
     if (text === s.text && now - s.at < HUD.refreshIntervalTicks) continue;
     p.onScreenDisplay.setActionBar(text);
     s.text = text;

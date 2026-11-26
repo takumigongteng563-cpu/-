@@ -68,7 +68,7 @@ export const MAX_SKILL_FOCUS = 9;
 export const INHERITED_SKILL_LIMIT = Object.freeze({ 0: 1, 1: 1, 2: 2, 3: 2, 4: 3, 5: 4 });
 
 /** 信仰レベル：L → L+1 に必要な信仰経験値。最大レベル */
-export const FAITH_CURVE = Object.freeze({ base: 20, p: 1.4, maxLevel: 30 });
+export const FAITH_CURVE = Object.freeze({ base: 20, p: 1.4, maxLevel: 50 });
 /** 信仰経験値の獲得量（行動1回・属性スキル1回あたり）と最短間隔 */
 export const FAITH_GAIN = Object.freeze({ perAction: 1, perSkill: 2, minIntervalTicks: 40 });
 

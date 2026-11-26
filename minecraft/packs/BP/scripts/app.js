@@ -20,6 +20,7 @@ import { JobService } from "./job/jobService.js";
 import { SkillService } from "./skills/skillService.js";
 import { FaithService } from "./faith/faithService.js";
 import { ApostleService } from "./apostle/apostleService.js";
+import { CombatService } from "./combat/combatService.js";
 import { KEY_PREFIX, SAVE } from "./config.js";
 
 /**
@@ -48,6 +49,9 @@ export function createApp(backend, nowTick) {
   const skillService = new SkillService(playerService, worldService, nowTick);
   const faith = new FaithService(playerService, nowTick);
   const apostles = new ApostleService(playerService, worldService);
+  // --- 第5弾：戦闘 ---
+  const combat = new CombatService(playerService, stats, nowTick);
+  skillBindings.combat = combat;
   skillBindings.skillService = skillService;
   skillBindings.faith = faith;
   skillBindings.actions = actions;
@@ -72,7 +76,7 @@ export function createApp(backend, nowTick) {
     }
   };
   return {
-    jobs, skillService, faith, apostles, store, worldService, playerService, partyService, stats, talents, progression, actions, vitals, kingdom, stages, uniqueItems, skillBindings, rewards, nowTick };
+    jobs, skillService, faith, apostles, combat, store, worldService, playerService, partyService, stats, talents, progression, actions, vitals, kingdom, stages, uniqueItems, skillBindings, rewards, nowTick };
 }
 
 /**

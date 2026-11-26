@@ -3,11 +3,11 @@
 // ・加護スキル：その神の信仰レベルが一定以上で習得（通常スキルとして管理。信仰レベルは解除されない）
 // ・使徒専用スキル：使徒契約中だけ存在する。通常スキルとは別に管理し（data.apostle.skills）、
 //   契約が解除されると完全に消える（再契約しても成長記録は戻らない）
-// ・使徒スキルは神ごとに「印 → 御手 → 神威」の3段階の進化ルート（信仰レベルで進化）
+// ・使徒スキルは神ごとに5段階（信仰レベル1/10/20/30/50。第5弾で3段階から拡張）。最終段階は神の権能の一部（制限つき）
 // 【暫定】神々の能力が確定するまで、効果は司る力に対応した属性の仮の効果
 // =============================================================
 import { S, P } from "./helpers.js";
-import { gods } from "../gods.js";
+import { gods, GOD_DETAILS, APOSTLE_STAGES, apostleStageNames } from "../gods.js";
 
 const ARCHETYPES = {
   light: { type: "area", shape: "target_area", range: 4, distance: 18 },
@@ -44,11 +44,22 @@ function effectFor(element, stage) {
   return { base, fx };
 }
 
-const STAGES = [
-  { n: 1, suffix: "の印", faith: 0, rarity: "rare", cost: 15, cooldown: 300 },
-  { n: 2, suffix: "の御手", faith: 10, rarity: "epic", cost: 30, cooldown: 400 },
-  { n: 3, suffix: "の神威", faith: 20, rarity: "mythic", cost: 50, cooldown: 600 },
-];
+const STAGES = APOSTLE_STAGES.map((faith, i) => ({
+  n: i + 1,
+  faith,
+  rarity: ["rare", "epic", "epic", "legendary", "mythic"][i],
+  cost: [15, 25, 35, 50, 80][i],
+  cooldown: [300, 360, 420, 600, 1200][i],
+}));
+
+/** 最終段階の神の権能（制限は skillEffects と DIVINE_LIMITS） */
+const POWER_EFFECT = {
+  rewind: { type: "rewind", shape: "self", target: "self" },
+  share: { type: "share", shape: "party", target: "ally", range: 10 },
+  fortune: { type: "fortune", shape: "party", target: "ally", range: 10 },
+  law: { type: "law", shape: "circle", target: "enemy", range: 8 },
+  analyze: { type: "analyze", shape: "circle", target: "enemy", range: 16 },
+};
 
 function build(god) {
   const out = [];
@@ -71,13 +82,18 @@ function build(god) {
     })
   );
   // 使徒専用スキル（3段階の進化ルート）
+  const names = apostleStageNames(god);
+  const detail = GOD_DETAILS[god.id];
   STAGES.forEach((st, i) => {
-    const { base, fx } = effectFor(god.element, st.n);
+    const r = effectFor(god.element, Math.min(3, Math.ceil(st.n * 0.7)));
+    let { base, fx } = r;
+    const power = st.n === 5 && POWER_EFFECT[detail.power];
+    if (power) base = { ...power };
     out.push(
       S({
         id: `apostle.${god.id}.${st.n}`,
-        name: `${god.domain}${st.suffix}`,
-        description: `${god.name}の使徒だけが使える力（第${st.n}段階）。【暫定効果】`,
+        name: names[i],
+        description: `${god.name}の使徒だけが使える力「${detail.ability}」の第${st.n}段階${st.n === 5 ? "（神の権能の一部）" : ""}。${detail.limit && st.n === 5 ? detail.limit + "。" : ""}【暫定効果】`,
         category: "apostle",
         god: god.id,
         apostleStage: st.n,
@@ -87,16 +103,16 @@ function build(god) {
         cost: { mp: st.cost },
         cooldown: st.cooldown,
         castTicks: 5 * st.n,
-        actions: st.n === 3 ? ["ultimate", "charge"] : ["charge", "tap"],
+        actions: st.n >= 4 ? ["ultimate", "charge"] : ["charge", "tap"],
         shape: base.shape,
         range: base.range || 0,
         distance: base.distance || 0,
         target: base.target || "enemy",
         duration: fx.duration || 0,
-        power: fx.power || null,
-        effect: { type: base.type, center: base.center, pierce: base.pierce, buff: fx.buff, statusEffects: fx.statusEffects, resistance: fx.resistance },
+        power: fx.power || (power && ["law", "analyze"].includes(detail.power) ? P(60, 10, { mag: 1, int: 0.6 }) : null),
+        effect: { type: base.type, center: base.center, pierce: base.pierce, buff: fx.buff, statusEffects: fx.statusEffects, resistance: fx.resistance, ...(power ? { divinePower: detail.power } : {}) },
         apostleFaith: st.faith,
-        evolvesTo: i < 2 ? [{ to: `apostle.${god.id}.${st.n + 1}`, style: "信仰による進化", conditions: [{ type: "faithLevel", god: god.id, min: STAGES[i + 1].faith }] }] : [],
+        evolvesTo: i < STAGES.length - 1 ? [{ to: `apostle.${god.id}.${st.n + 1}`, style: "信仰による進化", conditions: [{ type: "faithLevel", god: god.id, min: STAGES[i + 1].faith }] }] : [],
         learn: [],
         provisional: true,
         fx: { particle: "minecraft:totem_particle", sound: "random.totem" },

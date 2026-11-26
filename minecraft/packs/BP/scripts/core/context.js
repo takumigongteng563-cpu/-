@@ -19,6 +19,7 @@
  * @property {import("../skills/skillService.js").SkillService} skillService
  * @property {import("../faith/faithService.js").FaithService} faith
  * @property {import("../apostle/apostleService.js").ApostleService} apostles
+ * @property {import("../combat/combatService.js").CombatService} combat
  * @property {() => number} nowTick 現在のtick
  * @property {boolean} ready
  */
@@ -43,6 +44,7 @@ export const ctx = {
   skillService: null,
   faith: null,
   apostles: null,
+  combat: null,
   nowTick: () => 0,
   ready: false,
 };

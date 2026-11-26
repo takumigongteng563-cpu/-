@@ -125,7 +125,7 @@ export const PRIEST_TREE = {
   PTTWM: "瞬間魔導障壁師|caster|time,space|holy_staff|障壁を爆発させる|障壁爆破|障壁連鎖爆破",
   PTTWT: "瞬護の遊撃兵|skirmisher|time,wind|holy_staff|危機の仲間へ瞬間移動する|瞬間移動|瞬間大移動",
   PTTM: "時癒師|healer|time,life|holy_staff|時間を戻して癒す|時戻し|時の大遡行",
-  PTTMW: "時戦の司祭|striker|time,holy|mace|時を加速させて戦う|時間加速|時間大加速",
+  PTTMW: "時戦の司祭|striker|time,holy|mace|時を加速させて戦う|時流加速|時間大加速",
   PTTMM: "時の大魔導士|caster|time,space|staff|時間魔法の極致|時間魔法|時間支配",
   PTTMT: "刹那の治癒師|healer|time,wind|holy_staff|刹那の間に全員を癒す|刹那治癒|刹那の大奇跡",
   PTTT: "疾風の天使|healer|wind,holy|holy_staff|風の翼で仲間のもとへ舞う|天使の翼|天使降臨",

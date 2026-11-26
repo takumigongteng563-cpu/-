@@ -38,7 +38,7 @@ const learn = (app, p, id) => app.skillService.grant(p.id, id);
 const fullMp = (app, p) => app.playerService.update(p.id, (d) => ((d.vitals.mp = d.vitals.mpMax), (d.vitals.stamina = d.vitals.staminaMax), (d.vitals.exhausted = false)));
 
 test("v0.4.0：バージョン", () => {
-  assert.equal(ADDON_VERSION, "0.4.0");
+  assert.match(ADDON_VERSION, /^0\.[4-9]\./); // 第4弾以降
 });
 
 // ---------------- データ ----------------

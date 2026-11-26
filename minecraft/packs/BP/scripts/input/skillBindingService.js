@@ -48,6 +48,8 @@ export class SkillBindingService {
     this.lastResult = new Map();
     /** @type {import("../skills/skillService.js").SkillService|null} app.js が設定 */
     this.skillService = null;
+    /** @type {import("../combat/combatService.js").CombatService|null} 第5弾：状態異常による使用制限・クールタイム補正 */
+    this.combat = null;
     /** @type {import("../faith/faithService.js").FaithService|null} */
     this.faith = null;
     /** @type {import("../actions/actionService.js").ActionService|null} */
@@ -98,6 +100,10 @@ export class SkillBindingService {
     if (this.skillService) {
       const u = this.skillService.canUse(playerId, skillId);
       if (!u.ok) return { ok: false, reason: u.reason, skillId };
+    }
+    if (this.combat) {
+      const c = this.combat.canUseSkill(playerId, def);
+      if (!c.ok) return { ok: false, reason: c.reason, skillId };
     }
     const cds = this.cooldowns.get(playerId);
     if (cds && (cds.get(skillId) || 0) > now) return { ok: false, reason: "クールタイム中", skillId };
@@ -184,7 +190,8 @@ export class SkillBindingService {
     const { def, d, st } = pre;
     if (!this.vitals.trySpend(playerId, { mp: st.mp, stamina: st.stamina })) return this.result(playerId, { ok: false, reason: "MPまたはスタミナが足りない", skillId });
     const cds = this.cooldowns.get(playerId) || new Map();
-    cds.set(skillId, now + st.cooldown);
+    const cdMod = this.combat ? Math.max(-0.5, this.combat.playerMods(playerId, d).cooldown) : 0;
+    cds.set(skillId, now + Math.round(st.cooldown * (1 + cdMod)));
     this.cooldowns.set(playerId, cds);
     const linked = this.linked(playerId, def, now);
     const stats = linked ? { ...st, power: st.power * (1 + LINK_POWER_BONUS) } : st;

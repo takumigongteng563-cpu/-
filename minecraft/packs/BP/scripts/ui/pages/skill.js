@@ -328,6 +328,33 @@ export const CONTROLS_TEXT = lines(
   "§7ダッシュ中の判定が難しい場合は、同じ技を「通常」にも割り当てると確実に使えます。§r"
 );
 
+export const COMBAT_CONTROLS_TEXT = lines(
+  heading("戦闘の操作（第5弾）"),
+  "・通常攻撃：武器で殴る（コンボ：続けて当てるほど威力が上がる。同じ技の繰り返しは2回まで）",
+  "・ガード：しゃがむ（受けるダメージを軽減・スタミナ消費）",
+  "・ジャストガード：攻撃を受ける直前（0.3秒以内）にしゃがむ → 大幅軽減・敵の体勢を崩す・反撃のチャンス",
+  "・回避：ダッシュ中にジャンプ、または移動技（0.4秒無敵・1.2秒の再使用待ち・スタミナ15）",
+  "・ジャスト回避：攻撃の直前に回避 → 行動速度上昇・反撃のチャンス",
+  "・反撃：ジャストガード／ジャスト回避の後2秒以内の攻撃は1.5倍",
+  "・属性融合：仲間（または自分）が別の属性で攻撃した直後に、組み合わせの属性で攻撃する",
+  "・体勢崩し：体勢値を0にすると5秒間、与えるダメージ1.5倍",
+  "§7強い攻撃の前には、地面の輪・効果音・攻撃名が表示されます（予告）。§r"
+);
+
+function combatLogText(d) {
+  const L = d.combatLog;
+  const b = L.battles;
+  return lines(
+    heading("直近の戦闘"),
+    b.length
+      ? b.map((x, i) => `${i + 1}. ${x.seconds}秒 与${num(x.dealt)} 受${num(x.taken)} 回復${num(x.healed)} 会心${x.crits} 弱点${x.weakHits} JG${x.justGuards} JD${x.justDodges} 最大コンボ${x.maxCombo} 融合${x.fusions} 崩し${x.breaks}${x.defeat ? ` §c戦闘不能（${x.defeat.by || x.defeat.cause}）§r` : ""}\n　技：${Object.entries(x.skills).map(([k, v]) => `${skills.get(k)?.name ?? k}×${v}`).join(" ") || "なし"}`)
+      : "まだありません",
+    "",
+    heading("最後に戦闘不能になった原因"),
+    L.lastDefeat ? `${L.lastDefeat.by || "不明"}（${L.lastDefeat.cause}）${L.lastDefeat.statuses && L.lastDefeat.statuses.length ? ` 状態異常：${L.lastDefeat.statuses.join("・")}` : ""}` : "なし"
+  );
+}
+
 export const skillPage = {
   id: "skill",
   label: "スキル",
@@ -354,7 +381,8 @@ export const skillPage = {
             player.sendMessage(n > 0 ? "§a技の触媒を受け取った。ホットバーの好きな枠に置いてください。" : `§c受け取れません（最大${MAX_SKILL_FOCUS}個・インベントリの空き）`);
           },
         },
-        { label: "操作方法", run: () => showInfoPage(player, "操作方法", CONTROLS_TEXT) },
+        { label: "操作方法（技・戦闘）", run: () => showInfoPage(player, "操作方法", lines(CONTROLS_TEXT, "", COMBAT_CONTROLS_TEXT)) },
+        { label: "戦闘ログ", run: () => showInfoPage(player, "戦闘ログ", combatLogText(data(player))) },
       ];
       const form = new ActionFormData()
         .title("スキル")

@@ -150,9 +150,8 @@ if (phase === "upgrade") {
   ok("能力ポイント振り分け：1/5/10切替・取り消し・確認画面・2人同時操作");
 
   // --- HP（バニラの体力と連動）---
-  const hpMax = data(a).vitals.hpMax;
-  __test.hurt(a, __test.spawnMob("minecraft:skeleton"), 10);
-  assert.equal(data(a).vitals.hp, Math.round(hpMax / 2));
+  __test.hurt(a, __test.spawnMob("minecraft:skeleton"), 10)
+  assert.equal(data(a).vitals.hp, Math.round(data(a).vitals.hpMax / 2)); // 第4弾：パッシブスキルで最大HPが変わることがあるため、受けた後の最大値で比べる
   __test.hurt(a, __test.spawnMob("minecraft:skeleton"), 7);
   assert.equal(data(a).actions["survive.lowhp"], 1);
   ok("HP：バニラの体力の割合で管理・瀕死からの生還を記録");

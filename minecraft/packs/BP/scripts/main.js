@@ -32,7 +32,8 @@ import { registerActionGuard } from "./rules/actionGuard.js";
 import { openMainMenu, clearMenuState } from "./ui/menu.js";
 import { releaseMenuLock } from "./ui/formUtil.js";
 import { registerScriptEvents } from "./admin/scriptEvents.js";
-import { runSkill, removeSummonsOf, cleanupStraySummons } from "./skills/skillEffects.js";
+import { runSkill, removeSummonsOf, cleanupStraySummons, recordSnapshot } from "./skills/skillEffects.js";
+import { registerCombatRuntime, forgetCombatRuntime } from "./combat/combatRuntime.js";
 
 const log = createLogger("main");
 
@@ -99,6 +100,10 @@ function initialize() {
   registerVitalsRuntime();
   // 王国の建物の配置予約を少しずつ処理（配置処理は第15弾で登録。未登録の間は何もしない）
   every("kingdom.build", 40, () => ctx.kingdom.processBuildQueue(1));
+  // 第5弾：時間逆行用の記録（戦闘中のプレイヤーだけ・1秒ごと）
+  every("combat.snapshot", 20, () => {
+    for (const p of world.getAllPlayers()) if (ctx.combat.players.get(p.id)?.battle) attempt("snapshot", () => recordSnapshot(p));
+  });
 
   // すでにいるプレイヤー（/reload 等）
   for (const p of world.getAllPlayers()) attempt("join(existing)", () => handleJoin(p));
@@ -162,7 +167,9 @@ subscribe(world.afterEvents.playerLeave, "playerLeave", (ev) => {
     ctx.skillBindings.forget(ev.playerId);
     ctx.skillService.forget(ev.playerId);
     ctx.faith.forget(ev.playerId);
+    ctx.combat.forgetPlayer(ev.playerId);
   }
+  forgetCombatRuntime(ev.playerId);
   attempt("removeSummons", () => removeSummonsOf(ev.playerId));
   if (!ctx.ready) return;
   ctx.playerService.leave(ev.playerId);
@@ -181,4 +188,5 @@ registerActionGuard(openMenu);
 registerEffects();
 registerCombatHooks();
 registerInputRuntime();
+registerCombatRuntime();
 registerScriptEvents({ openMenu });

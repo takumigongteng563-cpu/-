@@ -80,3 +80,10 @@ test("統合（第3弾）：v0.2.1 のセーブデータから更新 → 職業�
   }
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("統合（第5弾）：通常攻撃・ガード・誤攻撃無効・スキル・攻撃予告・戦闘ログ", () => {
+  const out = execFileSync(process.execPath, ["--import", "./tests/mock/loader.mjs", "tests/integration/combatSession.mjs"], { cwd: root, encoding: "utf8" });
+  const r = JSON.parse(out);
+  for (const c of r.checks) console.log(`  [combat] ✔ ${c}`);
+  assert.equal(r.checks.length, 6);
+});

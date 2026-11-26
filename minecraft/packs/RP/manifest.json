@@ -2,20 +2,20 @@
   "format_version": 2,
   "header": {
     "name": "魔神野口と4人の勇者たち RP",
-    "description": "魔神野口と4人の勇者たち リソースパック（v0.4.0 第4弾：スキル・魔法・必殺技・熟練度）",
+    "description": "魔神野口と4人の勇者たち リソースパック（v0.5.0 第5弾：戦闘・属性相性・状態異常）",
     "uuid": "21d9f0a2-978b-483e-92a1-9fc2e70134a4",
-    "version": [0, 4, 0],
+    "version": [0, 5, 0],
     "min_engine_version": [1, 21, 90]
   },
   "modules": [
     {
       "type": "resources",
       "uuid": "534247bf-26d6-4f8e-9f7b-2f7f56e506d9",
-      "version": [0, 4, 0]
+      "version": [0, 5, 0]
     }
   ],
   "dependencies": [
-    { "uuid": "50903bc5-4b62-4f02-b2a5-c67c5fed6127", "version": [0, 4, 0] }
+    { "uuid": "50903bc5-4b62-4f02-b2a5-c67c5fed6127", "version": [0, 5, 0] }
   ],
   "metadata": {
     "authors": ["魔神野口と4人の勇者たち 開発チーム"],

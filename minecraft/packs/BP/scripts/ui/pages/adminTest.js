@@ -18,6 +18,7 @@ import { treeBrowser } from "./job.js";
 import { validateJobs } from "../../content/jobs/validateJobs.js";
 import { validateSkills } from "../../content/skills/validateSkills.js";
 import { gods } from "../../content/gods.js";
+import { openCombatTest } from "./combatTest.js";
 import { jobs } from "../../content/jobs.js";
 import { createLogger } from "../../core/log.js";
 import { showForm } from "../formUtil.js";
@@ -269,6 +270,13 @@ const ACTIONS = [
     label: "セーブデータ確認",
     async run(admin, t) {
       await saveDataView(admin, t);
+    },
+  },
+  // ---------------- 第5弾：戦闘 ----------------
+  {
+    label: "仮想訓練場（戦闘テスト）",
+    async run(admin) {
+      await openCombatTest(admin);
     },
   },
   // ---------------- 第4弾：スキル・信仰・使徒 ----------------

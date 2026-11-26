@@ -185,10 +185,10 @@ export function validateSkills() {
   if (male !== 13 || gods.size - male !== 11) godProblems.push(`男性${male}・女性${gods.size - male}（正：13・11）`);
   for (const g of gods.all()) {
     const ap = all.filter((s) => s.category === "apostle" && s.god === g.id);
-    if (ap.length !== 3) godProblems.push(`${g.name}：使徒スキル${ap.length}種`);
+    if (ap.length !== 5) godProblems.push(`${g.name}：使徒スキル${ap.length}種`);
     if (!skills.has(`blessing.${g.id}`)) godProblems.push(`${g.name}：加護スキルがない`);
   }
-  check("神々24柱（男13・女11）・それぞれに加護1種と使徒スキル3段階", godProblems, "OK");
+  check("神々24柱（男13・女11）・それぞれに加護1種と使徒スキル5段階（合計120）", godProblems, "OK");
 
   // 12. 才能・潜在能力との接続
   const talProblems = [];

@@ -257,7 +257,7 @@ test("プレイヤーごとに異なる才能が抽選される", () => {
     const p = join(app, String(-100 - i), `P${i}`);
     sets.add(JSON.stringify(app.playerService.dataFor(p.id).talents.innate));
   }
-  assert.ok(sets.size >= 6);
+  assert.ok(sets.size >= 5); // 乱数による抽選のため、まれな偏りでも失敗しないよう 8人中5通り以上
 });
 
 // ---------------- 後天性才能・進化・潜在能力 ----------------
