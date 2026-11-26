@@ -13,6 +13,8 @@
 //   derived: { flat: {maxHp: 10}, pct: {maxHp: 5} },   派生能力値補正
 //   elements: { fire: 10 },        属性耐性補正（%）
 //   growth: { str: 0.1 },          成長率補正（+10%）
+//   expBonus: 0.1,                 経験値ボーナス（+10%。全補正の合計は上限 EXP_BONUS_CAP）
+//   special: { flat: { sword_aura: 2 } },  職業系統の専用能力値への補正（基盤のみ）
 //   jobAptitude: { swordsman: 0.1 },   職業適性（第3弾の職業システムが参照）
 //   skillAffinity: { sword: 0.1 },     スキル習得への影響（後続のスキルシステムが参照）
 //   awaken: [条件...],             覚醒条件（acquired はこれを満たすと獲得）
@@ -32,7 +34,12 @@
 
 /** 全能力値に同じ値を設定するための補助 */
 export function allStats(v) {
-  return { str: v, vit: v, mag: v, mnd: v, agi: v, dex: v, luk: v, int: v };
+  return { str: v, vit: v, mag: v, mnd: v, agi: v, dex: v, luk: v, int: v, lif: v, endr: v, foc: v, lead: v };
+}
+
+/** 全能力値に同じ成長率補正 */
+export function allGrowth(v) {
+  return allStats(v);
 }
 
 export function allElements(v) {

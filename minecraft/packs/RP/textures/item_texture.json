@@ -4,6 +4,9 @@
   "texture_data": {
     "noguchi_adventurer_book": {
       "textures": "textures/items/adventurer_book"
+    },
+    "noguchi_skill_focus": {
+      "textures": "textures/items/skill_focus"
     }
   }
 }

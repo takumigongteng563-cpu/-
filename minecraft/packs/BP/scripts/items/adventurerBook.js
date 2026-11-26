@@ -35,6 +35,20 @@ export function createAdventurerBook() {
   return item;
 }
 
+/** 操作判定の確認用アイテム「修練の触媒」を渡す（管理者テスト用） */
+export function giveSkillFocus(player) {
+  try {
+    const c = getContainer(player);
+    if (!c) return false;
+    const it = new ItemStack(ITEM_IDS.skillFocus, 1);
+    it.setLore(["§7操作判定の確認用（管理者テスト）", "§8通常／ジャンプ中／ダッシュ中／しゃがみ溜め／長時間溜め"]);
+    return c.addItem(it) === undefined;
+  } catch (e) {
+    log.error("修練の触媒の付与に失敗:", e);
+    return false;
+  }
+}
+
 /**
  * 持っていなければ渡す。
  * @returns {"has"|"given"|"full"|"error"}

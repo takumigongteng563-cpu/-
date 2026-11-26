@@ -13,6 +13,7 @@ import { potentials } from "../packs/BP/scripts/content/potentials.js";
 import { GRADE_WEIGHTS, INITIAL_TALENT_SLOTS } from "../packs/BP/scripts/balance/talentRoll.js";
 import { STAT_IDS } from "../packs/BP/scripts/content/stats.js";
 import { on, clearAll } from "../packs/BP/scripts/core/eventBus.js";
+import { ADDON_VERSION } from "../packs/BP/scripts/config.js";
 
 // ---------------- レベル計算 ----------------
 test("必要経験値は徐々に増える", () => {
@@ -97,12 +98,12 @@ test("同時レベルアップ：複数人が同時に上がってもデータ�
 });
 
 // ---------------- 能力値 ----------------
-test("初期ステータス：HP100 / MP50 / スタミナ100 / 全能力値5（才能なしの場合）", () => {
+test("初期ステータス：HP100 / MP50 / スタミナ100 / 全12能力値5（才能なしの場合）", () => {
   const { app } = boot();
   const p = join(app, "-1", "A");
   stripTalents(app, p.id);
   const d = app.playerService.dataFor(p.id);
-  assert.deepEqual(d.computed.primary, { str: 5, vit: 5, mag: 5, mnd: 5, agi: 5, dex: 5, luk: 5, int: 5 });
+  assert.deepEqual(d.computed.primary, { str: 5, vit: 5, mag: 5, mnd: 5, agi: 5, dex: 5, luk: 5, int: 5, lif: 5, endr: 5, foc: 5, lead: 5 });
   assert.equal(d.computed.derived.maxHp, 100);
   assert.equal(d.computed.derived.maxMp, 50);
   assert.equal(d.computed.derived.maxStamina, 100);
@@ -204,15 +205,13 @@ test("初期才能は30種類以上・各定義に必要な項目がある", () 
   assert.ok(potentials.size >= 9);
 });
 
-test("初期才能の抽選：同じシードなら同じ結果・系統の重複なし・2～3個", () => {
+test("初期才能の抽選：同じシードなら同じ結果・全員1個（最終仕様）", () => {
   const defs = innateTalents();
   for (let seed = 1; seed < 300; seed++) {
     const a = rollInitialTalents(createRng(seed), defs, GRADE_WEIGHTS, INITIAL_TALENT_SLOTS);
     const b = rollInitialTalents(createRng(seed), defs, GRADE_WEIGHTS, INITIAL_TALENT_SLOTS);
     assert.deepEqual(a, b);
-    assert.ok(a.length >= 2 && a.length <= 3);
-    const fams = a.map((id) => talents.get(id).family);
-    assert.equal(new Set(fams).size, fams.length);
+    assert.equal(a.length, 1);
   }
 });
 
@@ -239,7 +238,7 @@ test("初回参加で抽選・再参加や再起動では変化しない", () =>
   const p = join(app, "-1", "A");
   const first = JSON.stringify(app.playerService.dataFor(p.id).talents.innate);
   const pot = JSON.stringify(app.playerService.dataFor(p.id).hiddenPotential.entries);
-  assert.ok(JSON.parse(first).length >= 2);
+  assert.equal(JSON.parse(first).length, 1);
   app.playerService.leave(p.id);
   joinPlayer(app, p);
   assert.equal(JSON.stringify(app.playerService.dataFor(p.id).talents.innate), first);
@@ -331,29 +330,48 @@ test("才能なしでも後天性才能から上位才能へ進化できる", ()
   assert.ok(app.playerService.dataFor(p.id).talents.active.some((x) => x.id === "sword_talent"));
 });
 
-test("潜在能力：保存されているが覚醒前は未覚醒・条件達成で覚醒", () => {
+test("潜在能力：開始時は未確定・行動で形成（非公開）・条件達成で覚醒", () => {
   const { app } = boot();
   const p = join(app, "-1", "A");
-  const d = app.playerService.dataFor(p.id);
-  assert.equal(d.hiddenPotential.entries.length, 1);
-  assert.equal(d.hiddenPotential.entries[0].awakened, false);
-  assert.deepEqual(d.hiddenPotential.revealed, []);
-  // 条件を満たす状況を作る：wanderer 系 → 無限の探究心 に差し替えてテスト
-  app.playerService.update(p.id, (pd) => (pd.hiddenPotential.entries = [{ id: "endless_curiosity", awakened: false, awakenedAt: 0 }]));
+  stripTalents(app, p.id);
+  assert.deepEqual(app.playerService.dataFor(p.id).hiddenPotential.entries, []); // 開始時点では未確定
+  // 歩き回る冒険者 → 「無限の探究心」が形成される（スコア = 距離/5000 × 1.5 が閾値30以上）
+  app.actions.record(p.id, "move.distance", 90000);
+  app.actions.flushPending();
+  assert.deepEqual(app.playerService.dataFor(p.id).hiddenPotential.entries, []);
+  app.actions.record(p.id, "move.distance", 10000);
+  app.actions.flushPending();
+  const e = app.playerService.dataFor(p.id).hiddenPotential.entries;
+  assert.equal(e.length, 1);
+  assert.equal(e[0].id, "endless_curiosity");
+  assert.equal(e[0].awakened, false);
+  assert.deepEqual(app.playerService.dataFor(p.id).hiddenPotential.revealed, []);
+  // 覚醒条件（距離100000・Lv20）
   app.progression.setLevel(p.id, 20);
-  app.actions.record(p.id, "move.distance", 99999);
-  app.actions.flushPending();
-  assert.equal(app.playerService.dataFor(p.id).hiddenPotential.entries[0].awakened, false);
-  app.actions.record(p.id, "move.distance", 1);
-  app.actions.flushPending();
+  app.talents.evaluate(p.id);
   assert.equal(app.playerService.dataFor(p.id).hiddenPotential.entries[0].awakened, true);
   assert.deepEqual(app.playerService.dataFor(p.id).hiddenPotential.revealed, ["endless_curiosity"]);
+});
+
+test("潜在能力：戦い方が違えば形成される潜在能力も違う", () => {
+  const { app } = boot();
+  const a = join(app, "-1", "A");
+  const b = join(app, "-2", "B");
+  stripTalents(app, a.id);
+  stripTalents(app, b.id);
+  app.actions.record(a.id, "hit.melee.sword", 2000);
+  app.actions.record(b.id, "kill.hostile", 1000); // 1000/40 = 25点
+  app.actions.record(b.id, "survive.lowhp", 30); // 30/5 = 6点 → 合計31点（閾値30）
+  app.actions.flushPending();
+  assert.equal(app.playerService.dataFor(a.id).hiddenPotential.entries[0].id, "sword_limit");
+  assert.equal(app.playerService.dataFor(b.id).hiddenPotential.entries[0].id, "combat_learning");
 });
 
 test("潜在能力：特殊イベントのフラグで覚醒", () => {
   const { app } = boot();
   const p = join(app, "-1", "A");
-  app.playerService.update(p.id, (pd) => (pd.hiddenPotential.entries = [{ id: "spirit_resonance", awakened: false, awakenedAt: 0 }]));
+  // 形成済み（精霊との共鳴）の状態から、特殊イベントのフラグで覚醒
+  app.playerService.update(p.id, (pd) => (pd.hiddenPotential.entries = [{ id: "spirit_resonance", awakened: false, awakenedAt: 0, origin: "formed" }]));
   app.actions.setFlag(p.id, "spirit_resonance");
   assert.equal(app.playerService.dataFor(p.id).hiddenPotential.entries[0].awakened, true);
 });
@@ -433,16 +451,16 @@ test("第1弾のセーブデータを読み込んでも消えずに移行され�
     assert.equal(d.level, 1);
     assert.equal(d.stats.mag, 5);
     assert.equal(d.talents.rolled, true);
-    assert.ok(d.talents.innate.length >= 2);
+    assert.equal(d.talents.innate.length, 1);
     assert.equal(d.vitals.mp, d.vitals.mpMax); // 旧MP(10)は新しい最大値で満タンに
     assert.ok(d.vitals.mpMax >= 50);
   }
   const env = app.store.read(`p.${a.uid}`).envelope;
-  assert.equal(env.s, 2);
-  assert.ok(app.worldService.index.system.versionHistory.some((v) => v.addonVersion === "0.2.0" && v.from === "0.1.0"));
+  assert.equal(env.s, 3);
+  assert.ok(app.worldService.index.system.versionHistory.some((v) => v.addonVersion === ADDON_VERSION && v.from === "0.1.0"));
 });
 
-test("能力値IDの一覧（8種）", () => {
-  assert.deepEqual(STAT_IDS, ["str", "vit", "mag", "mnd", "agi", "dex", "luk", "int"]);
+test("能力値IDの一覧（12種）", () => {
+  assert.deepEqual(STAT_IDS, ["str", "vit", "mag", "mnd", "agi", "dex", "luk", "int", "lif", "endr", "foc", "lead"]);
   void computeStats;
 });

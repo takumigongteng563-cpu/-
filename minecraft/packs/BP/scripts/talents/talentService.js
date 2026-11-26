@@ -5,10 +5,11 @@
 // =============================================================
 import { talents, innateTalents, acquiredTalents } from "../content/talents/index.js";
 import { potentials } from "../content/potentials.js";
-import { GRADE_WEIGHTS, INITIAL_TALENT_SLOTS, POTENTIAL_COUNT } from "../balance/talentRoll.js";
+import { GRADE_WEIGHTS, INITIAL_TALENT_SLOTS } from "../balance/talentRoll.js";
+import { tryFormPotential, formationScores } from "./potentialFormation.js";
 import { createRng } from "../core/rng.js";
 import { emit } from "../core/eventBus.js";
-import { rollInitialTalents, rollPotentials } from "./talentRoller.js";
+import { rollInitialTalents } from "./talentRoller.js";
 import { checkAll, activeFamilies, hasActiveTalent } from "./conditions.js";
 import { recalcData } from "../stats/statService.js";
 import { createLogger } from "../core/log.js";
@@ -56,9 +57,12 @@ export function evaluateTalentsData(d, now = Date.now()) {
       break;
     }
   }
-  // 3) 潜在能力
+  // 3) 潜在能力の形成（行動・職業・才能から。本人には非公開）
+  const formed = tryFormPotential(d, now);
+  if (formed) events.push({ type: "potentialFormed", id: formed });
+  // 4) 形成済み潜在能力の覚醒
   for (const e of d.hiddenPotential.entries) {
-    if (!e || e.awakened) continue;
+    if (!e || e.awakened || e.legacy) continue;
     const def = potentials.get(e.id);
     if (!def || !checkAll(def.awaken, d)) continue;
     e.awakened = true;
@@ -82,15 +86,14 @@ export class TalentService {
   }
 
   /**
-   * 初期才能・潜在能力の抽選（未抽選の場合のみ）。結果は即時保存する。
+   * 初期才能の抽選（未抽選の場合のみ・最終仕様では1個）。結果は即時保存する。
+   * 潜在能力は抽選しない（行動によって形成される）。
    * @returns {string[]|null} 抽選した才能ID（すでに抽選済みなら null）
    */
   ensureRolled(playerId) {
     const d0 = this.playerService.dataFor(playerId);
     if (!d0 || d0.talents.rolled) return null;
-    const assigned = this.worldService.world.talentStats.potentialAssigned;
     let rolled = null;
-    let pots = [];
     const ok = this.playerService.update(
       playerId,
       (d) => {
@@ -104,10 +107,6 @@ export class TalentService {
           if (!hasActiveTalent(d, id)) d.talents.active.push({ id, origin: "innate", since: now, lineage: [] });
           pushHistory(d, { type: "innate", id, at: now });
         }
-        if (d.hiddenPotential.entries.length === 0) {
-          pots = rollPotentials(rng, potentials.all(), assigned, POTENTIAL_COUNT);
-          d.hiddenPotential.entries = pots.map((id) => ({ id, awakened: false, awakenedAt: 0 }));
-        }
         d.talents.rolled = true;
         d.talents.rolledAt = now;
         recalcData(d, this.nowTick());
@@ -118,11 +117,6 @@ export class TalentService {
       { important: true }
     );
     if (!ok) return null;
-    if (pots.length > 0) {
-      this.worldService.updateWorld((w) => {
-        for (const id of pots) w.talentStats.potentialAssigned[id] = (w.talentStats.potentialAssigned[id] || 0) + 1;
-      });
-    }
     log.info(`初期才能を抽選: ${playerId} → ${(rolled || []).join(",")}`);
     return rolled;
   }
@@ -151,6 +145,7 @@ export class TalentService {
       if (e.type === "acquired") emit("talentAcquired", { playerId, id: e.id, origin: "acquired" });
       else if (e.type === "evolved") emit("talentEvolved", { playerId, from: e.from, to: e.id });
       else if (e.type === "potential") emit("potentialAwakened", { playerId, id: e.id });
+      else if (e.type === "potentialFormed") emit("potentialFormed", { playerId, id: e.id });
     }
     emit("statsChanged", { playerId });
   }
@@ -208,16 +203,27 @@ export class TalentService {
     return res;
   }
 
-  /** 覚醒テスト：条件を無視して潜在能力を覚醒させる（id 省略時は所持している最初の未覚醒） */
+  /** 覚醒テスト：条件を無視して潜在能力を覚醒させる（管理者テスト専用） */
   forceAwaken(playerId, id) {
     /** @type {any} */
-    let res = { ok: false, reason: "未覚醒の潜在能力がありません" };
+    let res = { ok: false, reason: "覚醒できる潜在能力がありません" };
     let awakened = null;
     this.playerService.update(
       playerId,
       (d) => {
-        const e = d.hiddenPotential.entries.find((x) => !x.awakened && (!id || x.id === id));
-        if (!e) return;
+        // 形成済みの未覚醒を優先。無ければ（テスト用に）形成スコアの最も高いもの、または指定IDを形成してから覚醒
+        let e = d.hiddenPotential.entries.find((x) => !x.awakened && !x.legacy && (!id || x.id === id));
+        if (!e) {
+          const taken = new Set(d.hiddenPotential.entries.filter((x) => !x.legacy).map((x) => x.id));
+          let pick = id && potentials.has(id) && !taken.has(id) ? id : null;
+          if (!pick && !id) {
+            const scores = formationScores(d);
+            pick = Object.keys(scores).filter((k) => !taken.has(k)).sort((a, b) => scores[b] - scores[a] || (a < b ? -1 : 1))[0];
+          }
+          if (!pick) return;
+          e = { id: pick, awakened: false, awakenedAt: 0, formedAt: Date.now(), origin: "admin" };
+          d.hiddenPotential.entries.push(e);
+        }
         e.awakened = true;
         e.awakenedAt = Date.now();
         if (!d.hiddenPotential.revealed.includes(e.id)) d.hiddenPotential.revealed.push(e.id);

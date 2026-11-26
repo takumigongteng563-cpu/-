@@ -1,5 +1,5 @@
 import { ctx } from "../../core/context.js";
-import { jobs } from "../../content/index.js";
+import { jobs, normalJobs, JOB_LINES } from "../../content/index.js";
 import { COMING_SOON, heading, lines, num } from "../format.js";
 import { showInfoPage } from "./infoPage.js";
 
@@ -24,8 +24,12 @@ export const jobPage = {
         return `・${j?.name ?? id}${l ? ` (Lv ${num(l.level)})` : ""}`;
       }),
       "",
-      `転職・職業の解放 ${COMING_SOON}`,
-      `§7登録済み職業数: ${jobs.size}§r`
+      heading("職業の系統（第1次職・暫定名）"),
+      JOB_LINES.map((l) => `・${l.name}`).join("  "),
+      `§7通常職業 ${normalJobs().length}枠（5段階の分岐ツリー）のうち、内容を設定済み ${normalJobs().filter((j) => j.defined).length}§r`,
+      "",
+      `転職・職業の解放・職業レベル ${COMING_SOON}`,
+      "§7※ 職業・転職システムは第3弾で実装します§r"
     );
     return showInfoPage(player, "職業", body);
   },

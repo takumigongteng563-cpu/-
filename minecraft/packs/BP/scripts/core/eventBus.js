@@ -12,6 +12,7 @@ const handlers = new Map();
  *  "expGained"         { playerId, amount, source }
  *  "talentAcquired"    { playerId, id, origin }
  *  "talentEvolved"     { playerId, from, to }
+ *  "potentialFormed"   { playerId, id }   ※本人にも名前は見せない
  *  "potentialAwakened" { playerId, id }
  *  "limitBreak"        { playerId, from, to }
  *  "statsChanged"      { playerId }

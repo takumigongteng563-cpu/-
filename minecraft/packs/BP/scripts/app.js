@@ -11,6 +11,11 @@ import { TalentService } from "./talents/talentService.js";
 import { ProgressionService } from "./progression/progressionService.js";
 import { ActionService } from "./actions/actionService.js";
 import { VitalsService } from "./vitals/vitalsService.js";
+import { KingdomService } from "./kingdom/kingdomService.js";
+import { StageService } from "./stages/stageService.js";
+import { UniqueItemService } from "./unique/uniqueItemService.js";
+import { SkillBindingService } from "./input/skillBindingService.js";
+import { RewardService } from "./rewards/rewardService.js";
 import { KEY_PREFIX, SAVE } from "./config.js";
 
 /**
@@ -27,7 +32,13 @@ export function createApp(backend, nowTick) {
   const progression = new ProgressionService(playerService, worldService, nowTick);
   const actions = new ActionService(playerService, talents);
   const vitals = new VitalsService(playerService);
-  return { store, worldService, playerService, partyService, stats, talents, progression, actions, vitals, nowTick };
+  // --- 最終仕様 Ver.1.0 ---
+  const kingdom = new KingdomService(worldService);
+  const stages = new StageService(worldService, playerService, kingdom);
+  const uniqueItems = new UniqueItemService(worldService, playerService);
+  const skillBindings = new SkillBindingService(playerService, vitals, nowTick);
+  const rewards = new RewardService(playerService, stages, uniqueItems);
+  return { store, worldService, playerService, partyService, stats, talents, progression, actions, vitals, kingdom, stages, uniqueItems, skillBindings, rewards, nowTick };
 }
 
 /**

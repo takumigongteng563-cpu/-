@@ -14,6 +14,9 @@ import {
   REWARD_LOG_SIZE,
   EXP_SOURCES,
   RESTORE_ON_LEVEL_UP,
+  LEVEL_DIFF_EXP,
+  EXP_BONUS_CAP,
+  PERSONAL_BREAK_REQUIREMENTS,
 } from "../balance/progression.js";
 import { addExp, expToNext } from "./levelMath.js";
 import { levelCapForStage, tierForStage, nextTier } from "../content/tiers.js";
@@ -54,6 +57,20 @@ export class ProgressionService {
     return this.worldService.world.settings.progression;
   }
 
+  /** 敵とのレベル差による倍率（格上は増加・格下は減少） */
+  levelDiffMultiplier(myLevel, enemyLevel) {
+    if (typeof enemyLevel !== "number" || !Number.isFinite(enemyLevel)) return 1;
+    const m = 1 + (enemyLevel - myLevel) * LEVEL_DIFF_EXP.perLevel;
+    return Math.min(LEVEL_DIFF_EXP.max, Math.max(LEVEL_DIFF_EXP.min, m));
+  }
+
+  /** 才能・潜在能力・職業などの経験値ボーナス（expBonus）の合計（上限あり） */
+  expBonus(d) {
+    let sum = 0;
+    for (const m of collectModifiers(d, this.nowTick())) sum += typeof m.def.expBonus === "number" ? m.def.expBonus : 0;
+    return Math.max(-0.5, Math.min(EXP_BONUS_CAP, sum));
+  }
+
   /** 追いつき補正の倍率（オンラインの最高レベルとの差） */
   catchUpMultiplier(playerId) {
     if (!CATCH_UP.enabled) return 1;
@@ -72,14 +89,21 @@ export class ProgressionService {
    * 経験値を付与する（共通処理）。
    * @param {string} playerId
    * @param {number} amount
-   * @param {{source: keyof typeof EXP_SOURCES, key?: string, once?: boolean, noBonus?: boolean}} opt
+   * @param {{source: keyof typeof EXP_SOURCES, key?: string, once?: boolean, noBonus?: boolean, enemyLevel?: number}} opt
+   *   enemyLevel : 敵のレベル。指定すると格上は増加・格下は減少（LEVEL_DIFF_EXP）
    * @returns {GrantResult}
    */
   grantExp(playerId, amount, opt) {
     const src = EXP_SOURCES[opt && opt.source];
     if (!src) return { ok: false, reason: "不明な入手元" };
     if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) return { ok: false, reason: "経験値が不正" };
-    const mult = src.multiplier * (opt.noBonus ? 1 : this.catchUpMultiplier(playerId));
+    const me = this.playerService.dataFor(playerId);
+    let mult = src.multiplier;
+    if (!opt.noBonus && me) {
+      mult *= this.catchUpMultiplier(playerId);
+      mult *= this.levelDiffMultiplier(me.level, opt.enemyLevel);
+      mult *= 1 + this.expBonus(me);
+    }
     const value = Math.min(MAX_EXP_PER_GRANT, Math.floor(amount * mult));
     if (value <= 0) return { ok: false, reason: "経験値が0" };
 
@@ -105,7 +129,7 @@ export class ProgressionService {
       const r = addExp(
         { level: d.level, exp: d.exp, overflow: d.expOverflow },
         value,
-        { cap: levelCapForStage(d.limitBreak.stage), policy: this.settings.overflowPolicy === "discard" ? "discard" : "store" }
+        { cap: levelCapForStage(d.limitBreak.stage), policy: this.settings.overflowPolicy === "discard" ? "discard" : "store", stage: d.limitBreak.stage }
       );
       d.level = r.level;
       d.exp = r.exp;
@@ -165,7 +189,7 @@ export class ProgressionService {
     return {
       level: d.level,
       exp: d.exp,
-      need: atCap ? 0 : expToNext(d.level),
+      need: atCap ? 0 : expToNext(d.level, d.limitBreak.stage),
       atCap,
       cap: tier.cap,
       tier,
@@ -201,7 +225,9 @@ export class ProgressionService {
           res = { ok: false, reason: "限界突破の条件はまだ解明されていない（今後実装予定）" };
           return;
         }
-        if (!checkAll(nt.requirements, d)) {
+        const personal = PERSONAL_BREAK_REQUIREMENTS[nt.stage];
+        const reqs = [...nt.requirements, ...(typeof personal === "function" ? personal(d) || [] : [])];
+        if (!checkAll(reqs, d)) {
           res = { ok: false, reason: "限界突破の条件を満たしていません" };
           return;
         }
@@ -216,6 +242,7 @@ export class ProgressionService {
       const r = addExp({ level: d.level, exp: d.exp, overflow: 0 }, stored, {
         cap: levelCapForStage(to),
         policy: this.settings.overflowPolicy === "discard" ? "discard" : "store",
+        stage: to,
       });
       d.level = r.level;
       d.exp = r.exp;

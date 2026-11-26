@@ -37,6 +37,8 @@ export function rollInitialTalents(rng, innateDefs, gradeWeights, slots) {
 }
 
 /**
+ * 【旧仕様・未使用】潜在能力の抽選（第2弾）。最終仕様では行動による形成（potentialFormation.js）に変更。
+ * 旧データの調査・テスト用に残している。
  * 潜在能力の抽選。ほかのプレイヤーに割り当て済みのものほど当たりにくくする（パーティ内の偏り防止）。
  * @param {() => number} rng
  * @param {any[]} defs

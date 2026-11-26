@@ -10,6 +10,11 @@ export function levelCapForStage(stage) {
   return tierForStage(stage).cap;
 }
 
+/** 能力値の成長上限（基礎＋成長＋振り分け） */
+export function statCapForStage(stage) {
+  return tierForStage(stage).statCap;
+}
+
 export function nextTier(stage) {
   return EXISTENCE_TIERS[Math.floor(stage || 0) + 1];
 }

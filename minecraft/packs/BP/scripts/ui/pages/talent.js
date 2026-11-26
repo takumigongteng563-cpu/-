@@ -44,7 +44,8 @@ export const talentPage = {
       const d = ctx.playerService.dataFor(player.id);
       const active = d.talents.active.filter((a) => talents.has(a.id));
       const awakened = d.hiddenPotential.entries.filter((e) => e.awakened && potentials.has(e.id));
-      const sleeping = d.hiddenPotential.entries.filter((e) => !e.awakened).length;
+      // 形成済み・未覚醒（旧仕様の抽選結果 legacy は数えない）。名前・条件は表示しない
+      const sleeping = d.hiddenPotential.entries.filter((e) => !e.awakened && !e.legacy).length;
       const body = lines(
         heading("所持している才能"),
         active.length === 0 ? "まだ才能は目覚めていない。" : active.map((a) => {
@@ -57,8 +58,8 @@ export const talentPage = {
           const p = potentials.get(e.id);
           return lines(`§d§l${p.name}§r §7${p.description}§r`, describeEffects(p).map((x) => `  ${x}`));
         }),
-        sleeping > 0 ? "§8§k??????§r §7……何かが眠っている気がする§r" : null,
-        awakened.length === 0 && sleeping === 0 ? "なし" : null,
+        sleeping > 0 ? `§8§k??????§r §7……何かが形になりつつある気がする${sleeping > 1 ? `（${sleeping}つ）` : ""}§r` : null,
+        awakened.length === 0 && sleeping === 0 ? "§7まだ何も感じない。戦い方や歩んできた道によって、眠れる力が形づくられていく。§r" : null,
         "",
         "§7才能はボタンから詳しく見られます。行動や実績によって新しい才能が目覚めたり、才能が進化したりします。§r"
       );

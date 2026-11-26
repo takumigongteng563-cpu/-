@@ -47,3 +47,23 @@ test("統合（第2弾）：第1弾のセーブデータから更新 → 戦闘�
   }
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+function runFinal(stateFile, phase) {
+  const out = execFileSync(process.execPath, ["--import", "./tests/mock/loader.mjs", "tests/integration/finalSession.mjs", stateFile, phase], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return JSON.parse(out);
+}
+
+test("統合（最終仕様対応）：第2弾のセーブデータから更新 → 操作判定・ステージ・王国 → 再起動", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mnq3-"));
+  const stateFile = path.join(dir, "state.json");
+  fs.copyFileSync(path.join(root, "tests/fixtures/v2-state.json"), stateFile);
+  for (const phase of ["upgrade2", "final-restart"]) {
+    const r = runFinal(stateFile, phase);
+    assert.equal(r.phase, phase);
+    for (const c of r.checks) console.log(`  [${phase}] ✔ ${c}`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});

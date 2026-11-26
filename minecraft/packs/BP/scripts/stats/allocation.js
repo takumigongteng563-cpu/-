@@ -5,11 +5,29 @@
 // ・確定済みの振り分けは通常は戻せない（respecTokens による再振り分けは将来用）
 // =============================================================
 import { STAT_IDS } from "../content/stats.js";
+import { statCapForStage } from "../content/tiers.js";
+import { INITIAL_STATS } from "../balance/stats.js";
+
+/** 能力値ごとに、成長上限まであと何ポイント振れるか */
+export function allocationRoom(data) {
+  const cap = statCapForStage(data.limitBreak ? data.limitBreak.stage : 0);
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const s of STAT_IDS) {
+    const natural = ((data.stats && data.stats[s]) ?? INITIAL_STATS[s]) + ((data.statGrowth && data.statGrowth[s]) || 0) + ((data.statAllocated && data.statAllocated[s]) || 0);
+    out[s] = Math.max(0, cap - natural);
+  }
+  return out;
+}
 
 export class AllocationDraft {
-  /** @param {number} available 確定前の未使用ポイント */
-  constructor(available) {
+  /**
+   * @param {number} available 確定前の未使用ポイント
+   * @param {Record<string, number>} [room] 能力値ごとの上限までの余り（省略時は無制限）
+   */
+  constructor(available, room) {
     this.available = Math.max(0, Math.floor(available));
+    this.room = room || null;
     /** @type {{stat: string, n: number}[]} 操作の履歴（1つ戻す用） */
     this.steps = [];
   }
@@ -32,7 +50,8 @@ export class AllocationDraft {
   /** @returns {number} 実際に追加できた数（残りが足りなければ残り全部） */
   add(stat, n) {
     if (!STAT_IDS.includes(stat)) return 0;
-    const k = Math.min(Math.max(0, Math.floor(n)), this.remaining);
+    let k = Math.min(Math.max(0, Math.floor(n)), this.remaining);
+    if (this.room) k = Math.min(k, Math.max(0, (this.room[stat] ?? 0) - (this.totals()[stat] || 0)));
     if (k <= 0) return 0;
     this.steps.push({ stat, n: k });
     return k;
@@ -61,8 +80,10 @@ export function commitAllocation(data, draft) {
   const sum = Object.values(totals).reduce((a, b) => a + b, 0);
   if (sum <= 0) return { ok: false, reason: "振り分けがありません" };
   if (sum > data.unspentStatPoints) return { ok: false, reason: "能力ポイントが足りません" };
+  const room = allocationRoom(data);
   for (const [s, n] of Object.entries(totals)) {
     if (!STAT_IDS.includes(s) || !Number.isInteger(n) || n <= 0) return { ok: false, reason: "不正な振り分け" };
+    if (n > room[s]) return { ok: false, reason: "能力値の上限を超えます（限界突破で上限が上がります）" };
   }
   for (const [s, n] of Object.entries(totals)) data.statAllocated[s] = (data.statAllocated[s] || 0) + n;
   data.unspentStatPoints -= sum;

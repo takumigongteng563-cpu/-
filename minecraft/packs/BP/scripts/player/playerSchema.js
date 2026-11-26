@@ -9,6 +9,7 @@
 // =============================================================
 import { PLAYER_SCHEMA_VERSION } from "../config.js";
 import { randomSeed } from "../core/ids.js";
+import { emptyBindings } from "../input/skillBindingService.js";
 import { conform } from "../storage/sanitize.js";
 import {
   DEFAULT_RACE_ID,
@@ -49,8 +50,10 @@ export function playerTemplate() {
       // 職業ごとの職業レベル。{ [jobId]: { level, exp } }
       levels: { [DEFAULT_JOB_ID]: { level: 1, exp: 0 } },
       unlocked: [DEFAULT_JOB_ID],
-      history: [], // 転職履歴 [{ from, to, at }]
+      history: [], // 転職履歴 [{ from, to, at }]（過去の職業の習得記録として残す）
     },
+    // --- 最終仕様：職業系統の専用能力値（基盤） { [id]: { base, unlocked, unlockedAt } } ---
+    specialStats: {},
 
     // --- HP・MP・スタミナ ---
     // hp はバニラの体力の割合から算出（第2弾）。最大値は派生能力値から再計算される
@@ -89,12 +92,16 @@ export function playerTemplate() {
       rolledAt: 0,
       active: [], // 現在有効な才能 [{ id, origin: "innate"|"acquired"|"admin", since, lineage: [進化前のID...] }]
       history: [], // 獲得・進化の履歴 [{ type, id, from, at }]
+      // --- 最終仕様 ---
+      archived: [], // 旧仕様で得た2個目以降の初期才能（無効化して記録として保存。削除はしない）
     },
     // 隠された潜在能力。本人にも内容は見えない。seed は将来の抽選用
     hiddenPotential: {
       seed: 0,
       revealed: [], // 開花済みの潜在能力ID
-      entries: [], // 内部的に決定済みの潜在能力（未公開） [{ id, awakened, awakenedAt }]
+      entries: [], // 形成済みの潜在能力（未公開） [{ id, awakened, awakenedAt, formedAt, origin, legacy? }]
+      // --- 最終仕様：行動による形成 ---
+      formation: { scores: {}, updatedAt: 0 }, // 形成スコア（本人には非公開）
     },
     // --- 第2弾：行動の記録（後天性才能・潜在能力の条件に使う） ---
     actions: {}, // { [行動キー]: 回数・量 }
@@ -105,7 +112,18 @@ export function playerTemplate() {
       learned: {}, // { [skillId]: { level, exp, learnedAt } }
       equipped: [], // セット中のスキルID
     },
-    proficiency: {}, // 武器種・魔法系統などの熟練度 { [id]: { level, exp } }
+    // 熟練度（最終仕様：武器・魔法・スキル） { [id]: { level, exp } }
+    proficiency: {
+      weapon: {},
+      magic: {},
+      skill: {},
+    },
+    // ホットバー9枠 × 5操作の技の割り当て（最終仕様 第11章）
+    skillBindings: {
+      slots: emptyBindings(),
+    },
+    // 個人のステージ攻略記録（周回数＝報酬の周回補正に使う） { [stageId]: { clears, firstClearAt, bestTimeSec } }
+    stageRecords: {},
 
     // --- 装備 ---
     equipment: {

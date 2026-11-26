@@ -11,11 +11,36 @@ export function worldTemplate() {
   return {
     createdAt: 0,
 
-    // メインストーリー（全20章を予定）
+    // メインストーリー（最終仕様：一本道・全10章）
     story: {
-      chapter: 0, // 0 = プロローグ前
+      chapter: 1, // 現在の章（1～10）。ステージの進行から決まる
       cleared: [], // クリア済み章番号
       flags: {}, // { [flagId]: 値 }
+    },
+
+    // --- 最終仕様：100固定ステージ ---
+    stages: {
+      unlocked: { stage001: 1 }, // { [stageId]: 解放時刻 }（ステージ1は最初から解放）
+      records: {}, // { [stageId]: { firstClearAt, firstClearBy: uid[], clears, bestTimeSec } }
+      resume: {}, // 長時間ステージの途中再開 { [runId]: { stageId, checkpoint, members, savedAt } }
+    },
+
+    // --- 最終仕様：富里王国の復興 ---
+    kingdom: {
+      phase: "ruined", // ruined（滅亡寸前）→ restoring（復興中）→ capital（王都）
+      phaseChangedAt: 0,
+      residents: { hope: { arrivedAt: 0, fromStage: null } }, // 開始時はホープのみ
+      buildings: {}, // { [buildingId]: { state: "queued"|"built", queuedAt, builtAt } }
+      facilities: { inn: { unlockedAt: 0, by: null } }, // 開始時は宿屋のみ
+      buildQueue: [], // 配置待ちの建物ID（少しずつ配置して負荷を分散）
+      appliedStages: {}, // 復興処理を反映済みのステージ（周回で重複させない）
+    },
+
+    // --- 最終仕様：クリア後 ---
+    postgame: {
+      unlocked: false,
+      finalBossDefeatedAt: 0,
+      trueEndingAt: 0,
     },
 
     // 地域解放状況 { [regionId]: { unlockedAt } }
@@ -23,7 +48,7 @@ export function worldTemplate() {
       unlocked: {},
     },
 
-    // ダンジョン攻略状況（ワールド全体） { [dungeonId]: { firstClearAt, clearCount, deepestFloor } }
+    // 【旧仕様・未使用】ダンジョン攻略状況（ランダムダンジョンは最終仕様で廃止。記録として残す）
     dungeons: {
       records: {},
     },
@@ -33,9 +58,11 @@ export function worldTemplate() {
       defeated: {},
     },
 
-    // 世界唯一の装備の所有状況 { [itemId]: { ownerUid, obtainedAt } }
+    // 世界唯一の装備
     uniqueItems: {
-      owners: {},
+      owners: {}, // 【旧形式】{ [itemId]: { ownerUid, obtainedAt } }（v2 移行時に registry へ写す）
+      // { [itemId]: { state: "unissued"|"held"|"lost", holderUid, instanceId, growth, history } }
+      registry: {},
     },
 
     // 世界唯一の称号の獲得状況 { [titleId]: { ownerUid, obtainedAt } }
@@ -49,7 +76,7 @@ export function worldTemplate() {
       completed: {}, // { [eventId]: 完了時刻 }
     },
 
-    // ダンジョンの途中再開情報 { [runId]: { dungeonId, floor, members: uid[], savedAt } }
+    // 【旧仕様・未使用】ダンジョンの途中再開情報（最終仕様では stages.resume を使う）
     dungeonResume: {},
 
     // ワールド設定
@@ -76,7 +103,7 @@ export function worldTemplate() {
 
     // --- 第2弾：才能の統計（潜在能力がパーティ内で偏らないように使う） ---
     talentStats: {
-      potentialAssigned: {}, // { [potentialId]: 割り当て人数 }
+      potentialAssigned: {}, // 【旧仕様・未使用】第2弾の潜在能力抽選で使用。記録として残す
     },
   };
 }

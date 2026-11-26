@@ -10,6 +10,10 @@ import { talents } from "../../content/talents/index.js";
 import { potentials } from "../../content/potentials.js";
 import { gradeLabel } from "../../content/grades.js";
 import { tierForStage } from "../../content/tiers.js";
+import { stageIdOf } from "../../content/stages.js";
+import { KINGDOM_PHASES } from "../../content/kingdom.js";
+import { TAGS } from "../../config.js";
+import { giveSkillFocus } from "../../items/adventurerBook.js";
 import { createLogger } from "../../core/log.js";
 import { showForm } from "../formUtil.js";
 import { heading, lines, num } from "../format.js";
@@ -160,6 +164,47 @@ const ACTIONS = [
     label: "ステータス再計算",
     async run(admin, t) {
       report(admin, "再計算", ctx.stats.recalc(t.id, { important: true }), t.name);
+    },
+  },
+  {
+    label: "操作判定テスト ON/OFF（自分）",
+    async run(admin) {
+      const on = !admin.hasTag(TAGS.inputTest);
+      if (on) admin.addTag(TAGS.inputTest);
+      else admin.removeTag(TAGS.inputTest);
+      if (on) giveSkillFocus(admin);
+      admin.sendMessage(on ? "§a操作判定テスト ON：修練の触媒を持って、通常／ジャンプ中／ダッシュ中／しゃがみ溜め／長押しで使ってください" : "§7操作判定テスト OFF");
+    },
+  },
+  {
+    label: "ステージクリア記録テスト",
+    async run(admin) {
+      const n = await askNumber(admin, "ステージクリア記録テスト", "ステージ番号（1～100）", "1");
+      if (!(n >= 1 && n <= 100)) return;
+      const ids = world.getAllPlayers().filter((p) => ctx.playerService.getSession(p.id)).map((p) => p.id);
+      report(admin, `ステージ${n} クリア記録`, ctx.stages.recordClear(stageIdOf(n), ids), "参加者全員");
+    },
+  },
+  {
+    label: "ワールド進行データ確認",
+    async run(admin) {
+      const w = ctx.worldService.world;
+      const k = w.kingdom;
+      const sum = ctx.stages.summary();
+      const body = lines(
+        heading("ストーリー・ステージ"),
+        `章: 第${w.story.chapter}章 / 全10章（旧データの章: ${w.story.legacyChapter ?? "-"}）`,
+        `解放 ${sum.unlocked} / クリア ${sum.cleared} / 全${sum.total}ステージ`,
+        heading("富里王国"),
+        `状態: ${KINGDOM_PHASES[k.phase] ?? k.phase}`,
+        `住民: ${Object.keys(k.residents).join(", ")}`,
+        `建物: ${Object.entries(k.buildings).map(([id, b]) => `${id}(${b.state})`).join(", ") || "なし"}`,
+        `施設: ${Object.keys(k.facilities).join(", ")}`,
+        `配置待ち: ${k.buildQueue.length}件（配置処理は第15弾）`,
+        heading("世界唯一の装備"),
+        `${Object.entries(w.uniqueItems.registry).map(([id, u]) => `${id}: ${u.state}`).join(", ") || "なし"}`
+      );
+      await showInfoPage(admin, "ワールド進行データ", body);
     },
   },
   {

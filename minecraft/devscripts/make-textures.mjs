@@ -38,6 +38,28 @@ function fromArt(art, scale = 1) {
 
 fs.writeFileSync("packs/RP/textures/items/adventurer_book.png", fromArt(BOOK));
 
+// 修練の触媒（16x16）：操作判定の確認用アイテム
+const FOCUS = [
+  "................",
+  "................",
+  ".......CC.......",
+  "......CLLC......",
+  ".....CLBBLC.....",
+  "....CLBBBBLC....",
+  "....CBBLBBBC....",
+  "....CBBBBBBC....",
+  ".....CBBBBC.....",
+  "......CBBC......",
+  ".......SS.......",
+  ".......SS.......",
+  "......SGGS......",
+  ".......SS.......",
+  ".......SS.......",
+  "................",
+];
+Object.assign(PAL, { C: [40, 60, 120, 255], L: [180, 230, 255, 255], B: [80, 150, 230, 255], S: [110, 80, 50, 255], G: [222, 178, 60, 255] });
+fs.writeFileSync("packs/RP/textures/items/skill_focus.png", fromArt(FOCUS));
+
 // パックアイコン（128x128）：夜空のグラデーション + 書のドット絵
 function packIcon(accent) {
   return encodePng(128, 128, (x, y) => {

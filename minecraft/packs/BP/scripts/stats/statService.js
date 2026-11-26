@@ -11,7 +11,7 @@ export function recalcData(data, nowTick) {
   // 期限切れの一時効果を取り除く
   if (Array.isArray(data.buffs)) data.buffs = data.buffs.filter((b) => b && (!b.untilTick || b.untilTick > nowTick));
   const r = computeStats(data, nowTick);
-  data.computed = { primary: r.primary, derived: r.derived, elements: r.elements, at: nowTick };
+  data.computed = { primary: r.primary, derived: r.derived, elements: r.elements, special: r.special, statCap: r.statCap, at: nowTick };
   const v = data.vitals;
   const d = r.derived;
   v.hpMax = d.maxHp;
@@ -53,13 +53,13 @@ export class StatService {
 
   /**
    * 一時効果を付ける。同じ id の効果は上書き（重複して積み上がらない）。
-   * @param {{id: string, name?: string, source?: string, stats?: any, derived?: any, durationTicks: number}} buff
+   * @param {{id: string, name?: string, source?: string, stats?: any, derived?: any, special?: any, durationTicks: number}} buff
    */
   addBuff(playerId, buff) {
     const until = this.nowTick() + Math.max(1, Math.floor(buff.durationTicks));
     const ok = this.playerService.update(playerId, (d) => {
       d.buffs = d.buffs.filter((b) => b.id !== buff.id);
-      d.buffs.push({ id: buff.id, name: buff.name, source: buff.source, stats: buff.stats, derived: buff.derived, untilTick: until });
+      d.buffs.push({ id: buff.id, name: buff.name, source: buff.source, stats: buff.stats, derived: buff.derived, special: buff.special, untilTick: until });
       recalcData(d, this.nowTick());
     });
     if (ok) emit("statsChanged", { playerId });

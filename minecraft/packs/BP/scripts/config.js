@@ -6,7 +6,7 @@
 // =============================================================
 
 /** アドオンのバージョン（表示・診断用） */
-export const ADDON_VERSION = "0.2.0";
+export const ADDON_VERSION = "0.2.1";
 
 /** アイテム・タグ等の名前空間（変更禁止） */
 export const NAMESPACE = "noguchi";
@@ -15,19 +15,26 @@ export const NAMESPACE = "noguchi";
 export const KEY_PREFIX = "mnq";
 
 /** 現在のデータ構造バージョン。構造を変えたら +1 し、移行処理を追加する */
-export const PLAYER_SCHEMA_VERSION = 2;
-export const WORLD_SCHEMA_VERSION = 1;
+export const PLAYER_SCHEMA_VERSION = 3;
+export const WORLD_SCHEMA_VERSION = 2;
 export const INDEX_SCHEMA_VERSION = 1;
 
 /** アイテムID（変更禁止） */
 export const ITEM_IDS = Object.freeze({
   adventurerBook: `${NAMESPACE}:adventurer_book`,
+  /** 操作判定の確認用（最終仕様：ホットバー複数操作）。第4弾で武器・魔導書に置き換える */
+  skillFocus: `${NAMESPACE}:skill_focus`,
 });
+
+/** ホットバー複数操作（技の割り当て）の対象になるアイテム。第4弾で武器・魔導書などを追加 */
+export const SKILL_INPUT_ITEMS = Object.freeze([ITEM_IDS.skillFocus]);
 
 /** タグ */
 export const TAGS = Object.freeze({
   /** 管理者タグ。/tag @s add noguchi_admin で付与 */
   admin: `${NAMESPACE}_admin`,
+  /** 操作判定テスト中（判定結果を画面に表示する） */
+  inputTest: `${NAMESPACE}_input_test`,
 });
 
 /** 保存まわりの調整値（Switch の処理性能を考慮した値） */

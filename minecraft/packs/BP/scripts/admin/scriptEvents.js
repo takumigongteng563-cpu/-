@@ -22,6 +22,11 @@
 //   /scriptevent noguchi:limitbreak [名前]         限界突破テスト（条件無視）
 //   /scriptevent noguchi:recalc [名前]             ステータス再計算
 //   /scriptevent noguchi:flag <フラグID> [名前]    特殊イベントのフラグを立てる
+//
+// 【最終仕様対応：管理者テスト用】
+//   /scriptevent noguchi:give_focus                操作判定の確認用アイテム「修練の触媒」を受け取る
+//   /scriptevent noguchi:input_test <on|off>       操作判定テスト（使用時に判定結果を表示）
+//   /scriptevent noguchi:stage_clear <番号>         ステージクリアの記録テスト（復興・解放処理の確認）
 // =============================================================
 import { system, world, Player } from "@minecraft/server";
 import { ctx } from "../core/context.js";
@@ -29,11 +34,13 @@ import { subscribe } from "../core/events.js";
 import { NAMESPACE, KEY_PREFIX, ADDON_VERSION } from "../config.js";
 import { flushAll, pendingCount } from "../storage/saveManager.js";
 import { worldStorageBytes, countKeys } from "../storage/worldBackend.js";
-import { ensureAdventurerBook } from "../items/adventurerBook.js";
+import { ensureAdventurerBook, giveSkillFocus } from "../items/adventurerBook.js";
+import { stageIdOf } from "../content/stages.js";
+import { TAGS } from "../config.js";
 import { isAdmin } from "./adminAuth.js";
 
 // 第2弾のテスト用コマンド（第1弾のコマンドは従来どおり /scriptevent の実行権限のみで使える）
-const ADMIN_COMMANDS = new Set(["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag"]);
+const ADMIN_COMMANDS = new Set(["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag", "give_focus", "input_test", "stage_clear"]);
 
 /** 最後の引数がオンラインのプレイヤー名ならそのプレイヤー、違えば実行者 */
 function resolveTarget(args, src) {
@@ -185,6 +192,26 @@ export function registerScriptEvents(hooks) {
       case "flag":
         result(ev, `フラグ ${args[0]}`, args[0] ? ctx.actions.setFlag(target.id, args[0]) : false);
         return;
+      case "give_focus":
+        if (src) result(ev, "修練の触媒", giveSkillFocus(src));
+        return;
+      case "input_test":
+        if (!src) return;
+        if (args[0] === "off") src.removeTag(TAGS.inputTest);
+        else src.addTag(TAGS.inputTest);
+        reply(ev, `§a操作判定テスト：${args[0] === "off" ? "OFF" : "ON（修練の触媒を使うと判定結果を表示）"}`);
+        return;
+      case "stage_clear": {
+        const n = Number(args[0]);
+        if (!(n >= 1 && n <= 100)) {
+          reply(ev, "§c使い方: /scriptevent noguchi:stage_clear <1～100>");
+          return;
+        }
+        const ids = world.getAllPlayers().filter((p) => ctx.playerService.getSession(p.id)).map((p) => p.id);
+        const r = ctx.stages.recordClear(stageIdOf(n), ids);
+        result(ev, `ステージ${n} クリア記録${r.first ? "（初回）" : ""}${r.unlockedNext ? ` → ${r.unlockedNext} 解放` : ""}`, r);
+        return;
+      }
       default:
         reply(ev, `§c不明なコマンド: ${ev.id}`);
     }

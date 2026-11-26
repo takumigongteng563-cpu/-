@@ -10,6 +10,11 @@
  * @property {import("../progression/progressionService.js").ProgressionService} progression
  * @property {import("../actions/actionService.js").ActionService} actions
  * @property {import("../vitals/vitalsService.js").VitalsService} vitals
+ * @property {import("../kingdom/kingdomService.js").KingdomService} kingdom
+ * @property {import("../stages/stageService.js").StageService} stages
+ * @property {import("../unique/uniqueItemService.js").UniqueItemService} uniqueItems
+ * @property {import("../input/skillBindingService.js").SkillBindingService} skillBindings
+ * @property {import("../rewards/rewardService.js").RewardService} rewards
  * @property {() => number} nowTick 現在のtick
  * @property {boolean} ready
  */
@@ -25,6 +30,11 @@ export const ctx = {
   progression: null,
   actions: null,
   vitals: null,
+  kingdom: null,
+  stages: null,
+  uniqueItems: null,
+  skillBindings: null,
+  rewards: null,
   nowTick: () => 0,
   ready: false,
 };

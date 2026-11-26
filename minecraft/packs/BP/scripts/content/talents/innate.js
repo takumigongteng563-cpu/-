@@ -1,5 +1,5 @@
-// 初期才能（初回参加時の抽選対象）40種
-import { allStats, allElements, counter, level, hasTalent, any } from "./schema.js";
+// 初期才能（初回参加時の抽選対象）44種（最終仕様で生命力・持久力・集中力・統率力の才能を4種追加）
+import { allStats, allGrowth, allElements, counter, level, hasTalent, any } from "./schema.js";
 
 const el = (id, name, elem, grade, stat) => ({
   id: `${elem}_aptitude`,
@@ -151,7 +151,32 @@ export const INNATE_TALENTS = [
     jobAptitude: { gatherer: 0.2 },
   },
 
+  {
+    id: "iron_lungs",
+    name: "鉄の心肺",
+    description: "息が切れにくく、長く走り続けられる。",
+    grade: "F",
+    kind: "innate",
+    family: "stamina",
+    weight: 10,
+    stats: { flat: { endr: 2 } },
+    derived: { flat: { fatigueResist: 5 } },
+    growth: { endr: 0.1 },
+  },
+
   // ---------------- E（下級） ----------------
+  {
+    id: "spring_of_life",
+    name: "生命力の泉",
+    description: "傷の治りが人より早い。",
+    grade: "E",
+    kind: "innate",
+    family: "life",
+    weight: 10,
+    stats: { flat: { lif: 2 } },
+    derived: { pct: { hpRegen: 15 } },
+    growth: { lif: 0.1 },
+  },
   {
     id: "mana_affinity",
     name: "魔力親和性",
@@ -268,6 +293,19 @@ export const INNATE_TALENTS = [
     derived: { flat: { critRate: 2 } },
   },
 
+  {
+    id: "deep_focus",
+    name: "集中の才",
+    description: "どんな騒がしい場所でも集中を切らさない。",
+    grade: "D",
+    kind: "innate",
+    family: "focus",
+    weight: 10,
+    stats: { flat: { foc: 2 } },
+    derived: { flat: { interruptResist: 5 } },
+    growth: { foc: 0.1 },
+  },
+
   // ---------------- C（上級） ----------------
   el("light", "光属性適性", "light", "C", "mnd"),
   el("dark", "闇属性適性", "dark", "C", "int"),
@@ -318,6 +356,19 @@ export const INNATE_TALENTS = [
     skillAffinity: { dual: 0.2 },
   },
 
+  {
+    id: "charisma",
+    name: "人望",
+    description: "自然と人や獣が集まってくる。",
+    grade: "C",
+    kind: "innate",
+    family: "lead",
+    weight: 10,
+    stats: { flat: { lead: 3 } },
+    growth: { lead: 0.15 },
+    jobAptitude: { summoner: 0.1 },
+  },
+
   // ---------------- B（希少） ----------------
   {
     id: "growth_acceleration",
@@ -327,7 +378,8 @@ export const INNATE_TALENTS = [
     kind: "innate",
     family: "growth",
     weight: 10,
-    growth: { str: 0.15, vit: 0.15, mag: 0.15, mnd: 0.15, agi: 0.15, dex: 0.15, luk: 0.15, int: 0.15 },
+    expBonus: 0.1,
+    growth: allGrowth(0.15),
   },
   {
     id: "tactician",
@@ -362,7 +414,7 @@ export const INNATE_TALENTS = [
     family: "hero",
     weight: 10,
     stats: { flat: allStats(2) },
-    growth: { str: 0.1, vit: 0.1, mag: 0.1, mnd: 0.1, agi: 0.1, dex: 0.1, luk: 0.1, int: 0.1 },
+    growth: allGrowth(0.1),
   },
   {
     id: "magic_prodigy",
@@ -387,7 +439,7 @@ export const INNATE_TALENTS = [
     family: "versatile",
     weight: 10,
     stats: { flat: allStats(3) },
-    growth: { str: 0.15, vit: 0.15, mag: 0.15, mnd: 0.15, agi: 0.15, dex: 0.15, luk: 0.15, int: 0.15 },
+    growth: allGrowth(0.15),
     skillAffinity: { all: 0.15 },
   },
 
@@ -415,7 +467,7 @@ export const INNATE_TALENTS = [
     family: "oracle",
     weight: 10,
     stats: { flat: { ...allStats(5), mnd: 8, luk: 8 } },
-    growth: { str: 0.2, vit: 0.2, mag: 0.2, mnd: 0.2, agi: 0.2, dex: 0.2, luk: 0.2, int: 0.2 },
+    growth: allGrowth(0.2),
   },
 
   // ---------------- EX（規格外） ----------------
@@ -428,7 +480,7 @@ export const INNATE_TALENTS = [
     family: "otherworld",
     weight: 10,
     stats: { flat: allStats(6) },
-    growth: { str: 0.3, vit: 0.3, mag: 0.3, mnd: 0.3, agi: 0.3, dex: 0.3, luk: 0.3, int: 0.3 },
+    growth: allGrowth(0.3),
   },
 ];
 

@@ -24,22 +24,41 @@ export const STAT_POINTS_PER_LEVEL = 5;
 export const MAX_EXP_PER_GRANT = 100000000;
 
 /**
+ * 敵とのレベル差による経験値の倍率（最終仕様 第6章：格上は増加・格下は減少）
+ *   倍率 = clamp(1 + (敵Lv − 自分Lv) × perLevel, min, max)
+ * 敵のレベルが分からない入手元（クエスト等）には適用しない。
+ */
+export const LEVEL_DIFF_EXP = Object.freeze({ perLevel: 0.08, min: 0.1, max: 2.0 });
+
+/** 才能・職業などの経験値ボーナス（expBonus）の合計の上限 */
+export const EXP_BONUS_CAP = 0.5;
+
+/**
  * 存在階級。種族とは別の「勇者の成長段階」。
  * cap = その階級でのレベル上限。stage = 限界突破回数。
  * requirements = 次の階級へ進むための条件。null は「未実装（突破不可）」を表す。
  * 試練・素材・ボス討伐などの条件は後続アップデートでここに定義する。
  */
+// statCap = 能力値の成長上限（基礎＋成長＋振り分けの合計の上限。才能・装備などの補正は含まない）
+// expMultiplier = 必要経験値の倍率（限界突破するたびに成長が難しくなる）
 export const EXISTENCE_TIERS = Object.freeze([
-  { stage: 0, id: "common", name: "一般級", cap: 50, requirements: null },
-  { stage: 1, id: "superhuman", name: "超人級", cap: 100, requirements: null },
-  { stage: 2, id: "hero", name: "英雄級", cap: 150, requirements: null },
-  { stage: 3, id: "legend", name: "伝説級", cap: 200, requirements: null },
-  { stage: 4, id: "myth", name: "神話級", cap: 300, requirements: null },
-  { stage: 5, id: "demigod", name: "半神級", cap: 500, requirements: null },
-  { stage: 6, id: "god", name: "神級", cap: 999, requirements: null },
-  // 上限は未定。暫定的に神級と同じ値を置き、突破条件も未実装
-  { stage: 7, id: "unknown", name: "未知の領域", cap: 999, requirements: null },
+  { stage: 0, id: "common", name: "一般級", cap: 50, statCap: 100, expMultiplier: 1.0, requirements: null },
+  { stage: 1, id: "superhuman", name: "超人級", cap: 100, statCap: 250, expMultiplier: 1.3, requirements: null },
+  { stage: 2, id: "hero", name: "英雄級", cap: 150, statCap: 500, expMultiplier: 1.6, requirements: null },
+  { stage: 3, id: "legend", name: "伝説級", cap: 200, statCap: 1000, expMultiplier: 2.0, requirements: null },
+  { stage: 4, id: "myth", name: "神話級", cap: 300, statCap: 2500, expMultiplier: 2.5, requirements: null },
+  { stage: 5, id: "demigod", name: "半神級", cap: 500, statCap: 5000, expMultiplier: 3.0, requirements: null },
+  { stage: 6, id: "god", name: "神級", cap: 999, statCap: 9999, expMultiplier: 4.0, requirements: null },
+  // 最終仕様 Ver.1.0 の存在階級は神級まで。「未知の領域」は第2弾で追加した予備枠（突破不可）として残す
+  { stage: 7, id: "unknown", name: "未知の領域", cap: 999, statCap: 99999, expMultiplier: 5.0, requirements: null },
 ]);
+
+/**
+ * 限界突破を「勇者ごとに異なる条件」にするための追加条件（最終仕様 第10章）。
+ * キー = 突破後の段階。値 = (プレイヤーデータ) => 追加の条件配列。
+ * 例：才能の系統や職業によって必要な試練を変える。第13弾（称号・限界突破）で定義する。
+ */
+export const PERSONAL_BREAK_REQUIREMENTS = Object.freeze({});
 
 /**
  * レベル上限に達したあとの余剰経験値の扱い（ワールド設定の初期値）
@@ -121,6 +140,46 @@ export const VANILLA_MOB_EXP = Object.freeze({
   "minecraft:warden": 1500,
   "minecraft:wither": 3000,
   "minecraft:ender_dragon": 5000,
+});
+
+/** 【暫定】バニラのモンスターの「レベル」（レベル差補正に使う）。未記載は 1 */
+export const VANILLA_MOB_LEVEL = Object.freeze({
+  "minecraft:zombie": 3,
+  "minecraft:husk": 4,
+  "minecraft:drowned": 4,
+  "minecraft:zombie_villager": 3,
+  "minecraft:skeleton": 4,
+  "minecraft:stray": 5,
+  "minecraft:bogged": 5,
+  "minecraft:spider": 3,
+  "minecraft:cave_spider": 4,
+  "minecraft:creeper": 5,
+  "minecraft:slime": 2,
+  "minecraft:magma_cube": 4,
+  "minecraft:silverfish": 2,
+  "minecraft:endermite": 2,
+  "minecraft:witch": 8,
+  "minecraft:phantom": 7,
+  "minecraft:pillager": 7,
+  "minecraft:vindicator": 9,
+  "minecraft:evocation_illager": 15,
+  "minecraft:vex": 6,
+  "minecraft:ravager": 20,
+  "minecraft:enderman": 12,
+  "minecraft:blaze": 12,
+  "minecraft:ghast": 13,
+  "minecraft:wither_skeleton": 14,
+  "minecraft:zombie_pigman": 8,
+  "minecraft:piglin_brute": 15,
+  "minecraft:hoglin": 10,
+  "minecraft:zoglin": 11,
+  "minecraft:guardian": 12,
+  "minecraft:elder_guardian": 30,
+  "minecraft:shulker": 14,
+  "minecraft:breeze": 15,
+  "minecraft:warden": 45,
+  "minecraft:wither": 50,
+  "minecraft:ender_dragon": 50,
 });
 
 /** 「強敵」とみなすモンスター（後天性才能の条件に使う） */

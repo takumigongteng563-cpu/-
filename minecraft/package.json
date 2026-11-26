@@ -1,6 +1,6 @@
 {
   "name": "majin-noguchi-addon",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "魔神野口と4人の勇者たち — Minecraft統合版アドオン（開発用ツール一式）",

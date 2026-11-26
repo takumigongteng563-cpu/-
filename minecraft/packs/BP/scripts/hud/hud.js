@@ -42,7 +42,7 @@ export function notifyActionBar(player, text, yieldTicks = HUD.yieldTicks) {
 export function hudText(d) {
   const v = d.vitals;
   const cap = levelCapForStage(d.limitBreak.stage);
-  const exp = d.level >= cap ? "§6MAX" : `${Math.floor(d.exp)}/${expToNext(d.level)}`;
+  const exp = d.level >= cap ? "§6MAX" : `${Math.floor(d.exp)}/${expToNext(d.level, d.limitBreak.stage)}`;
   const job = jobs.get(d.job.current)?.name ?? d.job.current;
   const ex = v.exhausted ? "§c" : "§e";
   return (

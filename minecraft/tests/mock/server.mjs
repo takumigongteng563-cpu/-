@@ -153,6 +153,8 @@ export class Player extends Entity {
     this.isSprinting = false;
     this.isSneaking = false;
     this.isSleeping = false;
+    this.isJumping = false;
+    this.isOnGround = true;
     this.sounds = [];
     this.titles = [];
     this.effects = [];
@@ -200,6 +202,9 @@ export class Player extends Entity {
     this.tags.add(t);
     return true;
   }
+  removeTag(t) {
+    return this.tags.delete(t);
+  }
   getGameMode() {
     return this.gameMode;
   }
@@ -219,6 +224,9 @@ export const world = {
     entityHurt: new Signal(),
     entityHealthChanged: new Signal(),
     projectileHitEntity: new Signal(),
+    itemStartUse: new Signal(),
+    itemReleaseUse: new Signal(),
+    itemStopUse: new Signal(),
   },
   timeOfDay: 6000,
   getTimeOfDay() {

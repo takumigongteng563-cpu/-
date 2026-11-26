@@ -26,6 +26,7 @@ import { registerHud, forgetHud } from "./hud/hud.js";
 import { registerEffects } from "./fx/effects.js";
 import { registerCombatHooks, forgetCombatState } from "./actions/combatHooks.js";
 import { registerVitalsRuntime, syncHp, forgetVitalsState } from "./vitals/vitalsRuntime.js";
+import { registerInputRuntime, forgetInputState } from "./input/inputRuntime.js";
 import { ensureAdventurerBook, isAdventurerBook } from "./items/adventurerBook.js";
 import { registerActionGuard } from "./rules/actionGuard.js";
 import { openMainMenu, clearMenuState } from "./ui/menu.js";
@@ -92,6 +93,8 @@ function initialize() {
   every("talent.evaluate", 20, () => ctx.actions.flushPending());
   registerHud();
   registerVitalsRuntime();
+  // 王国の建物の配置予約を少しずつ処理（配置処理は第15弾で登録。未登録の間は何もしない）
+  every("kingdom.build", 40, () => ctx.kingdom.processBuildQueue(1));
 
   // すでにいるプレイヤー（/reload 等）
   for (const p of world.getAllPlayers()) attempt("join(existing)", () => handleJoin(p));
@@ -150,6 +153,8 @@ subscribe(world.afterEvents.playerLeave, "playerLeave", (ev) => {
   forgetHud(ev.playerId);
   forgetCombatState(ev.playerId);
   forgetVitalsState(ev.playerId);
+  forgetInputState(ev.playerId);
+  if (ctx.ready) ctx.skillBindings.forget(ev.playerId);
   if (!ctx.ready) return;
   ctx.playerService.leave(ev.playerId);
 });
@@ -166,4 +171,5 @@ subscribe(system.beforeEvents.shutdown, "shutdown", () => {
 registerActionGuard(openMenu);
 registerEffects();
 registerCombatHooks();
+registerInputRuntime();
 registerScriptEvents({ openMenu });

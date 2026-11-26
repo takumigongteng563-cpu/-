@@ -5,7 +5,8 @@
 // 「前回の結果に補正を足す」ことはしないため、何度再計算しても補正は重複しない。
 //
 // 計算順序：
-//   1. 固定値の合計 = 基礎 + 成長 + 振り分け + 才能(潜在含む) + 職業 + 装備 + 一時効果（各固定値）
+//   0. 素の値 = 基礎 + 成長 + 振り分け を、存在階級の能力値上限（statCap）までに制限
+//   1. 固定値の合計 = 素の値 + 才能(潜在含む) + 職業 + 装備 + 一時効果（各固定値）
 //   2. 割合補正の合計（全ての層の % を合計）を上下限 STAT_PERCENT_CAP に収める
 //   3. 能力値 = floor(固定値の合計 × (1 + 割合/100)) を 0～STAT_HARD_CAP に収める
 //   4. 派生能力値 = 計算式（能力値・レベル）
@@ -24,6 +25,13 @@ import {
   ELEMENT_RESIST_CAP,
 } from "../balance/stats.js";
 import { GROWTH_BONUS_CAP } from "../balance/growth.js";
+import { statCapForStage } from "../content/tiers.js";
+import { specialStats } from "../content/specialStats.js";
+
+/** 素の値（基礎＋成長＋振り分け。上限を掛ける前） */
+export function naturalStat(data, s) {
+  return num(data.stats[s] ?? INITIAL_STATS[s]) + num(data.statGrowth[s]) + num(data.statAllocated[s]);
+}
 
 export const LAYERS = Object.freeze([
   { id: "base", name: "基礎" },
@@ -49,7 +57,7 @@ export function collectModifiers(data, nowTick = 0) {
     if (def) mods.push({ layer: "talent", id: def.id, name: def.name, def });
   }
   for (const e of data.hiddenPotential.entries) {
-    if (!e || !e.awakened) continue;
+    if (!e || !e.awakened || e.legacy) continue;
     const def = potentials.get(e.id);
     if (def) mods.push({ layer: "talent", id: def.id, name: def.name, def });
   }
@@ -90,6 +98,9 @@ export function computeStats(data, nowTick = 0) {
   const layers = {};
   const pct = {};
   const primary = {};
+  const statCap = statCapForStage(data.limitBreak.stage);
+  /** @type {Record<string, number>} 上限で切り捨てられた量 */
+  const cappedBy = {};
   for (const s of STAT_IDS) {
     const l = {
       base: num(data.stats[s] ?? INITIAL_STATS[s]),
@@ -108,7 +119,10 @@ export function computeStats(data, nowTick = 0) {
       p += num(st.pct && st.pct[s]);
     }
     p = clamp(p, STAT_PERCENT_CAP.min, STAT_PERCENT_CAP.max);
-    const raw = l.base + l.growth + l.allocated + l.talent + l.job + l.equip + l.temp;
+    const naturalRaw = l.base + l.growth + l.allocated;
+    const natural = Math.min(naturalRaw, statCap);
+    if (natural < naturalRaw) cappedBy[s] = naturalRaw - natural;
+    const raw = natural + l.talent + l.job + l.equip + l.temp;
     layers[s] = l;
     pct[s] = p;
     primary[s] = clamp(Math.floor(raw * (1 + p / 100)), 0, STAT_HARD_CAP);
@@ -141,5 +155,25 @@ export function computeStats(data, nowTick = 0) {
     elements[e.id] = clamp(v, ELEMENT_RESIST_CAP.min, ELEMENT_RESIST_CAP.max);
   }
 
-  return { primary, layers, pct, derived, elements, growth: growthMultipliers(mods), modifiers: mods };
+  // 職業系統の専用能力値（基盤のみ。解放済みのものだけ計算）
+  /** @type {Record<string, number>} */
+  const special = {};
+  const sp = data.specialStats || {};
+  for (const def of specialStats.all()) {
+    let v = num(sp[def.id] && sp[def.id].base);
+    let p = 0;
+    let touched = !!(sp[def.id] && sp[def.id].unlocked);
+    for (const m of mods) {
+      const x = m.def.special;
+      if (!x) continue;
+      if (x.flat && def.id in x.flat) touched = true;
+      v += num(x.flat && x.flat[def.id]);
+      p += num(x.pct && x.pct[def.id]);
+    }
+    if (!touched) continue;
+    p = clamp(p, STAT_PERCENT_CAP.min, STAT_PERCENT_CAP.max);
+    special[def.id] = clamp(Math.floor(v * (1 + p / 100)), 0, STAT_HARD_CAP);
+  }
+
+  return { primary, layers, pct, derived, elements, special, statCap, cappedBy, growth: growthMultipliers(mods), modifiers: mods };
 }

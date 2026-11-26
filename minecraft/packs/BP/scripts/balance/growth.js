@@ -17,6 +17,11 @@ export const BASE_GROWTH = Object.freeze({
   dex: 0.5,
   luk: 0.25,
   int: 0.5,
+  // 最終仕様 Ver.1.0 で追加
+  lif: 0.5,
+  endr: 0.5,
+  foc: 0.4,
+  lead: 0.3,
 });
 
 /** 成長率補正の合計の上下限（0.5 = +50%）。補正がいくつ重なってもこの範囲に収める */

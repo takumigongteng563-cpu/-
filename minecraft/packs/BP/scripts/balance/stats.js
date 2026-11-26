@@ -12,6 +12,11 @@ export const INITIAL_STATS = Object.freeze({
   dex: 5, // 器用
   luk: 5, // 幸運
   int: 5, // 知力
+  // --- 最終仕様 Ver.1.0 で追加（旧セーブデータには初期値 5 を追加する） ---
+  lif: 5, // 生命力
+  endr: 5, // 持久力
+  foc: 5, // 集中力
+  lead: 5, // 統率力
 });
 
 /** HP・MP・スタミナの初期値（能力値が初期値・レベル1のときの最大値） */
@@ -38,7 +43,7 @@ export const STAT_PERCENT_CAP = Object.freeze({ max: 200, min: -50 });
 export const DERIVED_FORMULAS = Object.freeze({
   maxHp: { int: true, base: INITIAL_VITALS.hp, coef: { vit: 12, str: 2 }, perLevel: 5, min: 1, max: 9999999 },
   maxMp: { int: true, base: INITIAL_VITALS.mp, coef: { mag: 8, int: 3 }, perLevel: 2, min: 0, max: 9999999 },
-  maxStamina: { int: true, base: INITIAL_VITALS.stamina, coef: { vit: 4, agi: 4 }, perLevel: 1, min: 10, max: 99999 },
+  maxStamina: { int: true, base: INITIAL_VITALS.stamina, coef: { endr: 6, vit: 2, agi: 2 }, perLevel: 1, min: 10, max: 99999 },
   physAtk: { int: true, base: 10, coef: { str: 2, dex: 0.5 }, perLevel: 1, min: 0, max: 9999999 },
   magAtk: { int: true, base: 10, coef: { mag: 2, int: 0.5 }, perLevel: 1, min: 0, max: 9999999 },
   physDef: { int: true, base: 5, coef: { vit: 1.5, str: 0.3 }, perLevel: 0.5, min: 0, max: 9999999 },
@@ -48,11 +53,17 @@ export const DERIVED_FORMULAS = Object.freeze({
   hitRate: { base: 90, coef: { dex: 0.3 }, perLevel: 0, min: 10, max: 100 },
   evasionRate: { base: 5, coef: { agi: 0.2, luk: 0.05 }, perLevel: 0, min: 0, max: 60 },
   moveSpeed: { base: 1.0, coef: { agi: 0.004 }, perLevel: 0, min: 0.5, max: 1.5 },
-  hpRegen: { base: 1, coef: { vit: 0.2 }, perLevel: 0.05, min: 0, max: 99999 },
+  hpRegen: { base: 1, coef: { lif: 0.3, vit: 0.05 }, perLevel: 0.05, min: 0, max: 99999 },
   mpRegen: { base: 2, coef: { mnd: 0.2, int: 0.1 }, perLevel: 0.05, min: 0, max: 99999 },
-  staminaRegen: { base: 10, coef: { vit: 0.3, agi: 0.3 }, perLevel: 0, min: 1, max: 99999 },
+  staminaRegen: { base: 10, coef: { endr: 0.5, agi: 0.1 }, perLevel: 0, min: 1, max: 99999 },
   carryWeight: { int: true, base: 50, coef: { str: 5 }, perLevel: 0, min: 1, max: 9999999 },
   statusResist: { base: 0, coef: { mnd: 0.5 }, perLevel: 0, min: 0, max: 80 },
+  // --- 最終仕様 Ver.1.0 で追加 ---
+  healPower: { base: 100, coef: { lif: 1, mnd: 0.3 }, perLevel: 0, min: 0, max: 1000 }, // 受ける・与える回復効果(%)
+  fatigueResist: { base: 0, coef: { endr: 0.5 }, perLevel: 0, min: 0, max: 80 }, // 疲労耐性(%)
+  castSpeed: { base: 100, coef: { foc: 1 }, perLevel: 0, min: 50, max: 300 }, // 詠唱速度(%)
+  interruptResist: { base: 0, coef: { foc: 0.6, mnd: 0.2 }, perLevel: 0, min: 0, max: 90 }, // 詠唱妨害耐性(%)
+  leadership: { base: 100, coef: { lead: 1.5 }, perLevel: 0, min: 0, max: 1000 }, // 召喚獣・仲間NPCへの補正(%)
 });
 
 /** 属性耐性（%）の種類。初期値はすべて 0。才能などで増減する */

@@ -15,8 +15,8 @@ test("初回参加：人間・Lv1・無職・一般人相当・金貨0で作成�
   assert.equal(d.exp, 0);
   assert.equal(d.job.current, "unemployed");
   assert.equal(d.gold, 0);
-  // 第2弾で魔力(mag)を追加し8種類
-  assert.deepEqual(d.stats, { str: 5, vit: 5, mag: 5, agi: 5, dex: 5, int: 5, mnd: 5, luk: 5 });
+  // 第2弾で魔力(mag)、最終仕様で生命力・持久力・集中力・統率力を追加し12種類
+  assert.deepEqual(d.stats, { str: 5, vit: 5, mag: 5, mnd: 5, agi: 5, dex: 5, luk: 5, int: 5, lif: 5, endr: 5, foc: 5, lead: 5 });
   assert.equal(d.unspentStatPoints, 0);
   assert.equal(d.adventurer.rank, "unregistered");
   // PlayerService 単体では才能は未抽選（抽選は app.joinPlayer が行う。rpg.test.mjs で検証）
@@ -206,7 +206,7 @@ test("ワールド共有データ：初期状態とバージョン記録", () =>
   const b = memoryBackend();
   const { ws } = bootWorld(b);
   const wd = ws.world;
-  assert.equal(wd.story.chapter, 0);
+  assert.equal(wd.story.chapter, 1); // 最終仕様：全10章の第1章から
   assert.deepEqual(wd.settings.restrictions, { blockBreak: false, blockPlace: false, blockInteract: false });
   for (const k of ["story", "regions", "dungeons", "bosses", "uniqueItems", "uniqueTitles", "events", "dungeonResume"]) assert.ok(k in wd, k);
   assert.equal(ws.index.system.addonVersion.length > 0, true);

@@ -11,7 +11,7 @@
 import { world, system, EntityComponentTypes, Player } from "@minecraft/server";
 import { ctx } from "../core/context.js";
 import { subscribe } from "../core/events.js";
-import { VANILLA_MOB_EXP, STRONG_ENEMIES } from "../balance/progression.js";
+import { VANILLA_MOB_EXP, VANILLA_MOB_LEVEL, STRONG_ENEMIES } from "../balance/progression.js";
 
 const HIT_MIN_INTERVAL_TICKS = 4;
 const MAX_HITS_PER_TARGET = 40;
@@ -127,7 +127,7 @@ export function registerCombatHooks() {
     if (STRONG.has(typeId)) ctx.actions.record(p.id, "kill.strong");
     const exp = VANILLA_MOB_EXP[typeId];
     if (exp && ctx.worldService.world.settings.progression.vanillaMobExp) {
-      ctx.progression.grantExp(p.id, exp, { source: "monster", key: `kill:${dead.id}` });
+      ctx.progression.grantExp(p.id, exp, { source: "monster", key: `kill:${dead.id}`, enemyLevel: VANILLA_MOB_LEVEL[typeId] ?? 1 });
     }
   });
 

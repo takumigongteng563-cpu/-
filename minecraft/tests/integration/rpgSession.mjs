@@ -69,8 +69,8 @@ if (phase === "upgrade") {
   for (const p of [a, b, c]) {
     assert.ok(p.messages.some((m) => m.includes("あなたに宿る才能")), p.name);
     assert.ok(p.messages.some((m) => m.includes("おかえりなさい")));
-    assert.ok(data(p).talents.innate.length >= 2);
-    assert.equal(data(p).hiddenPotential.entries.length, 1);
+    assert.equal(data(p).talents.innate.length, 1); // 最終仕様：初期才能は1個
+    assert.equal(data(p).hiddenPotential.entries.length, 0); // 最終仕様：潜在能力は開始時点では未確定
     assert.equal(p.inventory.slots.filter((s) => s && s.typeId === BOOK).length, 1);
   }
   ok("更新後の初回参加で初期才能を1回だけ抽選・冒険者の書は重複しない");
@@ -109,9 +109,11 @@ if (phase === "upgrade") {
   const exp0 = data(a).exp;
   __test.kill(a, z);
   __test.kill(a, z); // 同じ討伐の重複処理
-  assert.equal(data(a).exp, exp0 + 10);
+  // ゾンビ（暫定Lv3）は Lv1 の勇者より格上 → レベル差補正で増える
+  assert.equal(data(a).exp, exp0 + Math.floor(10 * ctx.progression.levelDiffMultiplier(1, 3)));
+  assert.ok(data(a).exp > exp0 + 10);
   assert.equal(data(a).actions["kill.hostile"], 1);
-  ok("討伐経験値：同じ討伐で二重に付与されない");
+  ok("討伐経験値：同じ討伐で二重に付与されない・格上の敵は経験値が増える");
 
   // --- 強敵討伐 → 複数レベルアップ・後天性才能 ---
   const w = __test.spawnMob("minecraft:warden");
@@ -132,9 +134,10 @@ if (phase === "upgrade") {
   const strA = data(a).computed.primary.str;
   const vitB = data(b).computed.primary.vit;
   const unA = data(a).unspentStatPoints;
-  script(a, [pick(0), pick(2), pick(0), pick(8), pick(8), pick(1), pick(9), pick(11), pick(0)]);
-  //        状態    振り分け 筋力+1  量→5    量→10   耐久+10 1つ戻す 確定    確認OK
-  script(b, [pick(0), pick(2), pick(1), pick(1), pick(11), pick(0)]);
+  // 振り分け画面：能力値12ボタン → 12:量変更 13:1つ戻す 14:すべて取り消し 15:確定 16:戻る
+  script(a, [pick(0), pick(2), pick(0), pick(12), pick(12), pick(1), pick(13), pick(15), pick(0)]);
+  //        状態    振り分け 筋力+1  量→5     量→10    耐久+10 1つ戻す  確定     確認OK
+  script(b, [pick(0), pick(2), pick(1), pick(1), pick(15), pick(0)]);
   useBook(a);
   useBook(b);
   await tick(20);
@@ -173,17 +176,28 @@ if (phase === "upgrade") {
   assert.ok(data(c).vitals.mp > 0);
   ok("MP：時間経過で回復");
 
-  // --- 潜在能力は覚醒まで非公開 ---
-  const potName = potentials.get(data(a).hiddenPotential.entries[0].id).name;
+  // --- 潜在能力：行動で形成・覚醒まで非公開 ---
+  const allPotNames = potentials.all().map((x) => x.name);
   __ui.shown.length = 0;
   script(a, [pick(3)]);
   await tick(20);
   useBook(a);
   await tick(5);
+  assert.ok(__ui.shown[1].form._body.includes("まだ何も感じない"));
+  // 剣で戦い続ける → 潜在能力が形成される（本人には名前が見えない）
+  for (let i = 0; i < 2100; i++) ctx.actions.record(a.id, "hit.melee.sword");
+  await tick(25);
+  assert.equal(data(a).hiddenPotential.entries.filter((e) => !e.legacy).length, 1);
+  const formedId = data(a).hiddenPotential.entries.find((e) => !e.legacy).id;
+  __ui.shown.length = 0;
+  script(a, [pick(3)]);
+  useBook(a);
+  await tick(5);
   const talentBody = __ui.shown[1].form._body;
-  assert.ok(!talentBody.includes(potName));
-  assert.ok(talentBody.includes("何かが眠っている"));
-  ok("潜在能力：覚醒するまで才能画面に内容を表示しない");
+  assert.ok(allPotNames.every((n) => !talentBody.includes(n)));
+  assert.ok(talentBody.includes("形になりつつある"));
+  assert.ok(!a.messages.some((m) => allPotNames.some((n) => m.includes(n))));
+  ok("潜在能力：行動で形成され、覚醒するまで名前も条件も表示しない");
 
   // --- 一般プレイヤーは管理者機能を使えない ---
   const expB = data(b).exp;
@@ -213,7 +227,9 @@ if (phase === "upgrade") {
   await tick(20);
   const ta = data(a).talents.active.map((x) => x.id);
   assert.ok(ta.includes("magic_sword_aptitude") && !ta.includes("sword_aptitude"));
-  assert.equal(data(a).hiddenPotential.entries[0].awakened, true);
+  const awakenedEntry = data(a).hiddenPotential.entries.find((e) => e.id === formedId);
+  assert.equal(awakenedEntry.awakened, true);
+  const potName = potentials.get(formedId).name;
   assert.ok(a.titles.some((t) => t.title.includes("潜在能力")));
   assert.ok(a.sounds.includes("random.totem"));
   assert.ok(a.messages.some((m) => m.includes(potName)));
@@ -248,6 +264,7 @@ if (phase === "upgrade") {
 
   await tick(220); // 自動保存
   state.expect.a = { level: data(a).level, alloc: data(a).statAllocated, active: data(a).talents.active.map((x) => x.id), exp: data(a).exp };
+  state.expect.potential = Object.fromEntries([a, b, c].map((p) => [p.id, data(p).hiddenPotential.entries.map((e) => e.id)]));
   state.expect.b = { level: data(b).level, alloc: data(b).statAllocated };
   state.expect.c = { level: data(c).level, overflow: data(c).expOverflow };
   // シャットダウンなしで終了（強制終了相当）
@@ -257,7 +274,7 @@ if (phase === "upgrade") {
   assert.equal(data(a).exp, state.expect.a.exp);
   assert.deepEqual(data(a).statAllocated, state.expect.a.alloc);
   assert.deepEqual(data(a).talents.active.map((x) => x.id), state.expect.a.active);
-  assert.equal(data(a).hiddenPotential.entries[0].awakened, true);
+  assert.ok(data(a).hiddenPotential.entries.some((e) => e.awakened));
   assert.equal(data(b).level, state.expect.b.level);
   assert.deepEqual(data(b).statAllocated, state.expect.b.alloc);
   assert.equal(data(c).level, state.expect.c.level);
