@@ -16,7 +16,7 @@ export { ROLES, WEAPONS, ARMORS, ELEMENT_NAMES, TIER_RULES } from "./jobs/catalo
 export { npcs } from "./npcs.js";
 export { rewardTables } from "./rewardTables.js";
 export { stages, STAGE_TYPES, stageIdOf } from "./stages.js";
-export { chapters, CHAPTER_COUNT, chapterOfStage } from "./story.js";
+export { chapters, CHAPTER_COUNT, chapterOfStage, POSTGAME_CHAPTER, TOTAL_STAGES, MAIN_STAGES } from "./story.js";
 export { facilities, residents, buildings, KINGDOM_PHASES } from "./kingdom.js";
 export { uniqueItems } from "./uniqueItems.js";
 export { skills } from "./skills.js";

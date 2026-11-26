@@ -7,7 +7,7 @@
 // テレポート・マップ配置・敵配置・攻略判定は第8弾で実装し、この recordClear を呼ぶ。
 // =============================================================
 import { stages, stageIdOf, FIRST_STAGE_ID } from "../content/stages.js";
-import { chapterOfStage } from "../content/story.js";
+import { chapterOfStage, CHAPTER_COUNT, MAIN_STAGES, TOTAL_STAGES } from "../content/story.js";
 import { emit } from "../core/eventBus.js";
 
 export class StageService {
@@ -74,14 +74,18 @@ export class StageService {
         w.stages.records[stageId] = r;
         if (first) {
           const next = stageIdOf(st.number + 1);
-          if (st.number < 100 && !w.stages.unlocked[next]) {
+          if (st.number < TOTAL_STAGES && !w.stages.unlocked[next]) {
             w.stages.unlocked[next] = now;
             unlockedNext = next;
           }
-          const ch = chapterOfStage(Math.min(100, st.number + 1));
+          const ch = Math.min(CHAPTER_COUNT, chapterOfStage(Math.min(MAIN_STAGES, st.number + 1)));
           if (ch > w.story.chapter) w.story.chapter = ch;
+          if (st.unlocksLabyrinth && !w.labyrinths.unlocked) {
+            w.labyrinths.unlocked = true;
+            w.labyrinths.unlockedAt = now;
+          }
           if (st.number % 10 === 0 && !w.story.cleared.includes(st.chapter)) w.story.cleared.push(st.chapter);
-          if (st.number === 100) {
+          if (st.number === MAIN_STAGES) {
             w.postgame.unlocked = true;
             w.postgame.finalBossDefeatedAt = now;
           }

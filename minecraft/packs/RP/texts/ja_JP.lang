@@ -1,4 +1,4 @@
 pack.name=魔神野口と4人の勇者たち RP
-pack.description=魔神野口と4人の勇者たち リソースパック（第3弾：全484職業・職業融合）
+pack.description=魔神野口と4人の勇者たち リソースパック（v0.4.0 第4弾：スキル・魔法・必殺技・熟練度）
 item.noguchi:adventurer_book.name=冒険者の書
-item.noguchi:skill_focus.name=修練の触媒
+item.noguchi:skill_focus.name=技の触媒

@@ -6,7 +6,7 @@
 // =============================================================
 
 /** アドオンのバージョン（表示・診断用） */
-export const ADDON_VERSION = "0.3.0";
+export const ADDON_VERSION = "0.4.0";
 
 /** アイテム・タグ等の名前空間（変更禁止） */
 export const NAMESPACE = "noguchi";

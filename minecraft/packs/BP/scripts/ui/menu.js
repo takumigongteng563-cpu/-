@@ -21,6 +21,7 @@ import { adventurerPage } from "./pages/adventurer.js";
 import { dungeonPage } from "./pages/dungeon.js";
 import { storagePage } from "./pages/storage.js";
 import { settingsPage } from "./pages/settings.js";
+import { godsPage } from "./pages/gods.js";
 
 const log = createLogger("menu");
 
@@ -36,6 +37,7 @@ export const PAGES = [
   dungeonPage,
   storagePage,
   settingsPage,
+  godsPage, // 第4弾（既存の項目の順番を変えないよう末尾に追加）
 ];
 
 /** @type {Map<string, number>} */

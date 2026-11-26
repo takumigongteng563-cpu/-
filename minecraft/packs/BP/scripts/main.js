@@ -32,6 +32,7 @@ import { registerActionGuard } from "./rules/actionGuard.js";
 import { openMainMenu, clearMenuState } from "./ui/menu.js";
 import { releaseMenuLock } from "./ui/formUtil.js";
 import { registerScriptEvents } from "./admin/scriptEvents.js";
+import { runSkill, removeSummonsOf, cleanupStraySummons } from "./skills/skillEffects.js";
 
 const log = createLogger("main");
 
@@ -83,6 +84,9 @@ function initialize() {
   const app = createApp(worldBackend, () => system.currentTick);
   const loaded = app.worldService.load();
   Object.assign(ctx, app);
+  // 第4弾：スキルの効果（効果の型ごとの共通処理）
+  ctx.skillBindings.runner = runSkill;
+  attempt("cleanupStraySummons", cleanupStraySummons); // 前回のセッションで残った召喚獣を消す
   ctx.ready = true;
   installSaveNotice();
   log.warn(`v${ADDON_VERSION} 起動 world=${loaded.world.status} index=${loaded.index.status}`);
@@ -154,7 +158,12 @@ subscribe(world.afterEvents.playerLeave, "playerLeave", (ev) => {
   forgetCombatState(ev.playerId);
   forgetVitalsState(ev.playerId);
   forgetInputState(ev.playerId);
-  if (ctx.ready) ctx.skillBindings.forget(ev.playerId);
+  if (ctx.ready) {
+    ctx.skillBindings.forget(ev.playerId);
+    ctx.skillService.forget(ev.playerId);
+    ctx.faith.forget(ev.playerId);
+  }
+  attempt("removeSummons", () => removeSummonsOf(ev.playerId));
   if (!ctx.ready) return;
   ctx.playerService.leave(ev.playerId);
 });

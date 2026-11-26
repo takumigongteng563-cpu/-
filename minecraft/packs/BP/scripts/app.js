@@ -17,6 +17,9 @@ import { UniqueItemService } from "./unique/uniqueItemService.js";
 import { SkillBindingService } from "./input/skillBindingService.js";
 import { RewardService } from "./rewards/rewardService.js";
 import { JobService } from "./job/jobService.js";
+import { SkillService } from "./skills/skillService.js";
+import { FaithService } from "./faith/faithService.js";
+import { ApostleService } from "./apostle/apostleService.js";
 import { KEY_PREFIX, SAVE } from "./config.js";
 
 /**
@@ -41,14 +44,35 @@ export function createApp(backend, nowTick) {
   const rewards = new RewardService(playerService, stages, uniqueItems);
   // --- 第3弾：職業 ---
   const jobs = new JobService(playerService, worldService, nowTick);
-  actions.onRecorded = (pid, key, amount) => jobs.onAction(pid, key, amount);
-  actions.onFlush = (pid) => jobs.evaluateUnlocks(pid);
+  // --- 第4弾：スキル・信仰・使徒 ---
+  const skillService = new SkillService(playerService, worldService, nowTick);
+  const faith = new FaithService(playerService, nowTick);
+  const apostles = new ApostleService(playerService, worldService);
+  skillBindings.skillService = skillService;
+  skillBindings.faith = faith;
+  skillBindings.actions = actions;
+  jobs.afterChange = (pid) => skillService.evaluate(pid);
+  faith.onLevelUp = (pid, god, level) => {
+    apostles.onFaithLevel(pid, god, level);
+    skillService.evaluate(pid);
+  };
+  actions.onRecorded = (pid, key, amount) => {
+    jobs.onAction(pid, key, amount);
+    faith.onAction(pid, key);
+  };
+  actions.onFlush = (pid) => {
+    jobs.evaluateUnlocks(pid);
+    skillService.evaluate(pid);
+  };
   progression.onExpGranted = (pid, amount, levelsGained) => {
     if (amount > 0) jobs.onPlayerExp(pid, amount);
-    if (levelsGained > 0) jobs.evaluateUnlocks(pid);
+    if (levelsGained > 0) {
+      jobs.evaluateUnlocks(pid);
+      skillService.evaluate(pid);
+    }
   };
   return {
-    jobs, store, worldService, playerService, partyService, stats, talents, progression, actions, vitals, kingdom, stages, uniqueItems, skillBindings, rewards, nowTick };
+    jobs, skillService, faith, apostles, store, worldService, playerService, partyService, stats, talents, progression, actions, vitals, kingdom, stages, uniqueItems, skillBindings, rewards, nowTick };
 }
 
 /**
@@ -62,5 +86,9 @@ export function joinPlayer(app, player) {
   app.playerService.update(player.id, (d) => recalcData(d, app.nowTick()));
   app.talents.evaluate(player.id);
   app.jobs.evaluateUnlocks(player.id);
+  // 第4弾：使徒契約の整合チェック（不在中の交代・剥奪を反映）→ スキルの習得判定（既存プレイヤーはスキルポイントを遡って付与）
+  app.apostles.reconcile(player.id);
+  app.skillService.evaluate(player.id);
+  app.playerService.update(player.id, (d) => recalcData(d, app.nowTick()));
   return { join, rolled };
 }

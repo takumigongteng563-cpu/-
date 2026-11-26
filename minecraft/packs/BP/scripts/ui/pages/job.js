@@ -177,7 +177,7 @@ export async function jobDetail(player, jobId, opt = {}) {
     const body = lines(
       jobSummary(def, lv),
       "",
-      heading("専用スキル・奥義（効果は第4弾で実装）"),
+      heading("専用スキル・奥義"),
       skillLines(def),
       "",
       heading("転職条件"),
@@ -281,13 +281,15 @@ async function skillsPage(player) {
     "職業のスキル",
     lines(
       heading("使用可能な職業スキル"),
-      avail.length ? avail.map((a) => `・${a.skill.name} §7(${a.source === "current" ? "現在の職業" : `引き継ぎ：${jobName(a.jobId)}`})§r`) : "まだありません",
+      avail.length
+        ? avail.map((a) => `・${a.skill.name} §7(${a.source === "current" ? "現在の職業" : `引き継ぎ：${jobName(a.jobId)}`})${d.skills.learned[a.skill.id] ? " §a習得済み" : " §c未習得"}§r`)
+        : "まだありません",
       "",
       heading(`${cur ? cur.name : "無職"}で習得できるスキル`),
       cur ? skillLines(cur) : "なし",
       "",
-      `スキルの効果・発動 ${COMING_SOON}`,
-      "§7※ 習得したスキルは第4弾で、ホットバー9枠×5操作に割り当てて使えるようになります§r"
+      "§7習得したスキルは 冒険者の書 → スキル → 技の割り当て で、ホットバー9枠×5操作に割り当てて使います。",
+      "§7過去の職業の専用スキル（引き継ぎ）は、職業Lvと得意武器の条件を満たし、割り当てられる数に上限があります。奥義・秘技はその職業でのみ使えます。§r"
     )
   );
 }

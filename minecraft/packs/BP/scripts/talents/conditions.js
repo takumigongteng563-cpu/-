@@ -4,6 +4,7 @@
 // =============================================================
 import { talents } from "../content/talents/index.js";
 import { JOB_LINES } from "../content/jobs/catalog.js";
+import { jobs } from "../content/jobs.js";
 
 /** 使える条件の種類（自動検証で使う） */
 export const CONDITION_TYPES = Object.freeze([
@@ -28,6 +29,16 @@ export const CONDITION_TYPES = Object.freeze([
   "potential", // 潜在能力の覚醒 { id? }
   "uniqueItem", // 世界唯一の装備を所持 { id }（env.world が必要）
   "proficiency", // 熟練度 { kind: weapon|magic|skill, key, min }（熟練度の上昇は第4弾）
+  // --- 第4弾：スキル ---
+  "skillLevel", // スキルのレベル { id, min: 数値 | "max" }
+  "skillLearned", // スキルを習得済み { id }
+  "mastery", // 武器熟練度・魔法熟練度のレベル { kind: "weapon"|"magic", key, min }
+  "jobWeapon", // 現在の職業の得意武器にその武器がある { weapon }（装備システム（第6弾）の後は装備で判定）
+  "currentJobLevel", // 現在の職業の職業レベル { min }
+  "jobLine", // 現在の職業がその系統を含む（主軸または融合） { line }
+  "jobHasLines", // 現在の職業がすべての系統を含む { lines }
+  "faithLevel", // 神の信仰レベル { god, min }
+  "apostleOf", // その神の使徒である { god }
 ]);
 
 /** プレイヤーが持っている有効な才能の系統一覧 */
@@ -44,6 +55,16 @@ export function hasActiveTalent(data, id) {
   return data.talents.active.some((a) => a.id === id);
 }
 
+/** 現在の職業が含む系統（主軸＋融合） */
+export function currentJobLines(data) {
+  const def = jobs.get(data.job.current);
+  const set = new Set();
+  if (!def) return set;
+  if (def.line) set.add(def.line);
+  for (const l of def.fusedLines || []) set.add(l);
+  return set;
+}
+
 function heldJobs(data) {
   const set = new Set(data.job.held || []);
   set.add(data.job.current);
@@ -53,7 +74,7 @@ function heldJobs(data) {
 /**
  * @param {any} cond
  * @param {any} data プレイヤーデータ
- * @param {{world?: any}} [env]
+ * @param {{world?: any, skillMaxLevel?: (id: string) => number}} [env]
  * @returns {boolean}
  */
 export function checkCondition(cond, data, env = {}) {
@@ -122,6 +143,38 @@ export function checkCondition(cond, data, env = {}) {
       const p = data.proficiency && data.proficiency[cond.kind] && data.proficiency[cond.kind][cond.key];
       return !!p && (p.level || 0) >= cond.min;
     }
+    case "skillLevel": {
+      const rec = data.skills && data.skills.learned[cond.id];
+      if (!rec) return false;
+      const need = cond.min === "max" ? (env.skillMaxLevel ? env.skillMaxLevel(cond.id) : Infinity) : cond.min;
+      return (rec.level || 1) >= need;
+    }
+    case "skillLearned":
+      return !!(data.skills && data.skills.learned[cond.id]);
+    case "mastery": {
+      const p = data.proficiency && data.proficiency[cond.kind] && data.proficiency[cond.kind][cond.key];
+      return !!p && (p.level || 0) >= cond.min;
+    }
+    case "jobWeapon": {
+      const def = jobs.get(data.job.current);
+      return !!def && Array.isArray(def.weapons) && def.weapons.includes(cond.weapon);
+    }
+    case "currentJobLevel": {
+      const l = data.job.levels[data.job.current];
+      return !!l && l.level >= cond.min;
+    }
+    case "jobLine":
+      return currentJobLines(data).has(cond.line);
+    case "jobHasLines": {
+      const set = currentJobLines(data);
+      return (cond.lines || []).length > 0 && cond.lines.every((l) => set.has(l));
+    }
+    case "faithLevel": {
+      const f = data.faith && data.faith[cond.god];
+      return !!f && (f.level || 0) >= cond.min;
+    }
+    case "apostleOf":
+      return !!(data.apostle && data.apostle.god === cond.god);
     default:
       return false; // 未知の条件は満たさない（誤って解放しない）
   }
@@ -149,6 +202,14 @@ export function conditionProgress(cond, data) {
       return { now: (data.job.levels[cond.job] || { level: 0 }).level, need: cond.min };
     case "bossKill":
       return { now: (data.actions["kill.strong"] || 0) + (data.actions["boss.kill"] || 0), need: cond.min };
+    case "currentJobLevel":
+      return { now: (data.job.levels[data.job.current] || { level: 0 }).level, need: cond.min };
+    case "mastery":
+      return { now: ((data.proficiency[cond.kind] || {})[cond.key] || { level: 0 }).level, need: cond.min };
+    case "faithLevel":
+      return { now: ((data.faith || {})[cond.god] || { level: 0 }).level, need: cond.min };
+    case "skillLevel":
+      return typeof cond.min === "number" ? { now: ((data.skills.learned[cond.id] || { level: 0 }).level), need: cond.min } : null;
     default:
       return null;
   }
@@ -158,7 +219,14 @@ const STAT_JA = { str: "筋力", vit: "耐久", mag: "魔力", mnd: "精神", ag
 const LINE_JA = { warrior: "戦士", mage: "魔法使い", thief: "盗賊", priest: "僧侶" };
 
 /** 条件の説明文（メニュー・一覧表用） */
+const DESCRIBE_ENV = { skillName: (id) => id, masteryName: (_k, key) => key, weaponName: (w) => w, godName: (g) => g };
+/** スキル名・神名などの表示に使う関数を登録する（循環参照を避けるため後から差し込む） */
+export function setDescribeEnv(partial) {
+  Object.assign(DESCRIBE_ENV, partial);
+}
+
 export function describeCondition(cond, jobName = (id) => id) {
+  const env = DESCRIBE_ENV;
   switch (cond.type) {
     case "counter":
       return `行動「${cond.key}」${cond.min}以上`;
@@ -202,6 +270,24 @@ export function describeCondition(cond, jobName = (id) => id) {
       return `唯一装備「${cond.id}」を所持`;
     case "proficiency":
       return `熟練度（${cond.kind}:${cond.key}）${cond.min}以上`;
+    case "skillLevel":
+      return `スキル「${env.skillName(cond.id)}」${cond.min === "max" ? "最大レベル" : `Lv${cond.min}以上`}`;
+    case "skillLearned":
+      return `スキル「${env.skillName(cond.id)}」を習得`;
+    case "mastery":
+      return `${cond.kind === "weapon" ? "武器" : "魔法"}熟練度（${env.masteryName(cond.kind, cond.key)}）Lv${cond.min}以上`;
+    case "jobWeapon":
+      return `${env.weaponName(cond.weapon)}を扱う職業に就いている`;
+    case "currentJobLevel":
+      return `現在の職業のレベル${cond.min}以上`;
+    case "jobLine":
+      return `${LINE_JA[cond.line] ?? cond.line}系統を含む職業に就いている`;
+    case "jobHasLines":
+      return `${cond.lines.map((l) => LINE_JA[l] ?? l).join("と")}の両方を含む職業に就いている`;
+    case "faithLevel":
+      return `${env.godName(cond.god)}の信仰レベル${cond.min}以上`;
+    case "apostleOf":
+      return `${env.godName(cond.god)}の使徒である`;
     default:
       return "不明な条件";
   }

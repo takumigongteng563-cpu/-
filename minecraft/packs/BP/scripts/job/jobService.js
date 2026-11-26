@@ -88,6 +88,8 @@ export class JobService {
     this.playerService = playerService;
     this.worldService = worldService;
     this.nowTick = nowTick;
+    /** 職業レベルの上昇・転職のあと（第4弾：スキルの習得判定。app.js が設定） @type {((playerId: string) => void)|null} */
+    this.afterChange = null;
   }
 
   env() {
@@ -130,6 +132,7 @@ export class JobService {
     if (gained > 0) {
       this.saveNow(playerId);
       emit("jobLevelUp", { playerId, jobId, level: toLevel, gained });
+      if (this.afterChange) this.afterChange(playerId);
       this.evaluateUnlocks(playerId);
     }
     return gained;
@@ -241,6 +244,7 @@ export class JobService {
     if (!ok || from === null) return { ok: false, reason: "転職できませんでした（条件が変わった可能性があります）" };
     log.info(`${playerId} 転職 ${from} → ${targetId} (${judge.kind})`);
     emit("jobChanged", { playerId, from, to: targetId, kind: judge.kind });
+    if (this.afterChange) this.afterChange(playerId);
     for (const e of talentEvents) {
       if (e.type === "potentialFormed") emit("potentialFormed", { playerId, id: e.id });
       if (e.type === "potential") emit("potentialAwakened", { playerId, id: e.id });
@@ -324,6 +328,7 @@ export class JobService {
     if (res.ok) {
       emit("statsChanged", { playerId });
       this.evaluateUnlocks(playerId);
+      if (this.afterChange) this.afterChange(playerId);
     }
     return res;
   }

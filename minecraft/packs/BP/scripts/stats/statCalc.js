@@ -16,6 +16,7 @@ import { STAT_IDS } from "../content/stats.js";
 import { talents } from "../content/talents/index.js";
 import { potentials } from "../content/potentials.js";
 import { jobModifiers } from "../job/jobBonus.js";
+import { passiveModifiers } from "../skills/skillRules.js";
 import {
   INITIAL_STATS,
   STAT_HARD_CAP,
@@ -63,6 +64,8 @@ export function collectModifiers(data, nowTick = 0) {
   }
   // 職業：現在の職業（職業レベル込み）と引き継ぎパッシブだけ（第3弾）
   mods.push(...jobModifiers(data));
+  // スキル：習得済みで使用条件を満たすパッシブ（第4弾）
+  if (data.skills && data.skills.learned) mods.push(...passiveModifiers(data));
   for (const [slot, item] of Object.entries(data.equipment.slots || {})) {
     if (item && typeof item === "object" && (item.stats || item.derived)) {
       mods.push({ layer: "equip", id: `${slot}:${item.id ?? "?"}`, name: item.name ?? slot, def: item });
@@ -110,6 +113,7 @@ export function computeStats(data, nowTick = 0) {
       job: 0,
       equip: 0,
       temp: 0,
+      skill: 0,
     };
     let p = 0;
     for (const m of mods) {
@@ -122,7 +126,7 @@ export function computeStats(data, nowTick = 0) {
     const naturalRaw = l.base + l.growth + l.allocated;
     const natural = Math.min(naturalRaw, statCap);
     if (natural < naturalRaw) cappedBy[s] = naturalRaw - natural;
-    const raw = natural + l.talent + l.job + l.equip + l.temp;
+    const raw = natural + l.talent + l.job + l.equip + l.temp + l.skill;
     layers[s] = l;
     pct[s] = p;
     primary[s] = clamp(Math.floor(raw * (1 + p / 100)), 0, STAT_HARD_CAP);

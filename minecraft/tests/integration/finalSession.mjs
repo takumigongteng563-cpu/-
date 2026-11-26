@@ -66,12 +66,12 @@ if (phase === "upgrade2") {
   assert.ok(data(a).hiddenPotential.entries.some((e) => e.awakened && !e.legacy));
   ok("第2弾のデータを維持したまま最終仕様へ移行（12能力値・初期才能1個・旧データは記録として保存）");
 
-  // メニュー（11項目、ダンジョン情報 → ステージ情報）
+  // メニュー（12項目、ダンジョン情報 → ステージ情報。第4弾で神々・信仰を追加）
   __ui.shown.length = 0;
   script(b, [pick(8)]);
   world.afterEvents.itemUse.fire({ source: b, itemStack: b.inventory.slots.find((s) => s && s.typeId === "noguchi:adventurer_book") });
   await __test.tick(5);
-  assert.equal(__ui.shown[0].form.buttons.length, 11);
+  assert.equal(__ui.shown[0].form.buttons.length, 12);
   assert.equal(__ui.shown[1].form._title, "ステージ情報");
   assert.ok(__ui.shown[1].form._body.includes("第1章"));
   assert.ok(__ui.shown[1].form._body.includes("滅亡寸前"));
@@ -145,7 +145,7 @@ if (phase === "upgrade2") {
   assert.equal(w.kingdom.phase, "restoring");
   assert.ok(w.stages.unlocked.stage002);
   cmd(a, "stage_clear", "1");
-  assert.equal(Object.keys(w.kingdom.buildings).length, 1);
+  assert.equal(Object.keys(w.kingdom.buildings).length, 2); // 第4弾：王城・転職神殿
   assert.equal(w.stages.records.stage001.clears, 2);
   cmd(a, "stage_clear", "5");
   assert.equal(w.stages.records.stage005, undefined); // 未解放は記録しない

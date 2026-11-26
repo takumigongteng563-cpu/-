@@ -1,12 +1,13 @@
 // =============================================================
-// 100固定ステージ（最終仕様 Ver.1.0 第3章）【管理基盤】
+// 110固定ステージ（最終仕様 第3章：本編100＋クリア後10）【管理基盤】
 // ・ランダム生成はしない。事前制作した固定マップ（構造物ファイル等）を使う
-// ・ステージIDは stage001～stage100（保存データに記録されるため変更禁止）
+// ・ステージIDは stage001～stage110（保存データに記録されるため変更禁止）
+// ・ステージ101～110は本編クリア（ステージ100）後に解放される（内容は本編クリアまで明かさない）
 // ・中身（マップ・敵・条件・報酬など）は STAGE_DEFINITIONS に書く。未記入の枠は defined: false
 // ・マップ制作・テレポート・攻略処理の本実装は第8弾・第17弾
 // =============================================================
 import { Registry } from "./registry.js";
-import { chapterOfStage } from "./story.js";
+import { chapterOfStage, TOTAL_STAGES, MAIN_STAGES } from "./story.js";
 
 /** 攻略方式（全ステージを同じ構成にしないための分類） */
 export const STAGE_TYPES = Object.freeze({
@@ -53,16 +54,40 @@ export const STAGE_DEFINITIONS = Object.freeze({
     estimatedMinutes: 10,
     // 初回クリアで王国のマップが変化し、本格的な復興が始まる（kingdomPhaseAfter）
     kingdomPhaseAfter: "restoring",
-    buildings: ["castle"],
+    buildings: ["castle", "job_temple"],
     repeatable: true,
   },
+  // 第1章の施設の解放順（第4弾で確定）：1 王城・転職神殿 → 2 道具屋 → 3 武器屋 → 4 防具屋 → 5 教会
+  // → 6 鍛冶場 → 7 魔法研究所 → 8 倉庫 → 9 冒険者ギルド → 10 訓練場
+  stage002: { buildings: ["item_shop"] },
+  stage003: { buildings: ["weapon_shop"] },
+  stage004: { buildings: ["armor_shop"] },
+  stage005: { buildings: ["church"] },
+  stage006: { buildings: ["smithy"] },
+  stage007: { buildings: ["magic_lab"] },
+  stage008: { buildings: ["warehouse"] },
+  stage009: { buildings: ["guild"] },
+  stage010: { buildings: ["training"] },
+  // 第3章の最後：神々の迷宮への道が開かれる（ホープから最初のアーティファクトを受け取る）
+  stage030: { unlocksLabyrinth: true },
 });
+
+/** 決戦のステージ（第4弾で確定） */
+const BOSS_STAGES = {
+  94: { kind: "general", id: "general_sumire" }, // 三魔将・菫との決着
+  95: { kind: "general", id: "general_yagi" }, // 三魔将・山羊との決着
+  96: { kind: "general", id: "general_suigyu" }, // 三魔将・水牛との決着
+  98: { kind: "final", id: "majin_noguchi", phase: 1 },
+  99: { kind: "final", id: "majin_noguchi", phase: 2 },
+  100: { kind: "final", id: "majin_noguchi", phase: 3 },
+  110: { kind: "postgame_final", id: "stage110_boss" },
+};
 
 const pad = (n) => String(n).padStart(3, "0");
 
 function buildStages() {
   const out = [];
-  for (let n = 1; n <= 100; n++) {
+  for (let n = 1; n <= TOTAL_STAGES; n++) {
     const id = `stage${pad(n)}`;
     const def = STAGE_DEFINITIONS[id];
     const isChapterBoss = n % 10 === 0;
@@ -74,7 +99,8 @@ function buildStages() {
       type: null,
       location: "field",
       exit: "kingdom",
-      boss: n === 100 ? { kind: "final", id: "majin_noguchi" } : isChapterBoss ? { kind: "chapter", id: null } : null,
+      boss: BOSS_STAGES[n] || (isChapterBoss ? { kind: "chapter", id: null } : null),
+      postgame: n > MAIN_STAGES,
       enemies: [],
       residents: [],
       buildings: [],

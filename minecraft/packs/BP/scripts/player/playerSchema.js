@@ -116,8 +116,29 @@ export function playerTemplate() {
 
     // --- スキル・熟練度 ---
     skills: {
-      learned: {}, // { [skillId]: { level, exp, learnedAt } }
-      equipped: [], // セット中のスキルID
+      // { [skillId]: { level, exp, learnedAt, uses, hits, source, evolvedTo } }
+      //   exp = 熟練度（スキルごと）。exp が必要量に達するとスキルレベルが上がる
+      learned: {},
+      equipped: [], // セット中のスキルID（旧項目。割り当ては skillBindings）
+      // --- 第4弾 ---
+      points: 0, // 未使用のスキルポイント
+      pointsEarned: 0, // これまでに得たスキルポイントの合計
+      pointsGrantedLevel: 0, // スキルポイントを付与済みのプレイヤーレベル（二重付与の防止）
+      pointsGrantedJobLevels: {}, // { [jobId]: 付与済みの職業レベル }
+      evolutions: [], // 進化の履歴 [{ from, to, at }]
+      fusions: [], // 融合の履歴 [{ recipe, inputs, output, at }]
+      discovered: [], // 行動で発見した隠しスキル
+      presets: [], // 割り当てのプリセット [{ name, slots, savedAt }]
+      practice: { day: 0, counts: {} }, // 訓練場での練習（スキルごとの1日の上限）
+    },
+    // --- 第4弾：信仰（24柱それぞれ） { [godId]: { level, exp } } ---
+    faith: {},
+    // --- 第4弾：使徒契約（1人1柱まで）。skills は使徒専用スキル（通常スキルとは別管理） ---
+    apostle: {
+      god: null, // 契約中の神ID
+      since: 0,
+      skills: {}, // { [skillId]: { level, exp, learnedAt } }
+      history: [], // [{ god, from, to, reason }]
     },
     // 熟練度（最終仕様：武器・魔法・スキル） { [id]: { level, exp } }
     proficiency: {

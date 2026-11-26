@@ -49,7 +49,7 @@ export const THIEF_TREE = {
   TWPM: "結界狩人|controller|space,plant|bow|結界で獲物を逃がさない|結界罠|大結界狩り",
   TWPMW: "罠師|controller|earth,metal|crossbow,dagger|無数の罠を仕掛ける|罠設置|罠地獄",
   TWPMM: "封印射手|controller|space,holy|bow|矢で敵の力を封じる|封印矢|大封印矢",
-  TWPMP: "結界医術師|healer|space,life|bow|結界内の仲間を癒し続ける|治癒結界|大治癒結界",
+  TWPMP: "結界医術師|healer|space,life|bow|結界内の仲間を癒し続ける|結界治癒術|大治癒結界",
   TWPP: "守護射手|warden|holy|bow|仲間を狙う敵を優先して射抜く|援護射撃|鉄壁援護",
   TWPPW: "護衛隊長|guardian|holy,metal|bow,shield|護衛対象を必ず守る|護衛|絶対護衛",
   TWPPM: "聖光狩人|caster|light,holy|bow|光で闇の魔物を狩る|聖光狩り|聖光大狩猟",

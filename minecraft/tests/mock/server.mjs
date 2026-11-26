@@ -36,7 +36,8 @@ class Signal {
 }
 
 export const ItemLockMode = { inventory: "inventory", none: "none", slot: "slot" };
-export const EntityComponentTypes = { Inventory: "minecraft:inventory", Health: "minecraft:health" };
+export const EntityComponentTypes = { Inventory: "minecraft:inventory", Health: "minecraft:health", IsTamed: "minecraft:is_tamed", Tameable: "minecraft:tameable" };
+export const EntityDamageCause = { entityAttack: "entityAttack", magic: "magic" };
 export const GameMode = { Adventure: "Adventure", Creative: "Creative", Spectator: "Spectator", Survival: "Survival" };
 
 const KNOWN_BLOCKS = new Set(["minecraft:stone", "minecraft:dirt", "minecraft:crafting_table"]);
@@ -107,12 +108,45 @@ class HealthComponent {
   }
 }
 
+/** 第4弾：スキルの範囲判定用のエンティティ一覧（プレイヤーを除く） */
+const mobs = [];
+const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
+function queryMatch(e, opt) {
+  if (!e.isValid) return false;
+  if (opt.type && e.typeId !== opt.type) return false;
+  if (opt.families && !opt.families.every((f) => e.families.includes(f))) return false;
+  if (opt.excludeFamilies && opt.excludeFamilies.some((f) => e.families.includes(f))) return false;
+  if (opt.excludeTypes && opt.excludeTypes.includes(e.typeId)) return false;
+  if (opt.tags && !opt.tags.every((t) => e.tags.has(t))) return false;
+  if (opt.excludeTags && opt.excludeTags.some((t) => e.tags.has(t))) return false;
+  if (opt.location && opt.maxDistance !== undefined && d2(e.location, opt.location) > opt.maxDistance ** 2) return false;
+  return true;
+}
+
 const dimension = {
   id: "minecraft:overworld",
   particles: [],
+  sounds: [],
   spawnParticle(id, loc) {
     assertWritable("spawnParticle");
     this.particles.push(id);
+  },
+  playSound(id) {
+    assertWritable("dimension.playSound");
+    this.sounds.push(id);
+  },
+  getEntities(opt = {}) {
+    return [...players, ...mobs].filter((e) => queryMatch(e, opt));
+  },
+  spawnEntity(typeId, loc) {
+    assertWritable("spawnEntity");
+    const e = new Entity(typeId, typeId === "minecraft:wolf" ? ["wolf", "mob"] : ["mob"]);
+    e.location = { ...loc };
+    mobs.push(e);
+    return e;
+  },
+  getBlock() {
+    return { isAir: true };
   },
 };
 
@@ -126,6 +160,10 @@ export class Entity {
     this.location = { x: 0, y: 64, z: 0 };
     this.dimension = dimension;
     this.health = new HealthComponent(this, 20);
+    this.tags = new Set();
+    this.effects = [];
+    this.damageLog = [];
+    this.knockback = 0;
   }
   matches(opt) {
     if (opt.families) return opt.families.every((f) => this.families.includes(f));
@@ -133,6 +171,72 @@ export class Entity {
   }
   getComponent(id) {
     return id === EntityComponentTypes.Health ? this.health : undefined;
+  }
+  addTag(t) {
+    this.tags.add(t);
+    return true;
+  }
+  hasTag(t) {
+    return this.tags.has(t);
+  }
+  removeTag(t) {
+    return this.tags.delete(t);
+  }
+  applyDamage(amount, opt = {}) {
+    assertWritable("applyDamage");
+    if (!this.isValid) return false;
+    this.damageLog.push({ amount, cause: opt.cause, by: opt.damagingEntity && opt.damagingEntity.id });
+    this.health.setCurrentValue(this.health.currentValue - amount);
+    if (this.health.currentValue <= 0 && this.typeId !== "minecraft:player") {
+      this.isValid = false;
+      world.afterEvents.entityDie.fire({ deadEntity: this, damageSource: { cause: opt.cause, damagingEntity: opt.damagingEntity } });
+    }
+    return true;
+  }
+  applyKnockback(h, v) {
+    assertWritable("applyKnockback");
+    this.knockback += Math.hypot(h.x, h.z) + v;
+  }
+  addEffect(id, duration, opt) {
+    assertWritable("addEffect");
+    this.effects.push({ id, duration, amplifier: opt && opt.amplifier });
+  }
+  removeEffect(id) {
+    this.effects = this.effects.filter((e) => e.id !== id);
+    return true;
+  }
+  teleport(loc) {
+    assertWritable("teleport");
+    this.location = { ...loc };
+  }
+  remove() {
+    assertWritable("remove");
+    this.isValid = false;
+  }
+  getHeadLocation() {
+    return { x: this.location.x, y: this.location.y + 1.6, z: this.location.z };
+  }
+  getViewDirection() {
+    return this.viewDirection || { x: 0, y: 0, z: 1 };
+  }
+  /** 視線（+z 方向など）の前方にいるエンティティ（近い順） */
+  getEntitiesFromViewDirection(opt = {}) {
+    const dir = this.getViewDirection();
+    const max = opt.maxDistance ?? 64;
+    return [...players, ...mobs]
+      .filter((e) => e !== this && queryMatch(e, { ...opt, location: undefined, maxDistance: undefined }))
+      .map((e) => {
+        const v = { x: e.location.x - this.location.x, y: e.location.y - this.location.y, z: e.location.z - this.location.z };
+        const along = v.x * dir.x + v.y * dir.y + v.z * dir.z;
+        const off = Math.sqrt(Math.max(0, d2(e.location, this.location) - along * along));
+        return { entity: e, distance: along, off };
+      })
+      .filter((h) => h.distance > 0 && h.distance <= max && h.off <= 1.5)
+      .sort((a, b) => a.distance - b.distance)
+      .map(({ entity, distance }) => ({ entity, distance }));
+  }
+  getBlockFromViewDirection() {
+    return undefined;
   }
 }
 
@@ -254,6 +358,10 @@ export const world = {
     for (const v of worldProps.values()) n += typeof v === "string" ? Buffer.byteLength(v) : 8;
     return n;
   },
+  getDimension() {
+    return dimension;
+  },
+  playSound() {},
   getAllPlayers() {
     return players.filter((p) => p.isValid);
   },
@@ -323,9 +431,15 @@ export const __test = {
     players.push(p);
     return p;
   },
-  /** モンスター等を作る */
-  spawnMob(typeId, families = ["monster", "mob"]) {
-    return new Entity(typeId, families);
+  mobs,
+  /** モンスター等を作る（location を渡すとスキルの範囲判定の対象になる） */
+  spawnMob(typeId, families = ["monster", "mob"], location) {
+    const e = new Entity(typeId, families);
+    if (location) {
+      e.location = { ...location };
+      mobs.push(e);
+    }
+    return e;
   },
   /** プレイヤーがモンスターを攻撃して倒すまでの一連のイベント */
   hit(player, mob) {

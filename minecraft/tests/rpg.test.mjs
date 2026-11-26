@@ -133,7 +133,7 @@ test("層ごとの内訳：基礎・成長・振り分け・才能・一時効�
   app.talents.grant(p.id, "axe_aptitude"); // 筋力+2
   app.stats.addBuff(p.id, { id: "potion", stats: { flat: { str: 3 } }, durationTicks: 20 });
   const r = app.stats.inspect(p.id);
-  assert.deepEqual(r.layers.str, { base: 5, growth: 1, allocated: 4, talent: 2, job: 0, equip: 0, temp: 3 });
+  assert.deepEqual(r.layers.str, { base: 5, growth: 1, allocated: 4, talent: 2, job: 0, equip: 0, temp: 3, skill: 0 });
   assert.equal(r.primary.str, 15);
   tickRef.t = 30; // 一時効果の期限切れ
   app.stats.recalc(p.id);

@@ -1,6 +1,6 @@
 {
   "name": "majin-noguchi-addon",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "魔神野口と4人の勇者たち — Minecraft統合版アドオン（開発用ツール一式）",
@@ -9,9 +9,10 @@
     "test": "node --test tests/*.test.mjs",
     "validate": "node devscripts/validate-packs.mjs",
     "build": "node devscripts/build.mjs",
-    "check": "npm run validate && npm run validate:jobs && npm run typecheck && npm test && npm run docs:jobs && npm run build",
+    "check": "npm run validate && npm run validate:jobs && npm run typecheck && npm test && npm run docs:jobs && npm run docs:skills && npm run build",
     "validate:jobs": "node devscripts/validate-jobs.mjs",
-    "docs:jobs": "node devscripts/job-docs.mjs"
+    "docs:jobs": "node devscripts/job-docs.mjs",
+    "docs:skills": "node devscripts/skill-docs.mjs"
   },
   "devDependencies": {
     "@minecraft/server": "2.0.0",

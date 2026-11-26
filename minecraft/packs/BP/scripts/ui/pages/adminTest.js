@@ -16,6 +16,8 @@ import { TAGS } from "../../config.js";
 import { giveSkillFocus } from "../../items/adventurerBook.js";
 import { treeBrowser } from "./job.js";
 import { validateJobs } from "../../content/jobs/validateJobs.js";
+import { validateSkills } from "../../content/skills/validateSkills.js";
+import { gods } from "../../content/gods.js";
 import { jobs } from "../../content/jobs.js";
 import { createLogger } from "../../core/log.js";
 import { showForm } from "../formUtil.js";
@@ -228,14 +230,14 @@ const ACTIONS = [
       if (on) admin.addTag(TAGS.inputTest);
       else admin.removeTag(TAGS.inputTest);
       if (on) giveSkillFocus(admin);
-      admin.sendMessage(on ? "§a操作判定テスト ON：修練の触媒を持って、通常／ジャンプ中／ダッシュ中／しゃがみ溜め／長押しで使ってください" : "§7操作判定テスト OFF");
+      admin.sendMessage(on ? "§a操作判定テスト ON：技の触媒を持って、通常／ジャンプ中／ダッシュ中／しゃがみ溜め／長押しで使ってください" : "§7操作判定テスト OFF");
     },
   },
   {
     label: "ステージクリア記録テスト",
     async run(admin) {
-      const n = await askNumber(admin, "ステージクリア記録テスト", "ステージ番号（1～100）", "1");
-      if (!(n >= 1 && n <= 100)) return;
+      const n = await askNumber(admin, "ステージクリア記録テスト", "ステージ番号（1～110）", "1");
+      if (!(n >= 1 && n <= 110)) return;
       const ids = world.getAllPlayers().filter((p) => ctx.playerService.getSession(p.id)).map((p) => p.id);
       report(admin, `ステージ${n} クリア記録`, ctx.stages.recordClear(stageIdOf(n), ids), "参加者全員");
     },
@@ -248,7 +250,8 @@ const ACTIONS = [
       const sum = ctx.stages.summary();
       const body = lines(
         heading("ストーリー・ステージ"),
-        `章: 第${w.story.chapter}章 / 全10章（旧データの章: ${w.story.legacyChapter ?? "-"}）`,
+        `章: 第${w.story.chapter}章 / 全10章＋裏章（旧データの章: ${w.story.legacyChapter ?? "-"}）`,
+        `神々の迷宮: ${w.labyrinths.unlocked ? "解放済み" : "未解放"} / 使徒: ${Object.entries(w.apostles).map(([g, a]) => `${gods.get(g)?.name ?? g}=${a.name}`).join(", ") || "なし"}`,
         `解放 ${sum.unlocked} / クリア ${sum.cleared} / 全${sum.total}ステージ`,
         heading("富里王国"),
         `状態: ${KINGDOM_PHASES[k.phase] ?? k.phase}`,
@@ -266,6 +269,60 @@ const ACTIONS = [
     label: "セーブデータ確認",
     async run(admin, t) {
       await saveDataView(admin, t);
+    },
+  },
+  // ---------------- 第4弾：スキル・信仰・使徒 ----------------
+  {
+    label: "スキルのテスト（付与・レベル・SP・クールタイム）",
+    async run(admin, t) {
+      const res = await showForm(
+        admin,
+        new ModalFormData()
+          .title("スキルのテスト")
+          .dropdown("操作", ["スキルを付与（ID）", "スキルレベルを設定（ID と レベル）", "スキルポイントを加える", "クールタイムを解除", "スキルデータの自動検証"])
+          .textField("スキルID", "例：fire_ball")
+          .textField("数値", "例：5", { defaultValue: "1" })
+          .submitButton("実行")
+      );
+      if (!res || !res.formValues) return;
+      const op = Number(res.formValues[0]);
+      const id = String(res.formValues[1] || "").trim();
+      const n = intOf(res.formValues[2]);
+      if (op === 0) report(admin, `スキル付与 ${id}`, ctx.skillService.grant(t.id, id), t.name);
+      else if (op === 1) report(admin, `スキルレベル ${id} → ${n}`, ctx.skillService.setLevel(t.id, id, n), t.name);
+      else if (op === 2) report(admin, `スキルポイント +${n}`, ctx.playerService.update(t.id, (d) => (d.skills.points += Math.max(0, n || 0)), { important: true }), t.name);
+      else if (op === 3) {
+        ctx.skillBindings.resetCooldowns(t.id);
+        report(admin, "クールタイム解除", true, t.name);
+      } else {
+        const r = validateSkills();
+        await showInfoPage(admin, "スキルデータの自動検証", lines(`${r.ok ? "§a合格" : "§c不合格"}§r（${r.stats.total}種・接続済み${r.stats.connected}種）`, r.checks.map((c) => `${c.ok ? "§a✓" : "§c✗"}§r ${c.name}：${c.detail}`)));
+      }
+    },
+  },
+  {
+    label: "信仰・使徒のテスト",
+    async run(admin, t) {
+      const list = gods.all();
+      const res = await showForm(
+        admin,
+        new ModalFormData()
+          .title("信仰・使徒のテスト")
+          .dropdown("神", list.map((g) => `${g.name}（${g.domain}）`))
+          .dropdown("操作", ["信仰レベルを設定", "承認フラグを立てる", "使徒契約（条件を無視）", "使徒契約（現使徒と交代）", "使徒契約の解除（管理者）", "神による資格剥奪"])
+          .textField("信仰レベル", "0～30", { defaultValue: "5" })
+          .submitButton("実行")
+      );
+      if (!res || !res.formValues) return;
+      const g = list[Number(res.formValues[0])];
+      const op = Number(res.formValues[1]);
+      const n = intOf(res.formValues[2]);
+      if (op === 0) report(admin, `${g.name}の信仰レベル → ${n}`, ctx.faith.setLevel(t.id, g.id, n), t.name);
+      else if (op === 1) report(admin, `${g.name}の承認`, ctx.actions.setFlag(t.id, g.contract.approvalFlag), t.name);
+      else if (op === 2) report(admin, `${g.name}の使徒契約`, ctx.apostles.contract(t.id, g.id, { force: true }), t.name);
+      else if (op === 3) report(admin, `${g.name}の使徒交代`, ctx.apostles.contract(t.id, g.id, { force: true, replace: true }), t.name);
+      else if (op === 4) report(admin, `${g.name}の使徒契約の解除`, ctx.apostles.release(g.id, "admin"), "現使徒");
+      else report(admin, `${g.name}による資格剥奪`, ctx.apostles.revoke(g.id), "現使徒");
     },
   },
 ];

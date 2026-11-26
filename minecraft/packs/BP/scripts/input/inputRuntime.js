@@ -9,6 +9,10 @@
 //   ・しゃがみ溜め   Player.isSneaking をしゃがみ続けた時間として計測（技アイテムを持っている人だけ、2tickごと）
 // 判定は input/inputResolver.js（純粋な計算）で行う。
 // 「操作判定テスト」タグ（noguchi_input_test）を持つと、判定結果だけを画面に表示する（実機確認用）。
+// 第4弾：
+//  ・溜めの進み具合を HUD に表示（chargeOf）。しゃがみを解く・持ち替えると溜めは取り消し（キャンセル）
+//  ・詠唱中に持ち替える・技アイテムを手放すと詠唱を中断
+//  ・詠唱の完了は2tickごとの確認で処理（毎tickの処理はしない）
 // =============================================================
 import { world, system, EntityComponentTypes } from "@minecraft/server";
 import { ctx } from "../core/context.js";
@@ -18,12 +22,16 @@ import { INPUT, ACTION_TYPES } from "../balance/input.js";
 import { SKILL_INPUT_ITEMS, TAGS } from "../config.js";
 import { resolveAction } from "./inputResolver.js";
 import { notifyActionBar } from "../hud/hud.js";
+import { skills } from "../content/skills.js";
+import { findPlayer } from "../core/players.js";
 
 const SKILL_ITEMS = new Set(SKILL_INPUT_ITEMS);
 const ACTION_NAME = Object.fromEntries(ACTION_TYPES.map((a) => [a.id, `${a.name}（${a.tier}）`]));
 
 /** @type {Map<string, number>} playerId → しゃがみ始めたtick */
 const sneakSince = new Map();
+/** @type {Map<string, number>} playerId → しゃがみ始めた枠（持ち替えで溜めを取り消す） */
+const sneakSlot = new Map();
 /** @type {Map<string, {tick: number, slot: number, airborne: boolean, sprinting: boolean}>} 押して離す方式の押し始め */
 const holds = new Map();
 /** @type {Map<string, number>} 同じtickの二重処理防止 */
@@ -77,16 +85,57 @@ function handle(player, snap, holdTicks) {
   }
   if (!r.action || !ctx.ready) return;
   const res = ctx.skillBindings.tryActivate(player.id, snap.slot, r.action, player);
-  if (!res.ok && res.reason) notifyActionBar(player, `§7${ACTION_NAME[r.action]}：${res.reason}`, 30);
+  showResult(player, r.action, res);
+}
+
+function showResult(player, action, res) {
+  const def = res.skillId ? skills.get(res.skillId) : null;
+  if (res.casting) notifyActionBar(player, `§e詠唱中… §f${def ? def.name : ""}§7（${(res.casting / 20).toFixed(1)}秒・持ち替えで中断）`, Math.min(60, res.casting));
+  else if (res.ok) notifyActionBar(player, `§a発動：§f${def ? def.name : ""}${res.linked ? " §d（連携！）" : ""}${res.hits ? ` §7命中${res.hits}` : ""}`, 20);
+  else if (res.reason) notifyActionBar(player, `§7${ACTION_NAME[action] || ""}：§c${def ? `${def.name} ` : ""}${res.reason}`, 30);
+}
+
+/** 溜めの状態（HUD 表示用）。技アイテムを持っていなければ null */
+export function chargeOf(player) {
+  if (!isSkillItem(heldTypeId(player))) return null;
+  const h = holds.get(player.id);
+  const hold = h ? system.currentTick - h.tick : 0;
+  const sneak = sneakTicks(player);
+  return { ticks: Math.max(hold, sneak), sneaking: !!player.isSneaking };
 }
 
 function pollSneak() {
   for (const p of world.getAllPlayers()) {
-    if (!p.isSneaking || !isSkillItem(heldTypeId(p))) {
+    const holding = isSkillItem(heldTypeId(p));
+    // 詠唱中に持ち替えた・技アイテムを手放した → 中断
+    if (ctx.ready) {
+      const c = ctx.skillBindings.casts.get(p.id);
+      if (c && (!holding || p.selectedSlotIndex !== c.slot)) ctx.skillBindings.cancelCast(p.id, "持ち替え");
+    }
+    if (!p.isSneaking || !holding) {
       sneakSince.delete(p.id);
+      sneakSlot.delete(p.id);
       continue;
     }
-    if (!sneakSince.has(p.id)) sneakSince.set(p.id, system.currentTick);
+    // しゃがみ中に枠を変えたら溜め直し（キャンセル）
+    if (sneakSlot.has(p.id) && sneakSlot.get(p.id) !== p.selectedSlotIndex) sneakSince.delete(p.id);
+    if (!sneakSince.has(p.id)) {
+      sneakSince.set(p.id, system.currentTick);
+      sneakSlot.set(p.id, p.selectedSlotIndex);
+    }
+  }
+  if (ctx.ready && ctx.skillBindings.casts.size > 0) {
+    const results = ctx.skillBindings.updateCasts(
+      (id) => findPlayer(id),
+      (id, slot) => {
+        const p = findPlayer(id);
+        return !!p && p.selectedSlotIndex === slot && isSkillItem(heldTypeId(p));
+      }
+    );
+    for (const r of results) {
+      const p = findPlayer(r.playerId);
+      if (p) showResult(p, "", r.res);
+    }
   }
 }
 
@@ -123,6 +172,7 @@ export function registerInputRuntime() {
 
 export function forgetInputState(playerId) {
   sneakSince.delete(playerId);
+  sneakSlot.delete(playerId);
   holds.delete(playerId);
   lastResolved.delete(playerId);
 }

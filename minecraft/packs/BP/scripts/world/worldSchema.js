@@ -35,6 +35,19 @@ export function worldTemplate() {
       facilities: { inn: { unlockedAt: 0, by: null } }, // 開始時は宿屋のみ
       buildQueue: [], // 配置待ちの建物ID（少しずつ配置して負荷を分散）
       appliedStages: {}, // 復興処理を反映済みのステージ（周回で重複させない）
+      // --- 第4弾：施設の強化（ワールド共有） { [facilityId]: { level, gold, materials: {} } } ---
+      facilityLevels: {},
+    },
+
+    // --- 第4弾：使徒の登録（1柱につき1人） { [godId]: { uid, name, since } } ---
+    apostles: {},
+    // --- 第4弾：神々の迷宮（第3章クリアで解放）---
+    labyrinths: {
+      unlocked: false,
+      unlockedAt: 0,
+      artifacts: {}, // { [artifactId]: { by: uid, at } }
+      doors: {}, // { [godId]: { openedAt } }
+      records: {}, // { [godId]: { clears, firstClearAt, by: uid[] } }
     },
 
     // --- 最終仕様：クリア後 ---

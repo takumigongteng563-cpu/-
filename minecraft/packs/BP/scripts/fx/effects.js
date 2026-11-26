@@ -11,7 +11,15 @@ import { potentials } from "../content/potentials.js";
 import { gradeLabel } from "../content/grades.js";
 import { tierForStage } from "../content/tiers.js";
 import { jobs } from "../content/jobs.js";
-import { invalidateHud } from "../hud/hud.js";
+import { invalidateHud, notifyActionBar } from "../hud/hud.js";
+import { skills } from "../content/skills.js";
+import { gods } from "../content/gods.js";
+import { HIDDEN_DISCOVERY_NOTICE } from "../balance/skills.js";
+import { PLAYER_UID_PROPERTY } from "../player/playerService.js";
+
+const skillName = (id) => skills.get(id)?.name ?? id;
+const godName = (id) => gods.get(id)?.name ?? id;
+const MASTERY_JA = { weapon: "武器熟練度", magic: "魔法熟練度" };
 
 function tryDo(fn) {
   try {
@@ -135,7 +143,60 @@ export function registerEffects() {
     })
   );
 
-  for (const name of ["statsChanged", "vitalsChanged", "expGained", "jobChanged", "jobLevelUp"]) {
+  // ---------------- 第4弾：スキル・信仰・使徒 ----------------
+  on("skillLearned", (e) =>
+    later(e.playerId, (p) => {
+      if (e.method === "hidden") {
+        title(p, "§d§lひらめき！", `§f${skillName(e.id)}`, 50);
+        p.sendMessage(`${HIDDEN_DISCOVERY_NOTICE}§f${skillName(e.id)}`);
+        sound(p, "random.totem");
+      } else {
+        p.sendMessage(`§bスキル習得：§f${skillName(e.id)}§7（冒険者の書 → スキル で割り当て）`);
+        sound(p, "random.orb", 1.4);
+      }
+    })
+  );
+  on("skillPointsGained", (e) => later(e.playerId, (p) => p.sendMessage(`§aスキルポイント +${e.amount}`)));
+  on("skillLevelUp", (e) =>
+    later(e.playerId, (p) => {
+      notifyActionBar(p, `§b${skillName(e.id)} §fが §eLv${e.level} §fに上がった！`, 40);
+      sound(p, "random.orb", 1.8);
+    })
+  );
+  on("skillEvolved", (e) =>
+    later(e.playerId, (p) => {
+      title(p, "§b§lスキル進化", `§f${skillName(e.from)} → §e${skillName(e.to)}`, 50);
+      sound(p, "random.levelup", 1.2);
+      particles(p, "minecraft:totem_particle", 10);
+    })
+  );
+  on("skillFused", (e) =>
+    later(e.playerId, (p) => {
+      title(p, "§d§lスキル融合", `§e${skillName(e.output)}`, 50);
+      sound(p, "random.anvil_use");
+      particles(p, "minecraft:totem_particle", 10);
+    })
+  );
+  on("masteryLevelUp", (e) => later(e.playerId, (p) => notifyActionBar(p, `§a${MASTERY_JA[e.kind]}（${e.key}）が Lv${e.level} に上がった`, 30)));
+  on("faithLevelUp", (e) => later(e.playerId, (p) => p.sendMessage(`§e${godName(e.god)}§fへの信仰が §eLv${e.level}§f に深まった`)));
+  on("apostleContracted", (e) =>
+    later(e.playerId, (p) => {
+      title(p, "§6§l使徒契約", `§f${godName(e.god)}の使徒となった`, 60);
+      sound(p, "random.totem");
+      particles(p, "minecraft:totem_particle", 20);
+    })
+  );
+  on("apostleSkillEvolved", (e) => later(e.playerId, (p) => p.sendMessage(`§6使徒の力が目覚めた：§f${skillName(e.id)}`)));
+  on("apostleOffer", (e) => later(e.playerId, (p) => p.sendMessage(`§6${godName(e.god)}§fがあなたを新たな使徒に選ぼうとしている（冒険者の書 → 神々・信仰）`)));
+  on("apostleReleased", (e) => {
+    for (const p of world.getAllPlayers()) {
+      tryDo(() => {
+        if (p.getDynamicProperty(PLAYER_UID_PROPERTY) === e.uid) p.sendMessage(`§7${godName(e.god)}の使徒契約が解除された。使徒の力は失われた（信仰レベルと通常スキルは残る）`);
+      });
+    }
+  });
+
+  for (const name of ["statsChanged", "vitalsChanged", "expGained", "jobChanged", "jobLevelUp", "skillUsed", "skillLevelUp", "skillCastStart", "skillCastCancel"]) {
     on(name, (e) => {
       if (e && e.playerId) invalidateHud(e.playerId);
     });

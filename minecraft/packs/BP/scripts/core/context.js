@@ -16,6 +16,9 @@
  * @property {import("../input/skillBindingService.js").SkillBindingService} skillBindings
  * @property {import("../rewards/rewardService.js").RewardService} rewards
  * @property {import("../job/jobService.js").JobService} jobs
+ * @property {import("../skills/skillService.js").SkillService} skillService
+ * @property {import("../faith/faithService.js").FaithService} faith
+ * @property {import("../apostle/apostleService.js").ApostleService} apostles
  * @property {() => number} nowTick 現在のtick
  * @property {boolean} ready
  */
@@ -37,6 +40,9 @@ export const ctx = {
   skillBindings: null,
   rewards: null,
   jobs: null,
+  skillService: null,
+  faith: null,
+  apostles: null,
   nowTick: () => 0,
   ready: false,
 };

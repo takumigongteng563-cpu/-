@@ -44,12 +44,13 @@ import { worldStorageBytes, countKeys } from "../storage/worldBackend.js";
 import { ensureAdventurerBook, giveSkillFocus } from "../items/adventurerBook.js";
 import { stageIdOf } from "../content/stages.js";
 import { validateJobs } from "../content/jobs/validateJobs.js";
+import { validateSkills } from "../content/skills/validateSkills.js";
 import { TAGS } from "../config.js";
 import { isAdmin } from "./adminAuth.js";
 
 // 第2弾のテスト用コマンド（第1弾のコマンドは従来どおり /scriptevent の実行権限のみで使える）
-const ADMIN_COMMANDS = new Set(["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag", "give_focus", "input_test", "stage_clear", "job", "joblevel", "jobexp", "jobtoken", "jobcheck"]);
-const TARGETED = ["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag", "job", "joblevel", "jobexp", "jobtoken"];
+const ADMIN_COMMANDS = new Set(["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag", "give_focus", "input_test", "stage_clear", "job", "joblevel", "jobexp", "jobtoken", "jobcheck", "skill", "skilllevel", "sp", "faith", "apostle", "apostle_release", "skillcheck", "cd_reset"]);
+const TARGETED = ["exp", "level", "points", "vital", "talent", "evolve", "awaken", "limitbreak", "recalc", "flag", "job", "joblevel", "jobexp", "jobtoken", "skill", "skilllevel", "sp", "faith", "apostle", "cd_reset"];
 
 /** 最後の引数がオンラインのプレイヤー名ならそのプレイヤー、違えば実行者 */
 function resolveTarget(args, src) {
@@ -200,18 +201,18 @@ export function registerScriptEvents(hooks) {
         result(ev, `フラグ ${args[0]}`, args[0] ? ctx.actions.setFlag(target.id, args[0]) : false);
         return;
       case "give_focus":
-        if (src) result(ev, "修練の触媒", giveSkillFocus(src));
+        if (src) result(ev, "技の触媒", giveSkillFocus(src, Number(args[0]) || 1) > 0);
         return;
       case "input_test":
         if (!src) return;
         if (args[0] === "off") src.removeTag(TAGS.inputTest);
         else src.addTag(TAGS.inputTest);
-        reply(ev, `§a操作判定テスト：${args[0] === "off" ? "OFF" : "ON（修練の触媒を使うと判定結果を表示）"}`);
+        reply(ev, `§a操作判定テスト：${args[0] === "off" ? "OFF" : "ON（技の触媒を使うと判定結果を表示）"}`);
         return;
       case "stage_clear": {
         const n = Number(args[0]);
-        if (!(n >= 1 && n <= 100)) {
-          reply(ev, "§c使い方: /scriptevent noguchi:stage_clear <1～100>");
+        if (!(n >= 1 && n <= 110)) {
+          reply(ev, "§c使い方: /scriptevent noguchi:stage_clear <1～110>");
           return;
         }
         const ids = world.getAllPlayers().filter((p) => ctx.playerService.getSession(p.id)).map((p) => p.id);
@@ -234,6 +235,35 @@ export function registerScriptEvents(hooks) {
       case "jobcheck": {
         const r = validateJobs();
         reply(ev, `${r.ok ? "§a" : "§c"}職業データの自動検証：${r.ok ? "合格" : "不合格"}（${r.checks.filter((c) => c.ok).length}/${r.checks.length}項目）`);
+        for (const e of r.errors.slice(0, 5)) reply(ev, `§c${e}`);
+        return;
+      }
+      // ---------------- 第4弾：スキル・信仰・使徒（管理者テスト） ----------------
+      case "skill":
+        result(ev, `スキル付与 ${args[0]}`, ctx.skillService.grant(target.id, args[0]));
+        return;
+      case "skilllevel":
+        result(ev, `スキルレベル ${args[0]} → ${args[1]}`, ctx.skillService.setLevel(target.id, args[0], Number(args[1])));
+        return;
+      case "sp":
+        result(ev, `スキルポイント +${args[0]}`, ctx.playerService.update(target.id, (d) => (d.skills.points += Math.max(0, Math.floor(Number(args[0]) || 0))), { important: true }));
+        return;
+      case "faith":
+        result(ev, `信仰レベル ${args[0]} → ${args[1]}`, ctx.faith.setLevel(target.id, args[0], Number(args[1])));
+        return;
+      case "apostle":
+        result(ev, `使徒契約 ${args[0]}（条件を無視）`, ctx.apostles.contract(target.id, args[0], { force: true, replace: args[1] === "replace" }));
+        return;
+      case "apostle_release":
+        result(ev, `使徒契約の解除 ${args[0]}`, ctx.apostles.release(args[0], "admin"));
+        return;
+      case "cd_reset":
+        ctx.skillBindings.resetCooldowns(target.id);
+        result(ev, "クールタイム解除", true);
+        return;
+      case "skillcheck": {
+        const r = validateSkills();
+        reply(ev, `${r.ok ? "§a" : "§c"}スキルデータの自動検証：${r.ok ? "合格" : "不合格"}（${r.checks.filter((c) => c.ok).length}/${r.checks.length}項目・${r.stats.total}種）`);
         for (const e of r.errors.slice(0, 5)) reply(ev, `§c${e}`);
         return;
       }

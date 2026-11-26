@@ -11,6 +11,38 @@ import { HUD } from "../balance/hud.js";
 import { jobs } from "../content/jobs.js";
 import { expToNext } from "../progression/levelMath.js";
 import { levelCapForStage } from "../content/tiers.js";
+import { skills } from "../content/skills.js";
+import { INPUT } from "../balance/input.js";
+import { chargeOf } from "../input/inputRuntime.js";
+
+const ACTION_SHORT = [["tap", "通"], ["jump", "跳"], ["sprint", "走"], ["charge", "溜"], ["ultimate", "奥"]];
+
+/** 第4弾：技アイテムを持っているとき、その枠の技・クールタイム・溜め・詠唱を表示する */
+export function skillLine(d, playerId, slot, charge) {
+  const b = d.skillBindings.slots[slot];
+  if (!b) return "";
+  const parts = [];
+  for (const [a, short] of ACTION_SHORT) {
+    const id = b[a];
+    if (!id) continue;
+    const def = skills.get(id);
+    const cd = ctx.skillBindings.cooldownLeft(playerId, id);
+    parts.push(`${cd > 0 ? "§8" : "§f"}${short}:${def ? def.name : "?"}${cd > 0 ? `§7(${Math.ceil(cd / 20)}s)` : ""}`);
+  }
+  let line = `§b[枠${slot + 1}] ${parts.length ? parts.join(" ") : "§7技なし（冒険者の書 → スキル）"}`;
+  const cast = ctx.skillBindings.castProgress(playerId);
+  if (cast) line += `\n§e詠唱 ${bar(cast.ratio)} §f${skills.get(cast.skillId)?.name ?? ""}`;
+  else if (charge && charge.sneaking && charge.ticks > 2) {
+    const stage = charge.ticks >= INPUT.ultimateTicks ? "§6奥義OK" : charge.ticks >= INPUT.chargeTicks ? "§a大技OK" : "§7溜め中";
+    line += `\n§e溜め ${bar(Math.min(1, charge.ticks / INPUT.ultimateTicks))} ${stage}§7（立つ・持ち替えで取り消し）`;
+  }
+  return line;
+}
+
+function bar(r) {
+  const n = Math.round(r * 10);
+  return `§a${"|".repeat(n)}§8${"|".repeat(10 - n)}`;
+}
 
 /** @type {Map<string, {text: string, at: number, yieldUntil: number}>} */
 const state = new Map();
@@ -39,7 +71,7 @@ export function notifyActionBar(player, text, yieldTicks = HUD.yieldTicks) {
   }
 }
 
-export function hudText(d) {
+export function hudText(d, extra = "") {
   const v = d.vitals;
   const cap = levelCapForStage(d.limitBreak.stage);
   const exp = d.level >= cap ? "§6MAX" : `${Math.floor(d.exp)}/${expToNext(d.level, d.limitBreak.stage)}`;
@@ -61,7 +93,8 @@ function update() {
     if (!d || d.settings.hud === false) continue;
     const s = st(p.id);
     if (now < s.yieldUntil) continue;
-    const text = hudText(d);
+    const charge = chargeOf(p);
+    const text = hudText(d, charge ? skillLine(d, p.id, p.selectedSlotIndex, charge) : "");
     if (text === s.text && now - s.at < HUD.refreshIntervalTicks) continue;
     p.onScreenDisplay.setActionBar(text);
     s.text = text;

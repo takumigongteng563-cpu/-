@@ -172,16 +172,20 @@ test("通常職業：4系統×3分岐×5段階 = 484。無職は含めない", (
 });
 
 // ---------------- 100ステージ・10章・王国 ----------------
-test("100固定ステージ・全10章の構造", () => {
-  assert.equal(stages.size, 100);
-  assert.equal(chapters.size, 10);
-  for (let n = 1; n <= 100; n++) {
+test("110固定ステージ（本編100＋クリア後10）・全10章＋裏章の構造（第4弾）", () => {
+  assert.equal(stages.size, 110);
+  assert.equal(chapters.size, 11);
+  const bossStages = new Set([10, 20, 30, 40, 50, 60, 70, 80, 90, 94, 95, 96, 98, 99, 100, 110]);
+  for (let n = 1; n <= 110; n++) {
     const s = stages.get(stageIdOf(n));
     assert.equal(s.chapter, chapterOfStage(n));
-    assert.equal(!!s.boss, n % 10 === 0);
+    assert.equal(!!s.boss, bossStages.has(n), `stage${n}`);
     assert.equal(s.exit, "kingdom");
+    assert.equal(!!s.postgame, n > 100);
   }
-  assert.equal(stages.get("stage100").boss.id, "majin_noguchi");
+  assert.equal(chapterOfStage(105), 11);
+  for (const n of [98, 99, 100]) assert.equal(stages.get(stageIdOf(n)).boss.id, "majin_noguchi");
+  assert.deepEqual([94, 95, 96].map((n) => stages.get(stageIdOf(n)).boss.kind), ["general", "general", "general"]);
   assert.equal(stages.get("stage001").type, "monster_hunt");
   assert.equal(stages.get("stage001").defined, true);
 });
@@ -308,7 +312,7 @@ test("技の割り当て：未習得は割り当て不可・MP不足は不発・
   app.playerService.update(p.id, (d) => (d.skills.learned.test_slash = { level: 1 }));
   assert.equal(sb.bind(p.id, 0, "ultimate", "test_slash").ok, false); // その操作には割り当てられない
   assert.equal(sb.bind(p.id, 0, "tap", "test_slash").ok, true);
-  assert.equal(sb.tryActivate(p.id, 0, "tap").reason, "技の効果が未実装（第4弾）");
+  assert.equal(sb.tryActivate(p.id, 0, "tap").reason, "技の効果が未設定"); // 効果の型も独自処理もない技は発動しない
   let fired = 0;
   registerSkillExecutor("test_slash", () => (fired++, true));
   stripTalents(app, p.id);

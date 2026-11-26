@@ -243,6 +243,32 @@ export class PlayerService {
     return res.envelope ? res.envelope.d : undefined;
   }
 
+  /**
+   * 不在プレイヤーを含むデータの変更（第4弾：使徒の交代などワールド全体の処理用）。
+   * オンラインなら通常の update。不在なら保存データを開いて変更し、即時保存してキャッシュから外す。
+   * 保存データが無い・読み取り専用のときは false（呼び出し側は参加時の整合チェックで補う）。
+   * @param {string} uid
+   * @param {(d: any) => void} mutator
+   */
+  updateOffline(uid, mutator) {
+    const online = this.onlineUidOwner(uid);
+    if (online) return this.update(online, mutator, { important: true });
+    const name = recordNameForUid(uid);
+    if (!this.records.peek(name) && !this.records.existsInStore(name)) return false;
+    const e = this.records.open(name, () => {
+      throw new Error("不在プレイヤーのデータが見つかりません");
+    });
+    if (e.readOnly) {
+      this.records.close(name);
+      return false;
+    }
+    mutator(e.data);
+    this.records.markDirty(name);
+    const ok = this.records.save(name);
+    if (ok) this.records.close(name);
+    return ok;
+  }
+
   flushDirty(max) {
     return this.records.flushDirty(max);
   }
